@@ -21,6 +21,11 @@ from plan2graph.adapters import common  # noqa: E402
 
 _NUM = re.compile(r"-?\d+\.?\d*")
 
+# CubiCasa 'Space …' 중 방이 아닌 클래스 — 노드에서 제외(치수라벨·가구·미정의·비실내).
+#   (실측: DimensionsLabel/FixedFurniture/Undefined 가 '기타'의 대부분을 차지해 분포를 오염)
+_NON_ROOM = {"DimensionsLabel", "FixedFurniture", "Undefined", "UserDefined",
+             "Outdoor", "Garage", "CarPort", "SwimmingPool", "Retail", "Bar"}
+
 
 def _points(poly_str: str):
     v = [float(x) for x in _NUM.findall(poly_str or "")]
@@ -50,6 +55,8 @@ def parse(svg_path: str) -> dict | None:
         tag = g.tag.split("}")[-1]
         if "Space" in cls:                 # 방
             label = cls.replace("Space", "").strip().split()[0] if cls.strip() != "Space" else "room"
+            if label in _NON_ROOM:         # 비(非)방 클래스 제외(치수라벨·가구 등)
+                continue
             poly = None
             for child in g.iter():
                 if child.tag.split("}")[-1] in ("polygon", "path") and child.attrib.get("points"):

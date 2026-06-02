@@ -37,14 +37,17 @@ GLOBAL_TYPE_MAP = {
     "washroom": "공간_화장실", "restroom": "공간_화장실",
     # 현관/홀
     "entrance": "공간_현관", "entry": "공간_현관", "foyer": "공간_현관",
+    "draughtlobby": "공간_현관",   # 풍제실(현관 완충공간)
     "hall": "공간_기타", "hallway": "공간_기타", "corridor": "공간_기타",
     # 발코니
     "balcony": "공간_발코니", "terrace": "공간_발코니", "loggia": "공간_발코니",
     # 기타 거주·서비스
     "study": "공간_다목적공간", "studyroom": "공간_다목적공간", "office": "공간_다목적공간",
+    "den": "공간_다목적공간", "recreationroom": "공간_다목적공간", "library": "공간_다목적공간",
     "storage": "공간_드레스룸", "closet": "공간_드레스룸", "wardrobe": "공간_드레스룸",
-    "dressing": "공간_드레스룸",
-    "laundry": "공간_실외기실", "utility": "공간_실외기실",
+    "dressing": "공간_드레스룸", "dressingroom": "공간_드레스룸", "walkin": "공간_드레스룸",
+    "laundry": "공간_실외기실", "utility": "공간_실외기실", "technicalroom": "공간_실외기실",
+    "elevator": "공간_엘리베이터",
 }
 
 

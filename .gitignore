@@ -1,5 +1,6 @@
 # ── 대용량 데이터 (서버에서 재생성, git 제외) ──
 /건축 도면 데이터/
+/data/external/          # 글로벌 원본(CubiCasa zip·SVG 등) — 다운로드 재현
 /data/raw/
 /data/processed_val/
 /data/processed/graphs/

@@ -14,9 +14,12 @@ from __future__ import annotations
 import hashlib
 import json
 import platform
+import re
 import socket
+import statistics
 import subprocess
 import sys
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
@@ -161,6 +164,44 @@ def print_table():
         print(f"\n▶ 인접L1 최저(loop off): {best['run_id']}  adj_L1={best['adj_L1']}")
 
 
+def _config_key(run_id: str) -> str:
+    """시드를 떼어 동일 조건끼리 묶는 키. 예: ...-noPretrain-seed3 → ...-noPretrain."""
+    return re.sub(r"-seed\d+", "", run_id or "")
+
+
+def _ms(vals):
+    """mean±std 문자열(시드 노이즈 판정용). n<2면 std=0."""
+    xs = [v for v in vals if isinstance(v, (int, float))]
+    if not xs:
+        return "—", 0
+    m = statistics.mean(xs)
+    s = statistics.stdev(xs) if len(xs) > 1 else 0.0
+    return f"{m:.3f}±{s:.3f}", len(xs)
+
+
+def print_agg():
+    """시드 집계 — 동일 조건의 여러 시드를 평균±표준편차로. '차이가 노이즈인가' 판정."""
+    rows = load_index()
+    ev, gn = defaultdict(list), defaultdict(list)
+    for r in rows:
+        if r.get("kind") == "eval":
+            ev[(_config_key(r["run_id"]), r.get("reg_loop"))].append(r)
+        elif r.get("kind") == "generalization":
+            gn[(_config_key(r["run_id"]), r.get("subset"))].append(r)
+    print("=== [eval] 전체 test (시드 집계) ===")
+    print(f"{'config':50} {'loop':4} {'seeds':>5} {'adj_L1(mean±std)':>18} {'legal':>6} {'div':>6}")
+    for (cfg, loop), rs in sorted(ev.items()):
+        a, n = _ms([r.get("adj_L1") for r in rs])
+        lg, _ = _ms([r.get("legal") for r in rs])
+        dv, _ = _ms([r.get("diversity") for r in rs])
+        print(f"{cfg[:50]:50} {str(loop):4} {n:>5} {a:>18} {lg.split('±')[0]:>6} {dv.split('±')[0]:>6}")
+    print("\n=== [generalization] seen/unseen program (시드 집계) ===")
+    print(f"{'config':50} {'subset':7} {'seeds':>5} {'adj_L1(mean±std)':>18}")
+    for (cfg, sub), rs in sorted(gn.items(), key=lambda x: (x[0][0], x[0][1])):
+        a, n = _ms([r.get("adj_L1") for r in rs])
+        print(f"{cfg[:50]:50} {str(sub):7} {n:>5} {a:>18}")
+
+
 if __name__ == "__main__":
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -168,6 +209,6 @@ if __name__ == "__main__":
         pass
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", nargs="?", default="table", choices=["table"])
-    ap.parse_args()
-    print_table()
+    ap.add_argument("cmd", nargs="?", default="table", choices=["table", "agg"])
+    a = ap.parse_args()
+    print_agg() if a.cmd == "agg" else print_table()

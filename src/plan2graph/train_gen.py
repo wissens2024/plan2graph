@@ -30,7 +30,7 @@ TYPES = list(config.SPACE_CLASSES)
 TYPE_ID = {t.replace("공간_", ""): i for i, t in enumerate(TYPES)}
 VIAS = ["door", "open", "balcony"]
 MODELS_DIR = ROOT / "models"
-ARCH = "set-transformer-v1"   # 모델 아키텍처 태그(실험 run_id·재현 식별용)
+ARCH = "set-transformer-v2"   # 모델 아키텍처 태그. v2=배치학습 레짐(v1=미배치, git에 보존)
 
 
 # ── 데이터: 레코드 → (노드 타입 id, 양성 엣지) ──
@@ -136,13 +136,16 @@ def _build_model(emb=48, hid=96, layers=2, heads=4):
 
 
 def train(pretrain: str | None, finetune: str, epochs: int = 30, lr: float = 1e-3,
-          neg_ratio: int = 3, out: Path = None, seed: int = 42):
+          neg_ratio: int = 3, out: Path = None, seed: int = 42,
+          pretrain_epochs: int = None, batch_size: int = 64):
     """링크예측 학습(+via). pretrain(글로벌)→finetune(한국형) 이어학습.
 
-    seed 고정 + 조건별 runs/<run_id>/ 보존(checkpoint·meta·train.log) →
-    '글로벌 무/유 × 파인튜닝' 비교를 영구 보존·재현 가능하게(experiments)."""
+    epochs=finetune 에폭(noPretrain과 동일 예산으로 공정 비교), pretrain_epochs=글로벌 에폭.
+    배치학습(인코더·헤드를 패딩+마스크로 한 번에) + 1회 사전계산(에폭마다 재featurize 제거)
+    → 미배치 대비 수배 가속(다중시드·매트릭스 현실화). seed 고정 + runs/ 보존(재현)."""
     import torch
     exp.seed_everything(seed)
+    pretrain_epochs = pretrain_epochs if pretrain_epochs is not None else epochs
     from plan2graph.model_baseline import _load_split
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     model = _build_model().to(dev)
@@ -150,38 +153,76 @@ def train(pretrain: str | None, finetune: str, epochs: int = 30, lr: float = 1e-
     bce = torch.nn.BCEWithLogitsLoss()
     ce = torch.nn.CrossEntropyLoss()
 
-    def epoch_pass(records, train=True):
-        tot = 0.0
+    def _prep(records):
+        """레코드 → (type_ids, pair_i, pair_j, y, via) 1회 사전계산(에폭마다 재featurize 방지).
+        크기로 정렬(버킷팅) → 배치 내 패딩 낭비 최소화."""
+        data = []
         for rec in records:
             tids, pos = featurize(rec)
-            if len(tids) < 2:
+            n = len(tids)
+            if n < 2:
                 continue
-            t = torch.tensor(tids, device=dev)
-            elog, vlog, ii, jj = model(t)
-            y = torch.zeros(ii.size(0), device=dev)
-            via_y = torch.full((ii.size(0),), -1, device=dev, dtype=torch.long)
-            for k in range(ii.size(0)):
-                key = (int(ii[k]), int(jj[k]))
-                if key in pos:
-                    y[k] = 1.0; via_y[k] = pos[key]
+            pi, pj, ys, vs = [], [], [], []
+            for i in range(n):
+                for j in range(i + 1, n):
+                    pi.append(i); pj.append(j)
+                    if (i, j) in pos:
+                        ys.append(1.0); vs.append(pos[(i, j)])
+                    else:
+                        ys.append(0.0); vs.append(-1)
+            data.append((tids, pi, pj, ys, vs))
+        data.sort(key=lambda d: len(d[0]))
+        return data
+
+    def epoch_pass(data, train=True):
+        # 비슷한 크기 버킷 배치 → 인코더(패딩+key_padding_mask)·헤드를 GPU에서 한 번에.
+        batches = [data[k:k + batch_size] for k in range(0, len(data), batch_size)]
+        order = torch.randperm(len(batches)).tolist() if train else list(range(len(batches)))
+        tot, nb = 0.0, 0
+        for bi in order:
+            batch = batches[bi]
+            B = len(batch); lens = [len(d[0]) for d in batch]; maxN = max(lens)
+            tt = torch.zeros(B, maxN, dtype=torch.long, device=dev)
+            pad = torch.ones(B, maxN, dtype=torch.bool, device=dev)
+            for b, d in enumerate(batch):
+                tt[b, :lens[b]] = torch.tensor(d[0], device=dev)
+                pad[b, :lens[b]] = False
+            e = model.emb(tt)                                   # [B,maxN,emb]
+            h = model.enc(e, src_key_padding_mask=pad)          # 배치 self-attention
+            valid = (~pad).unsqueeze(-1).float()
+            g = (h * valid).sum(1) / valid.sum(1)               # 마스킹 전역평균 [B,emb]
+            bidx, iidx, jidx, ys, vs = [], [], [], [], []
+            for b, d in enumerate(batch):
+                _, pi, pj, py, pv = d
+                bidx += [b] * len(pi); iidx += pi; jidx += pj; ys += py; vs += pv
+            bidx = torch.tensor(bidx, device=dev)
+            iidx = torch.tensor(iidx, device=dev); jidx = torch.tensor(jidx, device=dev)
+            hi = h[bidx, iidx]; hj = h[bidx, jidx]
+            feat = torch.cat([hi + hj, (hi - hj).abs(), g[bidx]], dim=1)  # [P,3emb]
+            elog = model.edge(feat).squeeze(-1)
+            vlog = model.via(feat)
+            y = torch.tensor(ys, device=dev)
+            via_y = torch.tensor(vs, device=dev, dtype=torch.long)
             loss = bce(elog, y)
             m = via_y >= 0
             if m.any():
                 loss = loss + ce(vlog[m], via_y[m])
             if train:
                 opt.zero_grad(); loss.backward(); opt.step()
-            tot += float(loss)
-        return tot / max(len(records), 1)
+            tot += float(loss); nb += 1
+        return tot / max(nb, 1)
 
     stages = ([("pretrain", _load_split(pretrain, "train"))] if pretrain else []) \
         + [("finetune", _load_split(finetune, "train"))]
     loss_curve = {}
     for name, recs in stages:
-        print(f"[{name}] {len(recs)} graphs")
+        n_ep = pretrain_epochs if name == "pretrain" else epochs
+        data = _prep(recs)
+        print(f"[{name}] {len(data)} graphs, {n_ep} epochs, batch={batch_size}")
         loss_curve[name] = []
-        for ep in range(epochs):
-            ls = epoch_pass(recs, True)
-            if ep % 5 == 0 or ep == epochs - 1:
+        for ep in range(n_ep):
+            ls = epoch_pass(data, True)
+            if ep % 5 == 0 or ep == n_ep - 1:
                 print(f"  ep{ep} loss={ls:.4f}")
                 loss_curve[name].append([ep, round(ls, 4)])
     # 창 보유 확률(타입별) — 채광 법규 평가용. finetune 학습셋에서 집계해 함께 저장.
@@ -199,7 +240,9 @@ def train(pretrain: str | None, finetune: str, epochs: int = 30, lr: float = 1e-
     run_id = exp.make_run_id("neural", finetune, pretrain, seed, ARCH)
     condition = {"task": "generator", "generator": "neural", "arch": ARCH,
                  "data_version": finetune, "pretrain": pretrain,
-                 "finetune": finetune, "epochs": epochs, "lr": lr, "seed": seed}
+                 "finetune": finetune, "epochs": epochs,
+                 "pretrain_epochs": (pretrain_epochs if pretrain else None),
+                 "lr": lr, "seed": seed, "batch_size": batch_size}
     payload = {"state": model.state_dict(), "types": TYPES, "vias": VIAS,
                "p_window": p_window, "run_id": run_id, "condition": condition}
     run_dir = exp.start_run(run_id)
@@ -285,9 +328,12 @@ if __name__ == "__main__":
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--pretrain", default=None, help="글로벌 사전학습 버전(global_*)")
     ap.add_argument("--finetune", default="v0", help="한국형 파인튜닝 버전")
-    ap.add_argument("--epochs", type=int, default=30)
+    ap.add_argument("--epochs", type=int, default=30, help="finetune 에폭")
+    ap.add_argument("--pretrain-epochs", type=int, default=None, help="글로벌 사전학습 에폭")
     ap.add_argument("--seed", type=int, default=42, help="재현용 시드")
+    ap.add_argument("--batch-size", type=int, default=64, help="배치 크기")
     a = ap.parse_args()
     if a.self_test:
         sys.exit(0 if _self_test() else 1)
-    train(a.pretrain, a.finetune, a.epochs, seed=a.seed)
+    train(a.pretrain, a.finetune, a.epochs, seed=a.seed,
+          pretrain_epochs=a.pretrain_epochs, batch_size=a.batch_size)

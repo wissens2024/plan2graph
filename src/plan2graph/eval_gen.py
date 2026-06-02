@@ -168,6 +168,50 @@ def sweep_temperature(version: str, temps: list, select_split: str = "val") -> N
               f"{r['diversity']:>7} {r['novelty']:>7}")
 
 
+def _prog_sig(rec: dict) -> str:
+    """program 지문 = 방 타입 개수 multiset(인접 무관). 학습에 본 조합인지 판정용."""
+    c = Counter(n["type"] for n in rec["layout"]["nodes"] if isinstance(n["id"], int))
+    return ",".join(f"{k}{v}" for k, v in sorted(c.items()))
+
+
+def generalization_diag(version: str, temperature: float = 0.85) -> None:
+    """일반화 진단: test를 '학습에 본 program' vs '못 본 program'으로 분할해
+    baseline(쌍빈도) vs neural(program 조건화) 비교. 신경망의 진짜 헤드룸 확인.
+    가설: 못 본 program에서 baseline의 marginal 우위가 약해지고 neural이 따라잡/이김."""
+    from plan2graph.train_gen import NeuralGenerator
+    train = mb._load_split(version, "train")
+    test = mb._load_split(version, "test")
+    if not train or not test:
+        print(f"  [데이터 없음] {version}"); return
+    train_progs = {_prog_sig(r) for r in train}
+    seen = [r for r in test if _prog_sig(r) in train_progs]
+    unseen = [r for r in test if _prog_sig(r) not in train_progs]
+    print(f"test {len(test)}장 = 본 program {len(seen)} / 못 본 program {len(unseen)}")
+    if not unseen:
+        print("  [못 본 program 없음 — 진단 불가]"); return
+
+    model = mb.fit(train)
+    gen_b, adj = gen_loop.baseline_gen_fn(model)
+    tsigs = model.get("train_sigs", set())
+    ckpt = ROOT / "models" / f"gen_{version}.pt"
+    ng = NeuralGenerator(str(ckpt)) if ckpt.exists() else None
+    base = ng.run_id if ng else exp.make_run_id("neural", version, None, 42)
+    gens = [("baseline", gen_b, exp.make_run_id("baseline", version, None, 0))]
+    if ng:
+        gens.append(("neural", _neural_gen(ng, temperature), f"{base}-T{temperature}"))
+
+    print(f"\n{'subset':8} {'gen':9} {'n':>4} {'무결성':>7} {'법규':>6} "
+          f"{'인접L1':>7} {'다양성':>7} {'신규성':>7}")
+    for sub_name, subset in (("seen", seen), ("unseen", unseen)):
+        for gname, gfn, rid in gens:
+            m = _metrics(gfn, subset, tsigs, False, None)
+            print(f"{sub_name:8} {gname:9} {len(subset):>4} {m['integrity']:>7} "
+                  f"{m['legal']:>6} {m['adj_L1']:>7} {m['diversity']:>7} {m['novelty']:>7}")
+            exp.append_index({"kind": "generalization", "run_id": rid, "subset": sub_name,
+                              "n": len(subset), "generator": gname, "version": version,
+                              "git_commit": exp.git_commit(), **m})
+
+
 def run(versions: list[str], n_test: int | None = None) -> Path:
     rows = []
     for v in versions:
@@ -201,9 +245,13 @@ if __name__ == "__main__":
     ap.add_argument("--n-test", type=int, default=None)
     ap.add_argument("--sweep-temp", default=None,
                     help="생성 온도 스윕(쉼표 T목록). 예: 0.5,0.7,0.85,1.0,1.2,1.5,2.0")
-    ap.add_argument("--version", default="v0", help="스윕 대상 버전")
+    ap.add_argument("--version", default="v0", help="스윕/진단 대상 버전")
+    ap.add_argument("--generalization", action="store_true",
+                    help="일반화 진단(본 program vs 못 본 program)")
     a = ap.parse_args()
-    if a.sweep_temp:
+    if a.generalization:
+        generalization_diag(a.version)
+    elif a.sweep_temp:
         sweep_temperature(a.version, [float(x) for x in a.sweep_temp.split(",") if x.strip()])
     else:
         run([v.strip() for v in a.versions.split(",") if v.strip()], a.n_test)
