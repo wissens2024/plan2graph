@@ -26,6 +26,13 @@
 # ── 추적: 코드·문서·규칙DB·릴리스 메타(manifest/eval/splits/card)·요약 CSV ──
 #   (legal/*.json, *.md, data/releases/*/{manifest,eval,splits,dataset_card}, *.csv 요약은 추적)
 
+# ── 실험 원장(runs/): 프로비넌스·비교표는 추적, 체크포인트(*.pt)는 위 규칙으로 제외 ──
+#   runs/<run_id>/{meta.json,metrics.json,train.log} + runs/index.jsonl = git 추적(재현·비교)
+#   runs/<run_id>/checkpoint.pt = *.pt 규칙으로 제외(시드+코드로 재생성)
+
+# 런타임 로그(서버 nohup 산출 — 추적 제외)
+/logs/
+
 # Python / 환경 / OS
 __pycache__/
 *.py[cod]

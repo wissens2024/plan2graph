@@ -1,0 +1,26 @@
+{
+  "rows": [
+    {
+      "version": "v0",
+      "generator": "neural",
+      "temperature": 0.85,
+      "reg_loop": "off",
+      "integrity": 1.0,
+      "legal": 0.94,
+      "adj_L1": 0.136,
+      "diversity": 0.998,
+      "novelty": 0.998
+    },
+    {
+      "version": "v0",
+      "generator": "neural",
+      "temperature": 0.85,
+      "reg_loop": "on",
+      "integrity": 1.0,
+      "legal": 1.0,
+      "adj_L1": 0.136,
+      "diversity": 0.998,
+      "novelty": 0.998
+    }
+  ]
+}

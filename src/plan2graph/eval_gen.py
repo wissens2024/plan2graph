@@ -23,6 +23,7 @@ for _p in (str(ROOT), str(ROOT / "src")):
 import config  # noqa: E402
 from plan2graph import model_baseline as mb  # noqa: E402
 from plan2graph import gen_loop  # noqa: E402
+from plan2graph import experiments as exp  # noqa: E402
 from plan2graph.topology import EXTERIOR  # noqa: E402
 
 CONNECT = mb.CONNECT_VIAS
@@ -62,6 +63,18 @@ def _metrics(gen_fn, test: list[dict], train_sigs: set, use_loop: bool,
             "novelty": round(novel / n, 3)}
 
 
+def _record(run_id: str, version: str, generator: str, pretrain, rows: list):
+    """조건별 runs/<run_id>/metrics.json 보존 + 원장(index.jsonl) append.
+    덮어쓰지 않으므로 '글로벌 무/유' 등 모든 조건이 나란히 누적된다."""
+    run_dir = exp.start_run(run_id)
+    exp.write_metrics(run_dir, rows)
+    sha = exp.git_commit()
+    for r in rows:
+        exp.append_index({"kind": "eval", "run_id": run_id, "generator": generator,
+                          "version": version, "pretrain": pretrain,
+                          "git_commit": sha, **r})
+
+
 def evaluate_version(version: str, n_test: int | None = None) -> list[dict]:
     train = mb._load_split(version, "train")
     test = mb._load_split(version, "test")
@@ -74,23 +87,85 @@ def evaluate_version(version: str, n_test: int | None = None) -> list[dict]:
     model = mb.fit(train)
     gen_fn, adj = gen_loop.baseline_gen_fn(model)
     tsigs = model.get("train_sigs", set())
+    brows = []
     for loop in (False, True):
         m = _metrics(gen_fn, test, tsigs, loop, adj)
-        rows.append({"version": version, "generator": "baseline",
-                     "reg_loop": "on" if loop else "off", **m})
-    # 신경망(체크포인트 있으면)
+        row = {"version": version, "generator": "baseline",
+               "reg_loop": "on" if loop else "off", **m}
+        rows.append(row); brows.append(row)
+    _record(exp.make_run_id("baseline", version, None, 0), version, "baseline", None, brows)
+    # 신경망(체크포인트 있으면) — 프로비넌스(run_id·pretrain)는 체크포인트에서 읽음
     ckpt = ROOT / "models" / f"gen_{version}.pt"
     if ckpt.exists():
         try:
             from plan2graph.train_gen import NeuralGenerator
             ng = NeuralGenerator(str(ckpt))
+            nrun = ng.run_id or exp.make_run_id("neural", version, None, 42)
+            npre = (ng.condition or {}).get("pretrain")
+            nrows = []
             for loop in (False, True):
                 m = _metrics(ng.generate, test, tsigs, loop, None)
-                rows.append({"version": version, "generator": "neural",
-                             "reg_loop": "on" if loop else "off", **m})
+                row = {"version": version, "generator": "neural",
+                       "reg_loop": "on" if loop else "off", **m}
+                rows.append(row); nrows.append(row)
+            _record(nrun, version, "neural", npre, nrows)
         except Exception as e:  # noqa: BLE001
             print(f"  [신경망 평가 건너뜀: {str(e)[:60]}]")
     return rows
+
+
+def _neural_gen(ng, temperature: float):
+    """gen_loop/_metrics가 기대하는 (program, rng) 시그니처로 온도 주입."""
+    return lambda program, rng: ng.generate(program, rng, temperature=temperature)
+
+
+def sweep_temperature(version: str, temps: list, select_split: str = "val") -> None:
+    """재학습 없이 생성 온도 T 스윕 — val에서 선택 → test 1회 측정(누수 방지).
+    val 스윕은 runs/<base>/temp_sweep_val.json 보존, test 최종은 원장에 -T 태그로 기록."""
+    from plan2graph.train_gen import NeuralGenerator
+    train = mb._load_split(version, "train")
+    sel = mb._load_split(version, select_split)
+    test = mb._load_split(version, "test")
+    if not train or not sel or not test:
+        print(f"  [데이터 없음] {version}"); return
+    tsigs = mb.fit(train).get("train_sigs", set())
+    ckpt = ROOT / "models" / f"gen_{version}.pt"
+    if not ckpt.exists():
+        print(f"  [체크포인트 없음] {ckpt}"); return
+    ng = NeuralGenerator(str(ckpt))
+    base = ng.run_id or exp.make_run_id("neural", version, None, 42)
+
+    print(f"온도 스윕 (선택셋={select_split}, n={len(sel)}) — adj_L1 최소 T 탐색")
+    print(f"{'T':>5} {'무결성':>7} {'법규':>6} {'인접L1':>7} {'다양성':>7} {'신규성':>7}")
+    sweep = []
+    for T in temps:
+        m = _metrics(_neural_gen(ng, T), sel, tsigs, False, None)
+        sweep.append({"T": T, **m})
+        print(f"{T:>5} {m['integrity']:>7} {m['legal']:>6} {m['adj_L1']:>7} "
+              f"{m['diversity']:>7} {m['novelty']:>7}")
+    # 선택: 다양성 0.5 이상 가드 하에서 adj_L1 최소
+    cand = [s for s in sweep if s["diversity"] >= 0.5] or sweep
+    best = min(cand, key=lambda s: s["adj_L1"])
+    bT = best["T"]
+    print(f"\n▶ 선택(val): T={bT}  adj_L1={best['adj_L1']}  다양성={best['diversity']}")
+    run_dir = exp.start_run(base)
+    (run_dir / "temp_sweep_val.json").write_text(
+        json.dumps({"select_split": select_split, "sweep": sweep, "best_T": bT},
+                   ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # 최종: test에서 best T 1회 → 원장(-T 태그)
+    rid = f"{base}-T{bT}"
+    rows = []
+    for loop in (False, True):
+        m = _metrics(_neural_gen(ng, bT), test, tsigs, loop, None)
+        rows.append({"version": version, "generator": "neural", "temperature": bT,
+                     "reg_loop": "on" if loop else "off", **m})
+    _record(rid, version, "neural", (ng.condition or {}).get("pretrain"), rows)
+    print(f"\n=== test 최종(T={bT}) → 원장: {rid} ===")
+    print(f"{'loop':5} {'무결성':>7} {'법규':>6} {'인접L1':>7} {'다양성':>7} {'신규성':>7}")
+    for r in rows:
+        print(f"{r['reg_loop']:5} {r['integrity']:>7} {r['legal']:>6} {r['adj_L1']:>7} "
+              f"{r['diversity']:>7} {r['novelty']:>7}")
 
 
 def run(versions: list[str], n_test: int | None = None) -> Path:
@@ -124,5 +199,11 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--versions", default="v0,v1,v2,global_rplan,global_cubicasa")
     ap.add_argument("--n-test", type=int, default=None)
+    ap.add_argument("--sweep-temp", default=None,
+                    help="생성 온도 스윕(쉼표 T목록). 예: 0.5,0.7,0.85,1.0,1.2,1.5,2.0")
+    ap.add_argument("--version", default="v0", help="스윕 대상 버전")
     a = ap.parse_args()
-    run([v.strip() for v in a.versions.split(",") if v.strip()], a.n_test)
+    if a.sweep_temp:
+        sweep_temperature(a.version, [float(x) for x in a.sweep_temp.split(",") if x.strip()])
+    else:
+        run([v.strip() for v in a.versions.split(",") if v.strip()], a.n_test)

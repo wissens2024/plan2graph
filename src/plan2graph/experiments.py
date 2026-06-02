@@ -1,0 +1,173 @@
+"""실험 자료 보존·재현 — 버전별 실험 디렉토리 + append-only 원장(ledger).
+
+목적: 생성기 조건(데이터버전 × 글로벌 사전학습 무/유 × 파인튜닝 × seed)을
+각각 runs/<run_id>/ 에 보존하고, runs/index.jsonl 에 한 줄씩 누적해
+"글로벌 안 한 것 vs 한 것" 등을 나란히 비교·재현 가능하게 한다.
+
+- 시드 고정 + 프로비넌스(git commit·데이터 manifest 해시·torch/CUDA·호스트) 기록 → 재현.
+- 체크포인트(*.pt)는 용량상 git 제외(시드+코드로 재생성), meta/metrics/log·원장(index.jsonl)은 추적.
+
+CLI: python -m plan2graph.experiments table   # 원장 비교표 출력
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import platform
+import socket
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+for _p in (str(ROOT), str(ROOT / "src")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+import config  # noqa: E402
+
+RUNS_DIR = ROOT / "runs"
+INDEX = RUNS_DIR / "index.jsonl"
+
+
+def _now() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def git_commit() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=str(ROOT),
+            stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
+def env_provenance() -> dict:
+    """재현 환경 핀: python·platform·host·torch/CUDA·GPU."""
+    info = {"python": platform.python_version(), "platform": sys.platform,
+            "host": socket.gethostname()}
+    try:
+        import torch
+        info["torch"] = torch.__version__
+        info["cuda"] = bool(torch.cuda.is_available())
+        if torch.cuda.is_available():
+            info["gpu"] = torch.cuda.get_device_name(0)
+    except Exception:  # noqa: BLE001
+        info["torch"] = None
+    return info
+
+
+def data_provenance(version: str) -> dict:
+    """데이터 핀: manifest 해시 + split 크기·해시 → '어떤 데이터였나' 고정."""
+    rel = config.DATA_DIR / "releases" / version
+    prov = {"version": version, "manifest_sha": None}
+    man = rel / "manifest.json"
+    if man.exists():
+        prov["manifest_sha"] = hashlib.sha256(man.read_bytes()).hexdigest()[:16]
+    for sp in ("train", "val", "test"):
+        f = rel / "splits" / f"{sp}.txt"
+        if f.exists():
+            ids = f.read_text(encoding="utf-8").split()
+            prov[f"n_{sp}"] = len(ids)
+            prov[f"sha_{sp}"] = hashlib.sha256(
+                "\n".join(sorted(ids)).encode()).hexdigest()[:12]
+    return prov
+
+
+def seed_everything(seed: int):
+    """재현용 시드 고정(random/numpy/torch + cudnn determinism)."""
+    import random as _r
+    _r.seed(seed)
+    try:
+        import numpy as _np
+        _np.random.seed(seed)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import torch
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def make_run_id(generator: str, version: str, pretrain=None, seed: int = 42,
+                arch: str = None) -> str:
+    """조건을 사람이 읽는 안정 slug로. 예: gen-v0-neural-set-transformer-v1-noPretrain-seed42."""
+    parts = ["gen", version, generator]
+    if generator == "neural":
+        parts.append(arch or "nn")
+        parts.append("noPretrain" if not pretrain else "pre_" + str(pretrain))
+    parts.append(f"seed{seed}")
+    return "-".join(parts)
+
+
+def start_run(run_id: str) -> Path:
+    d = RUNS_DIR / run_id
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def write_meta(run_dir: Path, meta: dict) -> dict:
+    full = {"created": _now(), "git_commit": git_commit(),
+            "env": env_provenance(), **meta}
+    (run_dir / "meta.json").write_text(
+        json.dumps(full, ensure_ascii=False, indent=2), encoding="utf-8")
+    return full
+
+
+def write_metrics(run_dir: Path, rows: list):
+    (run_dir / "metrics.json").write_text(
+        json.dumps({"rows": rows}, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def append_index(record: dict):
+    """원장에 한 줄 추가(append-only — 과거 결과 절대 안 지움)."""
+    RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    rec = {"logged": _now(), **record}
+    with INDEX.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+
+def load_index() -> list:
+    if not INDEX.exists():
+        return []
+    return [json.loads(ln) for ln in INDEX.read_text(encoding="utf-8").splitlines()
+            if ln.strip()]
+
+
+def print_table():
+    """원장의 eval 기록을 비교표로 — '글로벌 무/유 × 버전 × 생성기'를 나란히."""
+    evals = [r for r in load_index() if r.get("kind") == "eval"]
+    if not evals:
+        print("기록된 평가 없음. (train+eval 후 생성)")
+        return
+    print(f"{'run_id':60} {'loop':5} {'무결성':>7} {'법규':>6} "
+          f"{'인접L1':>7} {'다양성':>7} {'신규성':>7} {'git':>9} {'logged':>20}")
+    for r in evals:
+        print(f"{str(r.get('run_id',''))[:60]:60} {str(r.get('reg_loop','')):5} "
+              f"{r.get('integrity',''):>7} {r.get('legal',''):>6} "
+              f"{r.get('adj_L1',''):>7} {r.get('diversity',''):>7} "
+              f"{r.get('novelty',''):>7} {str(r.get('git_commit',''))[:8]:>9} "
+              f"{str(r.get('logged',''))[:19]:>20}")
+    # 최고 성능(인접L1 최소, loop off 기준) 강조
+    offs = [r for r in evals if r.get("reg_loop") == "off" and isinstance(r.get("adj_L1"), (int, float))]
+    if offs:
+        best = min(offs, key=lambda r: r["adj_L1"])
+        print(f"\n▶ 인접L1 최저(loop off): {best['run_id']}  adj_L1={best['adj_L1']}")
+
+
+if __name__ == "__main__":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("cmd", nargs="?", default="table", choices=["table"])
+    ap.parse_args()
+    print_table()
