@@ -96,18 +96,21 @@ def _read_entry(zip_path: str, entry: str) -> bytes:
 
 
 def process_pair(sheet_id: str, house: str,
-                 entries: dict[str, tuple[str, str]]) -> dict:
+                 entries: dict[str, tuple[str, str]], provenance: str = "aihub_label") -> dict:
     """한 시트(라벨 엔트리 묶음) → 세대별 표준 레코드 리스트 + 상태.
     ※ AI-Hub FP 시트엔 여러 세대가 타일돼 있다 → iter_units로 분해, 세대당 1레코드.
-    entries: {'SPA': (zip,entry), 'STR': (zip,entry), ...}
-    반환: {status, reason, sheet_id, records[], ...}
+    entries: {'SPA': (zip,entry), ...}. zip='__file__'이면 entry=디스크 경로(예측 COCO).
+    provenance: 'aihub_label'(실라벨) / 'v2_pred'(V2V 예측 포함) — meta에 기록.
     """
     try:
         docs = []
         for label in ("SPA", "STR", "OBJ", "OCR"):
             if label in entries:
                 zip_path, entry = entries[label]
-                data = _read_entry(zip_path, entry)
+                if zip_path == "__file__":            # 예측 COCO(디스크 파일)
+                    data = Path(entry).read_bytes()
+                else:
+                    data = _read_entry(zip_path, entry)
                 docs.append(load_coco_bytes(data, source=entry))
         dr = assemble_drawing(docs)
         if len(dr.rooms) < MIN_ROOMS:
@@ -129,6 +132,7 @@ def process_pair(sheet_id: str, house: str,
             val = validate(U)
             rec = serialize(U, graph_id=uid, house_type=house,
                             width=dr.width, height=dr.height, validation=val)
+            rec["meta"]["provenance"] = provenance      # 실라벨 / v2_pred
             records.append({
                 "graph_id": uid, "record": rec,
                 "integrity_passed": val["passed"],
@@ -196,7 +200,13 @@ def build(splits, limit: int | None, jobs: int, out_dir: Path) -> None:
         results = [process_pair(gid, house, entries)
                    for gid, house, entries in tasks]
 
-    # 집계: 완벽한 세대만 채택, 나머지는 격리 목록(quarantine)에 기록
+    _aggregate_write(results, out_dir, "+".join(splits))
+
+
+def _aggregate_write(results, out_dir: Path, tag: str) -> None:
+    """결과 → 완벽 세대만 채택(graphs/ 저장) + 격리 목록. (build / build_predicted 공용)"""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "graphs").mkdir(exist_ok=True)
     n_sheet_ok = n_sheet_err = 0
     n_units = n_accept = 0
     q_reasons = defaultdict(int)
@@ -256,7 +266,7 @@ def build(splits, limit: int | None, jobs: int, out_dir: Path) -> None:
         w.writeheader()
         w.writerows(quarantine_rows)
 
-    print(f"\n=== 변환 결과 ({split}) ===")
+    print(f"\n=== 변환 결과 ({tag}) ===")
     print(f"  시트 성공 {n_sheet_ok:,}  오류 {n_sheet_err:,}")
     print(f"  세대 추출 {n_units:,}  →  ★채택(완벽) {n_accept:,}  "
           f"격리 {len(quarantine_rows):,}")
@@ -267,6 +277,46 @@ def build(splits, limit: int | None, jobs: int, out_dir: Path) -> None:
     print(f"  채택 그래프: {out_dir / 'graphs'}  ({n_accept:,}개)")
     print(f"  채택 목록: {acc_path}")
     print(f"  격리 목록(후일 검토): {q_path}")
+
+
+def build_predicted(split: str, jobs: int, out_dir: Path,
+                    limit: int | None = None) -> None:
+    """V2V 예측 라벨(predicted/) + 기존 실라벨 페어 → 위상→채택 (v2 데이터).
+    단일라벨 도면(SPA만/STR만)에 대해 예측된 빠진 종류와 페어링. provenance='v2_pred'.
+    """
+    from plan2graph import unpack
+    pred_dir = config.DATA_DIR / "v2v" / "predicted"
+    if not pred_dir.exists():
+        raise SystemExit(f"예측 라벨 없음: {pred_dir} (먼저 v2v_infer 실행)")
+    fmap = unpack.fingerprint_label_map(split=split)
+    label_index = build_label_index(split)
+    tasks = []
+    for fp, labels in fmap.items():
+        has = {k for k in ("SPA", "STR") if k in labels}
+        if len(has) != 1:               # 단일라벨만(둘다/둘다없음 제외)
+            continue
+        have = has.pop()
+        miss = "STR" if have == "SPA" else "SPA"
+        pred_path = pred_dir / f"{miss}_{labels[have]}.json"
+        if not pred_path.exists():
+            continue
+        have_entry = label_index.get((have, labels[have]))
+        if not have_entry:
+            continue
+        m = parse_name(Path(have_entry[1]).stem)
+        house = m["house"] if m else "UNK"
+        entries = {have: have_entry, miss: ("__file__", str(pred_path))}
+        tasks.append((f"{house}_FP_{fp}", house, entries))
+        if limit and len(tasks) >= limit:
+            break
+    print(f"예측 페어 처리 대상 {len(tasks):,}개 ({split})")
+    if jobs > 1:
+        from joblib import Parallel, delayed
+        results = Parallel(n_jobs=jobs, prefer="processes")(
+            delayed(process_pair)(g, h, e, "v2_pred") for g, h, e in tasks)
+    else:
+        results = [process_pair(g, h, e, "v2_pred") for g, h, e in tasks]
+    _aggregate_write(results, out_dir, "predicted/v2")
 
 
 def main(argv=None):
@@ -280,9 +330,15 @@ def main(argv=None):
     ap.add_argument("--limit", type=int, default=None, help="파일럿: 앞 N개만")
     ap.add_argument("--jobs", type=int, default=1)
     ap.add_argument("--out", default=str(config.PROCESSED_DIR))
+    ap.add_argument("--predicted", action="store_true",
+                    help="V2V 예측 라벨 페어 모드(v2)")
     args = ap.parse_args(argv)
-    splits = ["Training", "Validation"] if args.split == "all" else [args.split]
-    build(splits, args.limit, args.jobs, Path(args.out))
+    if args.predicted:
+        sp = "Training" if args.split == "all" else args.split
+        build_predicted(sp, args.jobs, Path(args.out), args.limit)
+    else:
+        splits = ["Training", "Validation"] if args.split == "all" else [args.split]
+        build(splits, args.limit, args.jobs, Path(args.out))
 
 
 if __name__ == "__main__":
