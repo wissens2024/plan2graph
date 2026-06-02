@@ -193,9 +193,25 @@ if which.startswith("📊"):
                          "인접L1": e.get("adjacency_L1_distance"),
                          "다양성": e.get("diversity"), "신규성": e.get("novelty")})
     if rows:
+        st.caption("데이터셋 버전별 baseline 요약")
         st.table(rows)
     if len(rows) < 2:
-        st.caption("v1(보정·증강) 동결 후 같은 표에서 v0와 비교됩니다.")
+        st.caption("v1/v2 동결 후 같은 표에서 v0와 비교됩니다.")
+
+    # eval_gen A/B 종합 행렬 (데이터버전 × 생성기 × 규제루프)
+    ab_path = REL / "eval_ab.json"
+    if ab_path.exists():
+        ab = _json.loads(ab_path.read_text(encoding="utf-8")).get("rows", [])
+        if ab:
+            st.subheader("A/B 종합 — 데이터 × 생성기 × 규제루프 (eval_gen)")
+            st.caption("규제루프 on이 법규통과를 끌어올리는지, 신경망>baseline인지, "
+                       "데이터 버전(양·질)이 사실성을 높이는지 한눈에.")
+            st.table([{"버전": r["version"], "생성기": r["generator"],
+                       "규제루프": r["reg_loop"], "무결성": r["integrity"],
+                       "법규통과": r["legal"], "인접L1↓": r["adj_L1"],
+                       "다양성": r["diversity"], "신규성": r["novelty"]} for r in ab])
+    else:
+        st.caption("A/B 종합 표: `python src/plan2graph/eval_gen.py` 실행 후 표시됩니다.")
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════

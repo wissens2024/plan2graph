@@ -49,9 +49,17 @@ RULES: list[Rule] = [
          "건축법 시행령", "제34조(직통계단)", "273503",
          "각 실에서 피난층/외부로 통하는 경로 존재(위상 도달성).",
          "confirmed", False),
+    Rule("L1_daylight_ratio", "거실·침실 채광 면적비", "강행",
+         "건축물의 피난·방화구조 등의 기준에 관한 규칙", "제17조제1항", "279461",
+         f"창 면적 ≥ 바닥 {config.LEGAL_DAYLIGHT_RATIO}. 창높이 {config.WINDOW_EST_HEIGHT_M}m 추정(폭만 라벨).",
+         "estimate_scale", True),
     Rule("L4_bedroom_min_area", "침실 최소 면적", "강행(전문가확인)",
+         "주거기본법/최저주거기준 고시", "최저주거기준",  None,
+         f"침실 면적 ≥ {config.LEGAL_BEDROOM_MIN_M2}㎡(참고값). 수치 전문가 확인 필요.",
+         "needs_expert", True),
+    Rule("L5_dwelling_min_area", "세대 최소 전용면적", "강행(전문가확인)",
          "주거기본법/최저주거기준 고시", "최저주거기준", None,
-         f"침실 면적 ≥ {config.__dict__.get('LEGAL_BEDROOM_MIN_M2', '미정')}㎡. 수치 전문가 확인 필요.",
+         f"세대 거주실 면적 합 ≥ {config.LEGAL_MIN_DWELLING_M2}㎡(1인 참고값).",
          "needs_expert", True),
 ]
 
@@ -69,13 +77,27 @@ def _hab_nodes(G: nx.Graph):
 
 
 def check_daylight(G: nx.Graph) -> list[dict]:
-    """L1/L2: 거실·침실에 창이 없으면 채광·환기 필요조건 위반(§17)."""
+    """L1: 거실·침실 채광(§17①). 창 없으면 필요조건 위반.
+    scale·창폭·면적 있으면 **면적비**(창면적 ≥ 바닥 1/10)까지 검사(창높이 추정)."""
+    scale = G.graph.get("scale")
+    ratio = getattr(config, "LEGAL_DAYLIGHT_RATIO", 0.10)
+    hgt = getattr(config, "WINDOW_EST_HEIGHT_M", 1.2)
     v = []
     for n, d in _hab_nodes(G):
         if d.get("n_windows", 0) < 1:
             v.append({"rule": "L1_daylight_window", "node": n, "type": d.get("type"),
                       "law": "피난·방화규칙 제17조제1항",
                       "msg": "채광창 없음(거실·침실은 채광창 필수)"})
+            continue
+        # 면적비 검사(scale 확보분): 창면적 ≈ 폭(px·scale→m) × 추정높이
+        if scale and d.get("window_len_px") and d.get("area_px"):
+            win_m2 = (d["window_len_px"] * scale / 1000.0) * hgt
+            floor_m2 = d["area_px"] * scale ** 2 / 1e6
+            if floor_m2 > 0 and win_m2 / floor_m2 < ratio:
+                v.append({"rule": "L1_daylight_ratio", "node": n, "type": d.get("type"),
+                          "law": "피난·방화규칙 제17조제1항",
+                          "ratio": round(win_m2 / floor_m2, 3), "min_ratio": ratio,
+                          "msg": f"채광창 면적비 {win_m2/floor_m2:.2f} < {ratio} (추정)"})
     return v
 
 
@@ -100,20 +122,35 @@ def check_bedroom_area(G: nx.Graph, scale) -> list[dict]:
     return v
 
 
+def check_dwelling_area(G: nx.Graph, scale) -> list[dict]:
+    """L5: 세대 전용면적(거주실 면적 합) 최소 미달 검사(scale 필요)."""
+    min_m2 = getattr(config, "LEGAL_MIN_DWELLING_M2", None)
+    if scale is None or not min_m2:
+        return []
+    tot = sum(d.get("area_px", 0) for n, d in G.nodes(data=True)
+              if d.get("type") not in (None, "exterior", "발코니", "실외기실"))
+    m2 = tot * scale ** 2 / 1e6
+    if 0 < m2 < min_m2:
+        return [{"rule": "L5_dwelling_min_area", "area_m2": round(m2, 1),
+                 "min_m2": min_m2, "law": "주거기본법/최저주거기준",
+                 "msg": f"세대 면적 {m2:.0f}㎡ < 최소 {min_m2}㎡"}]
+    return []
+
+
 def check_legal(G: nx.Graph) -> dict:
-    """법규 검사. scale 없으면 면적 의존 규칙은 스킵(상태 표시)."""
+    """법규 검사. 창 기반은 scale 불요, 면적 의존 규칙은 scale 확보분에만."""
     scale = G.graph.get("scale")
     violations = []
-    violations += check_daylight(G)          # 창 기반(scale 불요)
-    violations += check_bedroom_area(G, scale)  # 면적(scale 필요)
-    applied = ["L1_daylight_window", "L2_ventilation_window"]
+    violations += check_daylight(G)             # L1 채광(창 보유+면적비)
+    violations += check_bedroom_area(G, scale)  # L4 침실 최소면적
+    violations += check_dwelling_area(G, scale)  # L5 세대 최소면적
+    applied = ["L1_daylight_window"]
     skipped = []
-    if scale is None:
-        skipped.append("L4_bedroom_min_area(scale 미확보)")
-    elif not getattr(config, "LEGAL_BEDROOM_MIN_M2", None):
-        skipped.append("L4_bedroom_min_area(기준 미확정·전문가확인)")
+    if scale is not None:
+        applied += ["L1_daylight_ratio", "L4_bedroom_min_area", "L5_dwelling_min_area"]
     else:
-        applied.append("L4_bedroom_min_area")
+        skipped += ["L1_daylight_ratio", "L4_bedroom_min_area", "L5_dwelling_min_area"]
+        skipped = [s + "(scale 미확보)" for s in skipped]
     return {
         "passed": len(violations) == 0,
         "n_violations": len(violations),
