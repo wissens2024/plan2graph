@@ -1,0 +1,18 @@
+path: C:/dev/workspace/plan2graph/data/v2v/coco_spa
+train: images/train
+val: images/val
+nc: 13
+names:
+  0: 공간_거실
+  1: 공간_침실
+  2: 공간_주방
+  3: 공간_현관
+  4: 공간_발코니
+  5: 공간_화장실
+  6: 공간_실외기실
+  7: 공간_드레스룸
+  8: 공간_다목적공간
+  9: 공간_엘리베이터홀
+  10: 공간_계단실
+  11: 공간_엘리베이터
+  12: 공간_기타
