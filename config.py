@@ -20,6 +20,15 @@ from pathlib import Path
 LAW_API_OC = os.environ.get("LAW_API_OC", "juchul_law_engine")
 LAW_API_BASE = "https://www.law.go.kr/DRF"
 
+
+def _envf(name: str, default: float) -> float:
+    """임계값 환경변수 오버라이드(P2G_*). 서버서 튜닝을 코드수정·커밋 없이.
+    예: export P2G_OPEN_MIN_RATIO=0.4 → 재빌드만으로 임계 변경."""
+    try:
+        return float(os.environ.get("P2G_" + name, default))
+    except (TypeError, ValueError):
+        return default
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 경로
 # ─────────────────────────────────────────────────────────────────────────────
@@ -78,8 +87,8 @@ WINDOW_PASSAGE_CLASSES = ("공간_발코니", "공간_실외기실")
 
 # 개방통로(via:"open") — 문·발코니창 없이 벽이 끊긴 개구부로 연결된 방(개방형 LDK 등).
 #   두 방 경계대(buffer 교집합)에서 구조_벽체가 덮지 않은 '열린' 면적 비율이 임계 이상이면 통로.
-OPEN_MAX_GAP_PX = 60.0    # 개방통로로 볼 두 방 사이 최대 간격(픽셀)
-OPEN_MIN_RATIO = 0.30     # 경계대 중 벽 미피복(열림) 면적 비율 임계
+OPEN_MAX_GAP_PX = _envf("OPEN_MAX_GAP_PX", 60.0)    # 개방통로 최대 간격(px)
+OPEN_MIN_RATIO = _envf("OPEN_MIN_RATIO", 0.30)      # 벽 미피복 면적 비율 임계
 
 # 개방통로(via:open) 금지 타입쌍 — 건축적으로 직접 트일 수 없는 방쌍.
 #   (게이트 측정: ratio 튜닝으로 안 걸러지는 과연결의 주원인. 침실끼리·침실-주방 등.)
@@ -102,7 +111,7 @@ OPEN_FORBIDDEN_PAIRS = frozenset([
 # ─────────────────────────────────────────────────────────────────────────────
 CORE_CLASSES = ("공간_엘리베이터", "공간_엘리베이터홀", "공간_계단실")
 ETC_CLASS = "공간_기타"
-MIN_ETC_AREA_PX = 10000.0
+MIN_ETC_AREA_PX = _envf("MIN_ETC_AREA_PX", 10000.0)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 면적 의존 법규 수치 (scale 확보분에만 적용). ⚠️ 전문가 확인 필요(DECISIONS_NEEDED).
@@ -110,10 +119,10 @@ MIN_ETC_AREA_PX = 10000.0
 #     라벨엔 창 '폭'만 있어 면적은 폭×추정높이로 근사(보수적).
 #   침실 최소면적·세대 최소면적: 관행/최저주거기준 고시 참고값(확정 전).
 # ─────────────────────────────────────────────────────────────────────────────
-LEGAL_DAYLIGHT_RATIO = 0.10       # 채광창 면적 / 바닥면적 하한
-WINDOW_EST_HEIGHT_M = 1.2         # 창 높이 추정(m) — 면적 근사용
-LEGAL_BEDROOM_MIN_M2 = 7.0        # 침실 최소면적(㎡) — 전문가 확인 전 참고값
-LEGAL_MIN_DWELLING_M2 = 14.0      # 세대 최소 전용면적(㎡, 1인 최저주거 참고)
+LEGAL_DAYLIGHT_RATIO = _envf("LEGAL_DAYLIGHT_RATIO", 0.10)   # 채광창/바닥 하한
+WINDOW_EST_HEIGHT_M = _envf("WINDOW_EST_HEIGHT_M", 1.2)      # 창 높이 추정(m)
+LEGAL_BEDROOM_MIN_M2 = _envf("LEGAL_BEDROOM_MIN_M2", 7.0)    # 침실 최소면적(㎡) 참고값
+LEGAL_MIN_DWELLING_M2 = _envf("LEGAL_MIN_DWELLING_M2", 14.0)  # 세대 최소면적(㎡)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 데이터셋 채택 기준 — '완벽한 세대'만 채택, 나머지는 격리(quarantine)해 후일 검토
