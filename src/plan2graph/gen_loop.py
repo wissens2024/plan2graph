@@ -38,9 +38,9 @@ def verify(G: nx.Graph) -> dict:
             "integrity_ok": integ["passed"], "legal_ok": legal["passed"]}
 
 
-def local_repair(G: nx.Graph, model: dict, rng: random.Random) -> list[str]:
-    """규제 위반을 결정론적으로 국소 수정. 수정 내역 반환."""
-    from plan2graph.model_baseline import _p
+def local_repair(G: nx.Graph, rng: random.Random, adj_score=None) -> list[str]:
+    """규제 위반을 결정론적으로 국소 수정. adj_score(ta,tb)→선호도(없으면 균일).
+    어떤 생성기(baseline/신경망)와도 동작."""
     fixes = []
     sub = G.subgraph(_space_nodes(G))
     # 1) 채광: 거실·침실에 창 없으면 창 부여(grounded correction)
@@ -48,35 +48,36 @@ def local_repair(G: nx.Graph, model: dict, rng: random.Random) -> list[str]:
         if d.get("type") in HABITABLE and d.get("n_windows", 0) < 1:
             G.nodes[n]["n_windows"] = 1
             fixes.append(f"채광:{d['type']}#{n} 창 추가")
-    # 2) 고립/문없는 방: 가장 그럴듯한 이웃과 연결(학습 인접확률)
+    # 2) 고립/문없는 방: 가장 그럴듯한 이웃과 연결
     comps = list(nx.connected_components(sub))
     if len(comps) > 1:
         comps.sort(key=len, reverse=True)
-        main = comps[0]
+        main = set(comps[0])
         for comp in comps[1:]:
             best, bp = None, -1.0
             for a in comp:
                 for b in main:
-                    pr = _p(model, G.nodes[a].get("type"), G.nodes[b].get("type"))
+                    pr = adj_score(G.nodes[a].get("type"), G.nodes[b].get("type")) \
+                        if adj_score else 1.0
                     if pr > bp:
                         best, bp = (a, b), pr
             if best:
                 G.add_edge(best[0], best[1], via="open", door_type=None)
                 fixes.append(f"연결:{best[0]}-{best[1]} (고립 해소)")
-            main |= comp
+            main |= set(comp)
     return fixes
 
 
-def generate_compliant(model: dict, program: dict, max_tries: int = 5,
-                       repair: bool = True, seed: int = 0):
-    """규제 통과 그래프 생성: 생성→검증→(수정/재생성) 루프. (G, history) 반환."""
-    from plan2graph.model_baseline import generate
+def generate_compliant(gen_fn, program: dict, max_tries: int = 5,
+                       repair: bool = True, seed: int = 0, adj_score=None):
+    """규제 통과 그래프 생성: 생성→검증→(수정/재생성) 루프.
+    gen_fn(program, rng)→nx.Graph (baseline·신경망 공용). (G, history) 반환."""
     rng = random.Random(seed)
     best, best_v, history = None, 1e9, []
     for attempt in range(max_tries):
-        G = generate(model, program, rng)
+        G = gen_fn(program, rng)
         v0 = verify(G)
-        fixes = local_repair(G, model, rng) if (repair and not v0["passed"]) else []
+        fixes = local_repair(G, rng, adj_score) if (repair and not v0["passed"]) else []
         v1 = verify(G)
         history.append({"attempt": attempt, "violations_before": v0["n"],
                         "fixes": fixes, "violations_after": v1["n"],
@@ -88,21 +89,25 @@ def generate_compliant(model: dict, program: dict, max_tries: int = 5,
     return best, history
 
 
-def evaluate_loop(model: dict, programs: list[dict], max_tries: int = 5) -> dict:
+def baseline_gen_fn(model: dict):
+    """model_baseline 생성기를 gen_fn으로 래핑 (+adj_score)."""
+    from plan2graph.model_baseline import generate, _p
+    return (lambda program, rng: generate(model, program, rng),
+            lambda a, b: _p(model, a, b))
+
+
+def evaluate_loop(gen_fn, programs: list[dict], max_tries: int = 5, adj_score=None) -> dict:
     """규제 루프 효과 측정: 루프 없음 vs 있음 통과율."""
-    base_pass = loop_pass = 0
-    tries_sum = 0
+    base_pass = loop_pass = tries_sum = 0
     for i, prog in enumerate(programs):
-        G0, _ = generate_compliant(model, prog, max_tries=1, repair=False, seed=i)
-        if verify(G0)["passed"]:
-            base_pass += 1
-        G1, hist = generate_compliant(model, prog, max_tries=max_tries, repair=True, seed=i)
-        if verify(G1)["passed"]:
-            loop_pass += 1
+        G0, _ = generate_compliant(gen_fn, prog, max_tries=1, repair=False, seed=i)
+        base_pass += int(verify(G0)["passed"])
+        G1, hist = generate_compliant(gen_fn, prog, max_tries=max_tries, repair=True,
+                                      seed=i, adj_score=adj_score)
+        loop_pass += int(verify(G1)["passed"])
         tries_sum += len(hist)
     n = len(programs)
-    return {"n": n,
-            "compliance_no_loop": round(base_pass / n, 3),
+    return {"n": n, "compliance_no_loop": round(base_pass / n, 3),
             "compliance_with_loop": round(loop_pass / n, 3),
             "avg_attempts": round(tries_sum / n, 2)}
 
@@ -116,10 +121,11 @@ if __name__ == "__main__":
     from plan2graph import model_baseline as mb, text2graph
     ver = sys.argv[1] if len(sys.argv) > 1 else "v0"
     model = mb.fit(mb._load_split(ver, "train"))
+    gen_fn, adj = baseline_gen_fn(model)   # 신경망: NeuralGenerator(ckpt).generate, adj=None
 
     # 1) 단건 시연: 자연어 → 제약 → 생성 → 규제수정
     cg = text2graph.parse("4인 가족 84㎡ 침실3 욕실2 LDK 안방 드레스룸")
-    G, hist = generate_compliant(model, cg["program"], max_tries=5, seed=1)
+    G, hist = generate_compliant(gen_fn, cg["program"], max_tries=5, seed=1, adj_score=adj)
     print("=== 자연어→제약→생성→규제 자기수정 ===")
     print("program:", cg["program"])
     for h in hist:
@@ -133,4 +139,4 @@ if __name__ == "__main__":
     progs = [dict(Counter(n["type"] for n in r["layout"]["nodes"]
                           if isinstance(n["id"], int))) for r in test]
     print("\n=== 규제 루프 효과 (test 120) ===")
-    print(json.dumps(evaluate_loop(model, progs), ensure_ascii=False, indent=2))
+    print(json.dumps(evaluate_loop(gen_fn, progs, adj_score=adj), ensure_ascii=False, indent=2))
