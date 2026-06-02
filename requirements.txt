@@ -1,0 +1,13 @@
+# Plan2Graph — Phase 1·2 ETL 의존성
+shapely>=2.0          # 기하 연산 (폴리곤, buffer, 인접)
+networkx>=3.0         # 위상 그래프
+pandas>=2.0           # 인벤토리/리포트 CSV
+matplotlib>=3.7       # 시각 검증 오버레이
+numpy>=1.24
+pillow>=10.0          # 도면 PNG 로드
+owlready2>=0.46       # 공간 온톨로지(OWL) — Task 1-4
+joblib>=1.3           # 전체 변환 병렬화 — Task 2-1
+tqdm>=4.65
+pytest>=7.0
+streamlit>=1.30        # 관리자 콘솔(격리/채택 검토·교정) — admin.py
+rapidocr-onnxruntime>=1.4  # 치수선 OCR 역산(scale) — scale_ocr.py (경량, torch 불요)

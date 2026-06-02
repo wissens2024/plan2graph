@@ -1,0 +1,57 @@
+{
+  "schema": "plan2graph-legal-rules/0.1",
+  "source": "국가법령정보센터 Open API (law.go.kr/DRF)",
+  "oc_env": "LAW_API_OC",
+  "law_cache_dir": "data/interim/law_cache",
+  "note": "강행규정 핵심셋. status=needs_* 는 데이터/전문가 확인 후 확장(예외조항 포함).",
+  "rules": [
+    {
+      "id": "L1_daylight_window",
+      "name": "거실·침실 채광창 보유",
+      "category": "강행",
+      "law": "건축물의 피난·방화구조 등의 기준에 관한 규칙",
+      "article": "제17조제1항",
+      "mst": "279461",
+      "basis": "거실 창문 면적 ≥ 거실 바닥면적 1/10. (v1: 창 보유=필요조건 검사, 정확비율은 창면적 확보 후)",
+      "status": "needs_window_area",
+      "needs_scale": false,
+      "law_source_xml": "data/interim/law_cache/law_279461.xml"
+    },
+    {
+      "id": "L2_ventilation_window",
+      "name": "거실·침실 환기창 보유",
+      "category": "강행",
+      "law": "건축물의 피난·방화구조 등의 기준에 관한 규칙",
+      "article": "제17조제2항",
+      "mst": "279461",
+      "basis": "환기 창문 면적 ≥ 바닥면적 1/20. (v1: 창 보유 검사)",
+      "status": "needs_window_area",
+      "needs_scale": false,
+      "law_source_xml": "data/interim/law_cache/law_279461.xml"
+    },
+    {
+      "id": "L3_egress_reachable",
+      "name": "거실에서 직통 피난 경로",
+      "category": "강행",
+      "law": "건축법 시행령",
+      "article": "제34조(직통계단)",
+      "mst": "273503",
+      "basis": "각 실에서 피난층/외부로 통하는 경로 존재(위상 도달성).",
+      "status": "confirmed",
+      "needs_scale": false,
+      "law_source_xml": "data/interim/law_cache/law_273503.xml"
+    },
+    {
+      "id": "L4_bedroom_min_area",
+      "name": "침실 최소 면적",
+      "category": "강행(전문가확인)",
+      "law": "주거기본법/최저주거기준 고시",
+      "article": "최저주거기준",
+      "mst": null,
+      "basis": "침실 면적 ≥ 미정㎡. 수치 전문가 확인 필요.",
+      "status": "needs_expert",
+      "needs_scale": true,
+      "law_source_xml": null
+    }
+  ]
+}

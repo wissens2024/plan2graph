@@ -1,0 +1,40 @@
+# ── 대용량 데이터 (서버에서 재생성, git 제외) ──
+/건축 도면 데이터/
+/data/raw/
+/data/processed_val/
+/data/processed/graphs/
+/data/releases/*/graphs/
+/data/interim/law_cache/
+/data/interim/*.xml
+/data/interim/*.json
+/data/interim/inventory.csv
+/data/interim/fp_label_coverage.csv
+/data/interim/scale.csv
+
+# ── 모델 체크포인트 ──
+/models/
+*.pt
+*.pth
+*.onnx
+*.owl
+
+# ── 시각화 산출 ──
+/notebooks/*.png
+/notebooks/gate/*.png
+/ontology/*.png
+
+# ── 추적: 코드·문서·규칙DB·릴리스 메타(manifest/eval/splits/card)·요약 CSV ──
+#   (legal/*.json, *.md, data/releases/*/{manifest,eval,splits,dataset_card}, *.csv 요약은 추적)
+
+# Python / 환경 / OS
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+.env
+.streamlit/
+.DS_Store
+.vscode/
+.idea/

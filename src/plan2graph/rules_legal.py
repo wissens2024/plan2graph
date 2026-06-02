@@ -1,0 +1,214 @@
+"""법규 엔진 — 강행규정을 기계규칙으로 (사업계획서 1단계 "법규의 기계어 변환").
+
+모듈형 규칙 DB: 각 규칙은 법령 근거(국가법령정보센터 API로 수집)와 검사함수를 가진다.
+현재 그래프 데이터(방 타입·㎡·창 개수·위상)로 '검사 가능한' 강행규정부터 구현하고,
+정확 수치/추가 데이터가 필요한 부분은 status로 표시한다(예외조항 확장은 후속).
+
+근거는 law_api로 조회·캐시. scale(㎡) 확보분에만 면적 의존 규칙을 적용한다.
+"""
+from __future__ import annotations
+
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import networkx as nx
+
+ROOT = Path(__file__).resolve().parents[2]
+for _p in (str(ROOT), str(ROOT / "src")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+import config  # noqa: E402
+from plan2graph.topology import EXTERIOR  # noqa: E402
+
+
+@dataclass
+class Rule:
+    id: str
+    name: str
+    category: str            # 강행 / 권장
+    law: str                 # 법령명
+    article: str             # 조문
+    mst: str | None          # 법령일련번호(API 근거)
+    basis: str               # 기준 요약
+    status: str              # confirmed / needs_window_area / needs_expert
+    needs_scale: bool
+
+
+# ── 규칙 DB (API로 근거 확보, DECISIONS_NEEDED에 전문가 확인 항목 표시) ──────────
+RULES: list[Rule] = [
+    Rule("L1_daylight_window", "거실·침실 채광창 보유", "강행",
+         "건축물의 피난·방화구조 등의 기준에 관한 규칙", "제17조제1항", "279461",
+         "거실 창문 면적 ≥ 거실 바닥면적 1/10. (v1: 창 보유=필요조건 검사, 정확비율은 창면적 확보 후)",
+         "needs_window_area", False),
+    Rule("L2_ventilation_window", "거실·침실 환기창 보유", "강행",
+         "건축물의 피난·방화구조 등의 기준에 관한 규칙", "제17조제2항", "279461",
+         "환기 창문 면적 ≥ 바닥면적 1/20. (v1: 창 보유 검사)",
+         "needs_window_area", False),
+    Rule("L3_egress_reachable", "거실에서 직통 피난 경로", "강행",
+         "건축법 시행령", "제34조(직통계단)", "273503",
+         "각 실에서 피난층/외부로 통하는 경로 존재(위상 도달성).",
+         "confirmed", False),
+    Rule("L4_bedroom_min_area", "침실 최소 면적", "강행(전문가확인)",
+         "주거기본법/최저주거기준 고시", "최저주거기준", None,
+         f"침실 면적 ≥ {config.__dict__.get('LEGAL_BEDROOM_MIN_M2', '미정')}㎡. 수치 전문가 확인 필요.",
+         "needs_expert", True),
+]
+
+# 채광·환기 대상 공간(거실·침실 등 거주실)
+HABITABLE = ("공간_거실", "공간_침실")
+
+
+def _hab_nodes(G: nx.Graph):
+    for n, d in G.nodes(data=True):
+        if n == EXTERIOR:
+            continue
+        t = d.get("type")
+        if t and ("공간_" + t) in HABITABLE:
+            yield n, d
+
+
+def check_daylight(G: nx.Graph) -> list[dict]:
+    """L1/L2: 거실·침실에 창이 없으면 채광·환기 필요조건 위반(§17)."""
+    v = []
+    for n, d in _hab_nodes(G):
+        if d.get("n_windows", 0) < 1:
+            v.append({"rule": "L1_daylight_window", "node": n, "type": d.get("type"),
+                      "law": "피난·방화규칙 제17조제1항",
+                      "msg": "채광창 없음(거실·침실은 채광창 필수)"})
+    return v
+
+
+def check_bedroom_area(G: nx.Graph, scale) -> list[dict]:
+    """L4: scale 있고 기준 설정 시 침실 면적 하한 검사."""
+    min_m2 = getattr(config, "LEGAL_BEDROOM_MIN_M2", None)
+    if scale is None or not min_m2:
+        return []
+    v = []
+    for n, d in G.nodes(data=True):
+        if d.get("type") != "침실":
+            continue
+        a_px = d.get("area_px")
+        if a_px is None:
+            continue
+        m2 = a_px * (scale ** 2) / 1e6
+        if m2 < min_m2:
+            v.append({"rule": "L4_bedroom_min_area", "node": n,
+                      "area_m2": round(m2, 1), "min_m2": min_m2,
+                      "law": "최저주거기준",
+                      "msg": f"침실 {m2:.1f}㎡ < 최소 {min_m2}㎡"})
+    return v
+
+
+def check_legal(G: nx.Graph) -> dict:
+    """법규 검사. scale 없으면 면적 의존 규칙은 스킵(상태 표시)."""
+    scale = G.graph.get("scale")
+    violations = []
+    violations += check_daylight(G)          # 창 기반(scale 불요)
+    violations += check_bedroom_area(G, scale)  # 면적(scale 필요)
+    applied = ["L1_daylight_window", "L2_ventilation_window"]
+    skipped = []
+    if scale is None:
+        skipped.append("L4_bedroom_min_area(scale 미확보)")
+    elif not getattr(config, "LEGAL_BEDROOM_MIN_M2", None):
+        skipped.append("L4_bedroom_min_area(기준 미확정·전문가확인)")
+    else:
+        applied.append("L4_bedroom_min_area")
+    return {
+        "passed": len(violations) == 0,
+        "n_violations": len(violations),
+        "violations": violations,
+        "applied_rules": applied,
+        "skipped_rules": skipped,
+        "scale_available": scale is not None,
+    }
+
+
+def rule_catalog() -> list[dict]:
+    """규칙 DB를 직렬화(데이터시트·문서화용)."""
+    return [r.__dict__ for r in RULES]
+
+
+RULE_DB_PATH = ROOT / "legal" / "rules.json"
+
+
+def export_rule_db(path: Path = None) -> Path:
+    """모듈형 법규 규칙 DB를 독립 파일(legal/rules.json)로 영속화.
+    각 규칙의 법령 근거(MST)는 data/interim/law_cache/law_<MST>.xml과 연결된다.
+    """
+    import json
+    p = path or RULE_DB_PATH
+    p.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema": "plan2graph-legal-rules/0.1",
+        "source": "국가법령정보센터 Open API (law.go.kr/DRF)",
+        "oc_env": "LAW_API_OC",
+        "law_cache_dir": "data/interim/law_cache",
+        "note": "강행규정 핵심셋. status=needs_* 는 데이터/전문가 확인 후 확장(예외조항 포함).",
+        "rules": [
+            {**r.__dict__,
+             "law_source_xml": f"data/interim/law_cache/law_{r.mst}.xml" if r.mst else None}
+            for r in RULES
+        ],
+    }
+    p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return p
+
+
+def _graph_from_record(rec: dict) -> nx.Graph:
+    G = nx.Graph(graph_id=rec["graph_id"])
+    G.graph["scale"] = rec["meta"].get("scale")
+    for nd in rec["layout"]["nodes"]:
+        if isinstance(nd["id"], int):
+            G.add_node(nd["id"], type=nd.get("type"),
+                       area_px=nd.get("area_px2"), n_windows=nd.get("n_windows", 0))
+    return G
+
+
+def annotate_all(processed_dir: Path = None) -> dict:
+    """채택 그래프 전체에 법규 검사 결과를 validation.legal로 기록."""
+    import glob
+    import json
+    pd = processed_dir or config.PROCESSED_DIR
+    import collections
+    stat = collections.Counter()
+    vio = collections.Counter()
+    n = 0
+    for fp in glob.glob(str(pd / "graphs" / "*.json")):
+        rec = json.loads(Path(fp).read_text(encoding="utf-8"))
+        G = _graph_from_record(rec)
+        rep = check_legal(G)
+        rec.setdefault("validation", {})["legal"] = rep
+        Path(fp).write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
+        n += 1
+        stat["legal_pass" if rep["passed"] else "legal_violation"] += 1
+        for v in rep["violations"]:
+            vio[v["rule"]] += 1
+    return {"n": n, "status": dict(stat), "violations": dict(vio)}
+
+
+if __name__ == "__main__":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+    import json
+    print("=== 법규 규칙 DB ===")
+    for r in RULES:
+        print(f"  [{r.id}] {r.name} — {r.law} {r.article} (status={r.status})")
+    # 채택 그래프 하나에 적용
+    import glob
+    g = sorted(glob.glob(str(config.PROCESSED_DIR / "graphs" / "*.json")))
+    if g:
+        from plan2graph.review import record_to_graph
+        rec = json.loads(Path(g[0]).read_text(encoding="utf-8"))
+        G = record_to_graph(rec)
+        G.graph["scale"] = rec["meta"].get("scale")
+        # area_px를 노드에 실어 면적 규칙 가능케
+        for nd in rec["layout"]["nodes"]:
+            if isinstance(nd["id"], int) and G.has_node(nd["id"]):
+                G.nodes[nd["id"]]["area_px"] = nd.get("area_px2")
+                G.nodes[nd["id"]]["n_windows"] = nd.get("n_windows", 0)
+        rep = check_legal(G)
+        print(f"\n적용: {rec['graph_id']} (scale={G.graph['scale']})")
+        print(json.dumps(rep, ensure_ascii=False, indent=2))
