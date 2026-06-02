@@ -183,6 +183,22 @@ def _report(rows: list[dict], bad_names: list[tuple[str, str]]) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # 라벨종류 연결 (PNG 내용 지문)
 # ─────────────────────────────────────────────────────────────────────────────
+def fingerprint_label_map(root: Path = config.RAW_SOURCE_ROOT,
+                          split: str = "Training") -> dict:
+    """원천 PNG 지문(CRC,size) → {라벨종류: 9자리키} (FP만). 모든 라벨조합 포함.
+    v2v_infer가 '단일 라벨 도면'(SPA만/STR만)을 찾는 데 사용."""
+    zips = [z for z in discover_zips(root)
+            if z["content"] == "원천" and z["split"] == split]
+    fp = config.TARGET_DRAWING_TYPE
+    groups: dict[tuple[int, int], dict[str, str]] = defaultdict(dict)
+    for z, info in iter_zipinfos(zips):
+        meta = parse_name(Path(info.filename).stem)
+        if meta is None or meta["drawing"] != fp:
+            continue
+        groups[(info.CRC, info.file_size)][meta["label"]] = meta["key"]
+    return {f"{crc:08x}_{size}": d for (crc, size), d in groups.items()}
+
+
 def build_linkage(root: Path = config.RAW_SOURCE_ROOT,
                   split: str = "Training") -> Path:
     """원천 PNG를 CRC32+크기 지문으로 그룹핑해 '같은 도면'을 묶고,
