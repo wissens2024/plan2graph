@@ -81,10 +81,14 @@ AI-Hub ZIP(38GB)·글로벌셋을 서버에 전송해 `PLAN2GRAPH_RAW`에 둔다
 #   📊 결과 대시보드 = 데이터셋·모델·법규·A/B 한 화면 (캡처→PPT)
 ```
 
-## 구현 인벤토리 (현재)
-| 모듈 | 상태 |
-|---|---|
-| unpack·coco·geometry·topology·rules·rules_legal·rules_swrl·schema·build_dataset·split·release·scale_ocr·law_api·legal_harvest·model_baseline·gate·visualize·review·admin | ✅ 구현 |
-| 면적·비율 법규 확장 / v1 일괄교정 / v2v_export·infer / adapters(rplan·cubicasa) / text2graph / train_gen / gen_loop / eval_gen | 🔧 작성 필요 |
+## 구현 인벤토리 (현재) — 전 모듈 코드 완결
+| 모듈 | 코드 | 비고 |
+|---|---|---|
+| P1: unpack·coco·geometry·topology·rules·rules_legal·rules_swrl·ontology·law_api·legal_harvest | ✅ | 면적·비율 법규는 확장 여지 |
+| P2: build_dataset(+predicted)·scale_ocr·split·release·gate·v2v_export·v2v_infer·adapters(rplan·cubicasa) | ✅ | V2V·글로벌은 서버 실데이터·GPU 필요 |
+| P3: text2graph·model_baseline·train_gen·gen_loop·eval_gen | ✅ | train_gen 학습은 서버 GPU |
+| 콘솔: admin(격리·채택·scale·법령DB·대시보드)·review·visualize | ✅ | |
+| 남은 실행: V2V 학습·글로벌 실데이터·신경망 학습·v1 일괄교정 | ⏳ | 코드는 있음, 서버서 데이터/GPU로 실행 |
 
 > 순서(합의): **1(게이트) → 3(v2, 서버) ∥ 2(v1, 노트북 병행) → 글로벌 → P3 생성·규제루프 → A/B**
+> 코드는 전부 노트북서 작성·검증(합성/baseline) 완료. 이제 서버서 실데이터·GPU로 채우면 됨.
