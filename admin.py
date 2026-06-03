@@ -147,6 +147,11 @@ def _status_panel(source_id):
         return dataset_status.scan_status(sources.graphs_dir(sid))
 
     s = _agg(source_id, nkey)
+    h1, h2 = st.columns([4, 1])
+    h1.markdown(f"#### 📋 {source_id} 검수 현황")
+    if h2.button("🔄 재집계", key=f"refresh_{source_id}",
+                 help="재변환·dedup 후 현황을 다시 집계(캐시 비움)"):
+        st.cache_data.clear(); st.rerun()
     c1, c2, c3 = st.columns(3)
     c1.metric("총 그래프", f"{s['total']:,}")
     rate = (s['success'] / s['total'] * 100) if s['total'] else 0
