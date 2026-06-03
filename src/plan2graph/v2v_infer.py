@@ -62,10 +62,11 @@ def _crop_resize(img, bbox, imgsz: int):
 
 
 def predict_missing(model, img, bbox, class_names: list[str], imgsz: int = 1024,
-                    conf: float = 0.25) -> list[dict]:
+                    conf: float = 0.25, device=None) -> list[dict]:
     """크롭 영역에서 model로 예측 → 원본좌표 폴리곤 인스턴스 [{class_name,segmentation,bbox,score}]."""
     crop, cx0, cy0, cw, nw, ch, nh = _crop_resize(img.convert("L"), bbox, imgsz)
-    res = model.predict(crop.convert("RGB"), imgsz=imgsz, conf=conf, verbose=False)[0]
+    res = model.predict(crop.convert("RGB"), imgsz=imgsz, conf=conf, verbose=False,
+                        device=device)[0]
     out = []
     if res.masks is None:
         return out
@@ -101,8 +102,10 @@ def to_coco(preds: list[dict], width: int, height: int, key: str,
 
 
 def run(spa_weights: str, str_weights: str, split: str = "Training",
-        imgsz: int = 1024, conf: float = 0.25, limit: int | None = None) -> dict:
-    """단일라벨 FP 도면에 빠진 종류 예측 → predicted/ 에 COCO 저장."""
+        imgsz: int = 1024, conf: float = 0.25, limit: int | None = None,
+        device=None, only: str | None = None) -> dict:
+    """단일라벨 FP 도면에 빠진 종류 예측 → predicted/ 에 COCO 저장.
+    device: GPU index(2-GPU 분할용). only=SPA|STR: 그 라벨 가진 도면만(방향 분할)."""
     import io
     from ultralytics import YOLO
     from PIL import Image
@@ -122,6 +125,8 @@ def run(spa_weights: str, str_weights: str, split: str = "Training",
             continue
         have = "SPA" if has_spa else "STR"
         miss = "STR" if has_spa else "SPA"
+        if only and have != only:     # 방향 분할(2-GPU): 지정 라벨 가진 것만
+            continue
         ie = idx.label_entry.get((split, have, labels[have]))
         se = idx.source_entry.get((split, have, labels[have]))
         if not ie or not se:
@@ -131,7 +136,7 @@ def run(spa_weights: str, str_weights: str, split: str = "Training",
         if bbox is None:
             continue
         img = Image.open(io.BytesIO(review._read_zip(*se)))
-        preds = predict_missing(models[miss], img, bbox, cls_of[miss], imgsz, conf)
+        preds = predict_missing(models[miss], img, bbox, cls_of[miss], imgsz, conf, device)
         if not preds:
             continue
         coco = to_coco(preds, img.size[0], img.size[1], labels[have], miss)
@@ -173,8 +178,12 @@ if __name__ == "__main__":
     ap.add_argument("--imgsz", type=int, default=1024)
     ap.add_argument("--conf", type=float, default=0.25)
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--device", default=None, help="GPU index(2-GPU 분할용)")
+    ap.add_argument("--only", default=None, choices=["SPA", "STR"],
+                    help="그 라벨 가진 도면만(방향 분할)")
     a = ap.parse_args()
     if a.self_test:
         sys.exit(0 if _self_test() else 1)
+    dev = int(a.device) if a.device is not None else None
     print(json.dumps(run(a.spa_weights, a.str_weights, a.split, a.imgsz, a.conf,
-                         a.limit), ensure_ascii=False, indent=2))
+                         a.limit, dev, a.only), ensure_ascii=False, indent=2))

@@ -10,12 +10,13 @@ epochs = int(sys.argv[2]) if len(sys.argv) > 2 else 5
 imgsz = int(sys.argv[3]) if len(sys.argv) > 3 else 768
 batch = int(sys.argv[4]) if len(sys.argv) > 4 else 4
 device = int(sys.argv[5]) if len(sys.argv) > 5 else 0   # 물리 GPU index(CUDA_VISIBLE_DEVICES 불신뢰)
-model = sys.argv[6] if len(sys.argv) > 6 else "yolov8n-seg.pt"
+workers = int(sys.argv[6]) if len(sys.argv) > 6 else 0  # 0=안정(미배치), >0=병렬로딩 가속(검증 후)
+model = sys.argv[7] if len(sys.argv) > 7 else "yolov8n-seg.pt"
 
 print(f"[yolo_train] label={label} epochs={epochs} imgsz={imgsz} batch={batch} "
-      f"device={device} model={model}", flush=True)
+      f"device={device} workers={workers} model={model}", flush=True)
 m = YOLO(model)
 m.train(data=f"data/v2v/coco_{label}/data.yaml", epochs=epochs, imgsz=imgsz,
-        batch=batch, workers=0, amp=False, device=device, project="v2v_runs",
+        batch=batch, workers=workers, amp=False, device=device, project="v2v_runs",
         name=f"{label}_e{epochs}", exist_ok=True, plots=False, verbose=True)
 print("[yolo_train] DONE", flush=True)
