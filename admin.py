@@ -85,14 +85,18 @@ if which.startswith("🔍"):
                  "PLAN2GRAPH_RAW 환경변수를 SPA/STR zip이 있는 경로로 설정 후 재실행.")
         st.stop()
 
-    with st.expander("ℹ️ 카테고리·배제 사유 (꼭 읽기)", expanded=True):
+    with st.expander("ℹ️ 배제 분류 전체 (꼭 읽기)", expanded=True):
         st.markdown(
-            "**이들은 '도면이 아닌 것'이 아닙니다.** 모두 진짜 평면도인데, 우리가 그래프를 만들려면 "
-            "**방(SPA)+문·벽(STR) 라벨이 둘 다** 필요한데 *한쪽만* 달려 있어 라벨만으론 위상그래프를 못 만드는 것입니다.\n"
-            "- **방만(spa_only)**: 방 라벨만 → 그래프 *엣지(문)*를 못 만듦 → V2V로 STR 예측해 복구\n"
-            "- **구조만(str_only)**: 문·벽만 → 그래프 *노드(방)*를 못 만듦 → V2V로 SPA 예측해 복구\n"
-            "- **둘 다(dual)**: 이미 v0에서 그래프화됨(참고)\n\n"
-            "※ OBJ/OCR만 있는 도면은 SPA/STR 원천 zip에 없어 여기 안 보입니다(별도).")
+            "**🟡 부분배제 (V2V로 복구 가능)** — 진짜 평면도인데 라벨이 한쪽만:\n"
+            "- **방만(spa_only)**: 방 라벨만 → 엣지(문) 못 만듦 → V2V로 STR 예측 복구\n"
+            "- **구조만(str_only)**: 문·벽만 → 노드(방) 못 만듦 → V2V로 SPA 예측 복구\n\n"
+            "**🔴 완전배제 (데이터셋에서 영구 제외)**:\n"
+            "- **비-FP(평면도 아님)**: 단면도·입면도·구조도 — *위상(방-문-방) 자체가 없음* → 그래프 불가\n"
+            "- **중복**: 같은 도면이 라벨종류별로 byte-identical 복제 → 지문(CRC+크기)으로 1장만 남기고 제외 "
+            "(전수 SHA256 검증·0충돌)\n"
+            "- **OBJ/OCR만**: 객체·문자 라벨만(방·구조 없음) → 그래프 불가. "
+            "*※ 이 zip은 미업로드(12.5GB)라 여기 표시 안 됨 — 보려면 OBJ/OCR 원천 업로드 필요.*\n\n"
+            "**⚪ 참고**: dual(둘 다) = 이미 v0 그래프화. 품질게이트 격리는 좌측 '⚠ 격리' 메뉴에서 도면+그래프+사유로 검수.")
 
     split = st.sidebar.selectbox("split", ["Training", "Validation"])
 
@@ -100,15 +104,24 @@ if which.startswith("🔍"):
     def _excl_cats(sp):
         return _ix.categorize(_ix.build_index(sp))
 
+    @st.cache_data(show_spinner="비-FP 도면 스캔...")
+    def _nonfp(sp):
+        return _ix.nonfp_records(sp)
+
     cats = _excl_cats(split)
-    cat_label = {"spa_only": "방만(STR 결손)", "str_only": "구조만(SPA 결손)", "dual": "둘 다(v0)"}
+    nonfp = _nonfp(split)
+    counts = {"spa_only": len(cats["spa_only"]), "str_only": len(cats["str_only"]),
+              "nonfp": len(nonfp), "dual": len(cats["dual"])}
+    cat_label = {"spa_only": "🟡부분배제 방만(STR결손)", "str_only": "🟡부분배제 구조만(SPA결손)",
+                 "nonfp": "🔴완전배제 비-FP(평면도아님)", "dual": "⚪참고 둘다(v0)"}
     cat = st.sidebar.selectbox("카테고리", list(cat_label),
-                               format_func=lambda k: f"{cat_label[k]} ({len(cats[k]):,})")
+                               format_func=lambda k: f"{cat_label[k]} ({counts[k]:,})")
     house = st.sidebar.selectbox("거주형태", ["(전체)", "APT", "DEH", "ROW"])
-    recs = [r for r in cats[cat] if house == "(전체)" or r["house"] == house]
+    src = nonfp if cat == "nonfp" else cats[cat]
+    recs = [r for r in src if house == "(전체)" or r["house"] == house]
 
     st.markdown(f"### {cat_label[cat]} — **{len(recs):,}개**  ·  _{_ix.CATEGORIES[cat]}_")
-    st.caption(f"분포: " + " · ".join(f"{k}:{len([r for r in cats[cat] if r['house']==k]):,}"
+    st.caption(f"분포: " + " · ".join(f"{k}:{len([r for r in src if r['house']==k]):,}"
                                      for k in ("APT", "DEH", "ROW")))
     overlay = st.sidebar.checkbox("🎨 라벨 오버레이(증거)", value=True)
     if overlay:
@@ -147,7 +160,10 @@ if which.startswith("📊"):
     from plan2graph import review as _rv
 
     REL = config.DATA_DIR / "releases"
-    vers = sorted([p.name for p in REL.glob("v*") if p.is_dir()]) if REL.exists() else []
+    # 완전한 release만(manifest+splits/test 보유) — 미완 스모크 빌드(v2 등) 제외해 크래시 방지
+    vers = sorted([p.name for p in REL.glob("v*") if p.is_dir()
+                   and (p / "manifest.json").exists()
+                   and (p / "splits" / "test.txt").exists()]) if REL.exists() else []
     if not vers:
         st.info("동결된 버전이 없습니다. `python src/plan2graph/release.py v0` 먼저 실행.")
         st.stop()

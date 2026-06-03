@@ -28,10 +28,12 @@ import config  # noqa: E402
 from plan2graph.unpack import discover_zips, iter_zipinfos, parse_name  # noqa: E402
 
 CATEGORIES = {
-    "spa_only": "방 라벨만(문·벽 없음) → V2V로 STR 예측 대상",
-    "str_only": "구조 라벨만(방 없음) → V2V로 SPA 예측 대상",
-    "dual": "SPA+STR 둘 다(v0 그래프화 대상, 참고)",
+    "spa_only": "[부분배제·V2V복구] 방 라벨만(문·벽 없음) → V2V로 STR 예측",
+    "str_only": "[부분배제·V2V복구] 구조 라벨만(방 없음) → V2V로 SPA 예측",
+    "nonfp": "[완전배제] 평면도가 아님(단면도/입면도/구조도) → 위상그래프 불가",
+    "dual": "[참고] SPA+STR 둘 다(v0 그래프화 대상)",
 }
+DRAWING_NAME = {"CS": "단면도", "EP": "입면도", "SD": "구조도", "FP": "평면도"}
 
 
 def build_index(split: str = "Training") -> dict:
@@ -78,6 +80,23 @@ def categorize(groups: dict) -> dict:
     for k in out:
         out[k].sort(key=lambda r: (r["house"], r["key"]))
     return out
+
+
+def nonfp_records(split: str = "Training") -> list:
+    """비-FP(단면도CS·입면도EP·구조도SD) 고유 도면 — '완전 배제'(평면도 아님). 지문별 대표 PNG."""
+    zips = [z for z in discover_zips()
+            if z["content"] == "원천" and z["split"] == split]
+    seen: dict = {}
+    for z, info in iter_zipinfos(zips):
+        m = parse_name(Path(info.filename).stem)
+        if not m or m["drawing"] == config.TARGET_DRAWING_TYPE:
+            continue
+        sig = f"{info.CRC:08x}_{info.file_size}"
+        if sig not in seen:
+            seen[sig] = {"sig": sig, "drawing": m["drawing"], "house": m["house"],
+                         "key": m["key"], "zip": str(z["path"]), "entry": info.filename,
+                         "labels": [DRAWING_NAME.get(m["drawing"], m["drawing"])], "det": {}}
+    return sorted(seen.values(), key=lambda r: (r["drawing"], r["house"], r["key"]))
 
 
 def get_png(rec: dict) -> bytes:
