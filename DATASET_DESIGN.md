@@ -50,8 +50,9 @@
 - 형식 = 기존 `schema.py` + **신규 meta 필드**:
   - `meta.status` = `success | quarantine`
   - `meta.reason` = 격리 사유(문자열)
-  - `meta.provenance` = `benchmark | pretrain`
+  - `meta.role` = `benchmark | pretrain` (§6) — **신규**
   - `meta.tier` = `1 | 2`
+  - ⚠️ `meta.provenance`는 **기존 의미 유지**(`aihub_label` / `v2_pred` / `global_pretrain` = 라벨 출처·품질). role과 별개.
 - 저장: `staging/<source>/graphs/<graph_id>.json`
 
 ### ④ Decision (검수 결정 / ledger) — append-only 감사
@@ -133,7 +134,7 @@ data/
 
 - **benchmark (AI-Hub)**: test 동결 보유 → 모든 버전의 공통 평가 잣대. test는 v0에서 한 번 동결, 전 버전 공유(기존 `_frozen_test.json` 불변식).
 - **pretrain (CubiCasa·RPLAN)**: **train/val만**, test 없음. 사전학습용. 새 출처를 더해도 test가 안 변해 v0~vN 비교가 안 깨짐.
-- 레코드 `meta.provenance`로 태깅(기존 `global_pretrain` 정식화).
+- 레코드 `meta.role`(benchmark|pretrain)로 태깅. `meta.provenance`(aihub_label/v2_pred/global_pretrain)와는 별개 축.
 
 ---
 
@@ -157,7 +158,7 @@ data/
 
 ## 8. 스키마 버전 0.1 → 0.2 (가산적)
 
-- 신규 `meta.status/reason/provenance/tier` 전부 **추가(backward compatible)**. 구 레코드 읽기 안 깨짐.
+- 신규 `meta.status/reason/role/tier` 전부 **추가(backward compatible)**. 구 레코드 읽기 안 깨짐. (`provenance`는 기존 필드·의미 유지)
 - `SCHEMA_VERSION = "0.2"`.
 
 ---
@@ -166,7 +167,7 @@ data/
 
 1. `processed/graphs` → `staging/aihub/graphs` (이동), accepted/quarantine/ledger 동반.
 2. `releases/global_cubicasa/graphs` → `staging/cubicasa5k/graphs`, `global_rplan` → `staging/rplan_render/`.
-3. 백필: 구 레코드 `status` = 큐 소속에서, `provenance` = source 역할에서 유도(1회 스크립트).
+3. 백필: 구 레코드 `status` = 큐 소속에서, `role` = source 역할에서 유도(1회 스크립트).
 4. 기존 `releases/v0` 는 **그대로 유지**(동결 불변). 새 freeze부터 recipe 기반.
 
 ---

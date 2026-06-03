@@ -94,9 +94,11 @@ def to_record(graph_id: str, source: str, rooms: list[dict], edges: list[tuple],
               width: int, height: int) -> dict:
     """(rooms, edges) → 공통 스키마 레코드(layout+constraints+validation)."""
     from plan2graph.rules import validate
+    from plan2graph import sources
     G = build_graph_from_rooms(rooms, edges, graph_id)
     rec = serialize(G, graph_id=graph_id, house_type=None,
-                    width=width, height=height, validation=validate(G))
+                    width=width, height=height, validation=validate(G),
+                    role=sources.role_of(source), tier=sources.tier_of(source))
     rec["meta"]["source"] = source       # 'rplan' / 'cubicasa5k'
     rec["meta"]["provenance"] = "global_pretrain"
     return rec

@@ -131,7 +131,9 @@ def process_pair(sheet_id: str, house: str,
             n_doors = U.graph.get("n_doors", 0)
             val = validate(U)
             rec = serialize(U, graph_id=uid, house_type=house,
-                            width=dr.width, height=dr.height, validation=val)
+                            width=dr.width, height=dr.height, validation=val,
+                            role="benchmark",                       # AI-Hub=평가 잣대(§6)
+                            tier=2 if provenance == "v2_pred" else 1)  # v2_pred=비전 복구
             rec["meta"]["provenance"] = provenance      # 실라벨 / v2_pred
             records.append({
                 "graph_id": uid, "record": rec,

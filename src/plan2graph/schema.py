@@ -21,7 +21,7 @@ for _p in (str(ROOT), str(ROOT / "src")):
 import config  # noqa: E402
 from plan2graph.topology import EXTERIOR  # noqa: E402
 
-SCHEMA_VERSION = "0.1"
+SCHEMA_VERSION = "0.2"   # 0.2: meta.status/reason/role/tier 추가(가산적, DATASET_DESIGN §8)
 SOURCE_TAG = "aihub-71465"
 
 
@@ -105,8 +105,15 @@ def derive_constraints(G: nx.Graph) -> dict:
 
 
 def serialize(G: nx.Graph, *, graph_id: str, house_type: str | None,
-              width: int, height: int, validation: dict | None = None) -> dict:
-    """완전한 표준 레코드(배치+제약+검증) 생성."""
+              width: int, height: int, validation: dict | None = None,
+              status: str = "success", reason: str = "",
+              role: str | None = None, tier: int | None = None) -> dict:
+    """완전한 표준 레코드(배치+제약+검증) 생성.
+
+    status/reason : 정상/격리 분기(DATASET_DESIGN §2③). 기본 success.
+    role          : benchmark | pretrain (§6). 출처에서 stamp(미지정 시 None).
+    tier          : 1(파싱) | 2(비전) (§3).
+    """
     return {
         "graph_id": graph_id,
         "schema_version": SCHEMA_VERSION,
@@ -115,6 +122,10 @@ def serialize(G: nx.Graph, *, graph_id: str, house_type: str | None,
             "scale": G.graph.get("scale"),
             "area_unit": "px2" if G.graph.get("scale") is None else "m2",
             "source": SOURCE_TAG,
+            "status": status,
+            "reason": reason,
+            "role": role,
+            "tier": tier,
             "width_px": width,
             "height_px": height,
             "n_rooms": G.graph.get("n_rooms"),
