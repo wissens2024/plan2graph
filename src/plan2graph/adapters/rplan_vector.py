@@ -49,19 +49,45 @@ def _entrance_idx(boundary, boxes):
     return best
 
 
+def _extract(s):
+    """포맷별 (types, boxes(N,4), edge) 추출.
+    Interface pkl : box=[x0,y0,x1,y1,type] + edge
+    Network data.mat : rType + gtBoxNew(또는 gtBox) + rEdge  ← 전체 80,788."""
+    import numpy as np
+    if getattr(s, "box", None) is not None:               # Interface(부분집합 74,995)
+        box = np.asarray(s.box)
+        if box.ndim != 2 or box.shape[0] == 0:
+            return None
+        return box[:, 4], box[:, :4], getattr(s, "edge", None)
+    if getattr(s, "rType", None) is not None:             # Network(전체 80,788)
+        boxes = getattr(s, "gtBoxNew", None)
+        if boxes is None:
+            boxes = getattr(s, "gtBox", None)
+        if boxes is None:
+            return None
+        boxes = np.asarray(boxes)
+        if boxes.ndim != 2 or boxes.shape[0] == 0:
+            return None
+        return np.asarray(s.rType).ravel(), boxes[:, :4], getattr(s, "rEdge", None)
+    return None
+
+
 def parse_struct(s) -> dict | None:
-    """mat_struct 1개(한 플랜) → 공통 레코드. 실패 시 None."""
+    """mat_struct 1개(한 플랜) → 공통 레코드. 두 포맷(Interface/Network) 모두 처리."""
     import numpy as np
     gid = "RPLAN_" + str(getattr(s, "name", "unknown"))
-    box = np.asarray(s.box)
-    if box.ndim != 2 or box.shape[0] == 0:
+    ext = _extract(s)
+    if ext is None:
         return common.empty_record(gid, "rplan", "empty_layout")
+    types, boxes, edge = ext
+    n = min(len(types), len(boxes))
     rooms = []
-    for r in box:
-        t = int(r[4])
+    for i in range(n):
+        t = int(types[i])
         if t > ROOM_CAT_MAX:
             continue
-        x0, y0, x1, y1 = int(r[0]), int(r[1]), int(r[2]), int(r[3])
+        x0, y0, x1, y1 = (int(boxes[i][0]), int(boxes[i][1]),
+                          int(boxes[i][2]), int(boxes[i][3]))
         rooms.append({"type": common.map_type(RPLAN_CATEGORIES.get(t, "room")),
                       "centroid": [round((x0 + x1) / 2, 1), round((y0 + y1) / 2, 1)],
                       "area_px": float(abs((x1 - x0) * (y1 - y0))),
@@ -69,38 +95,43 @@ def parse_struct(s) -> dict | None:
     if not rooms:
         return common.empty_record(gid, "rplan", "empty_layout")
     # 외곽선 문 → 진입실 표시(현관 규칙 충족)
-    ei = _entrance_idx(s.boundary, box)
+    ei = _entrance_idx(getattr(s, "boundary", []), boxes)
     if ei is not None and 0 <= ei < len(rooms):
         rooms[ei]["is_entrance"] = True
-    # 방-방 인접(via open). edge[:,2]는 방향코드라 무시.
+    # 방-방 인접(via open). edge 3번째 열은 방향코드라 무시.
     edges = []
-    ed = np.asarray(s.edge) if getattr(s, "edge", None) is not None else np.empty((0, 3))
-    for e in ed:
-        u, v = int(e[0]), int(e[1])
-        if u != v and 0 <= u < len(rooms) and 0 <= v < len(rooms):
-            edges.append((u, v, "open"))
-    w = int(box[:, :4].max()) + 1
+    if edge is not None:
+        for e in np.atleast_2d(np.asarray(edge)):
+            if len(e) < 2:
+                continue
+            u, v = int(e[0]), int(e[1])
+            if u != v and 0 <= u < len(rooms) and 0 <= v < len(rooms):
+                edges.append((u, v, "open"))
+    w = int(np.asarray(boxes)[:, :4].max()) + 1
     return common.to_record(gid, "rplan", rooms, edges, w, w)
 
 
-def iter_structs(pkl_path: str):
-    """data_*_converted.pkl → (name, struct) 제너레이터.
-    이름키는 배포본마다 다름(train=nameList, test=testNameList) → data 길이와
-    일치하는 키를 자동 선택."""
-    import pickle
-    with open(pkl_path, "rb") as f:
-        d = pickle.load(f)
+def iter_structs(path: str):
+    """RPLAN 구조 데이터 → (name, struct) 제너레이터.
+    .mat(Network/data.mat=전체 80,788) → scipy.io.loadmat,
+    .pkl(Interface 부분집합) → pickle. 이름은 struct.name 우선, 없으면 nameList류."""
+    if str(path).endswith(".mat"):
+        import scipy.io as sio
+        d = sio.loadmat(path, struct_as_record=False, squeeze_me=True)
+    else:
+        import pickle
+        with open(path, "rb") as f:
+            d = pickle.load(f)
     data = d["data"]
     names = None
     for k in ("nameList", "testNameList", "trainNameList"):
-        v = d.get(k)
+        v = d.get(k) if hasattr(d, "get") else None
         if v is not None and len(v) == len(data):
             names = v
             break
-    if names is None:
-        names = [str(i) for i in range(len(data))]
     for i in range(len(data)):
-        yield str(names[i]), data[i]
+        nm = str(names[i]) if names is not None else str(getattr(data[i], "name", i))
+        yield nm, data[i]
 
 
 if __name__ == "__main__":
