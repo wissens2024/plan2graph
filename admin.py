@@ -68,8 +68,8 @@ def _record(**kw):
 st.sidebar.title("🏗 Plan2Graph 관리자")
 st.sidebar.caption("데이터셋을 눈으로 검증하는 콘솔")
 which = st.sidebar.radio("큐", ["⚠ 격리 (교정)", "✅ 채택 (검수)", "📏 scale 검수/보정",
-                                "📜 법령 DB", "📊 결과 대시보드", "🔍 AI-Hub 도면 검수(제외분)"],
-                         index=0)
+                                "📜 법령 DB", "📊 결과 대시보드", "🔍 AI-Hub 도면 검수",
+                                "🌍 CubiCasa5k 도면검수"], index=0)
 
 # ════════════════════════════════════════════════════════════════════════════
 # 🔍 배제 도면 검수 — 그래프 대상에서 빠진 평면도를 실제 PNG로 육안 검증
@@ -79,8 +79,8 @@ if which.startswith("🔍"):
     from PIL import Image as _PImage
     from plan2graph import inspect_excluded as _ix
 
-    st.title("🔍 AI-Hub 도면 검수 (제외분)")
-    st.caption("그래프 대상에서 빠진 AI-Hub 도면을 원본 PNG로 확인 — '제외 사유가 맞는지' 육안 검증.")
+    st.title("🔍 AI-Hub 도면 검수")
+    st.caption("AI-Hub 도면을 원본 PNG로 확인 — 채택분(dual)·제외분(부분/완전배제) 사유 육안 검증.")
     if not config.RAW_SOURCE_ROOT.is_dir():
         st.error(f"원본 RAW 없음: {config.RAW_SOURCE_ROOT}\n"
                  "PLAN2GRAPH_RAW 환경변수를 SPA/STR zip이 있는 경로로 설정 후 재실행.")
@@ -169,6 +169,57 @@ if which.startswith("🔍"):
             cols[i % ncol].image(img, use_container_width=True, caption=cap)
         except Exception as e:  # noqa: BLE001
             cols[i % ncol].warning(f"{r['key']} 표시 실패: {e}")
+    st.stop()
+
+# ════════════════════════════════════════════════════════════════════════════
+# 🌍 CubiCasa5k 도면검수 — 글로벌 데이터 정상분(변환)·제외분(사유) 육안 검증
+# ════════════════════════════════════════════════════════════════════════════
+if which.startswith("🌍"):
+    from plan2graph import cubicasa_inspect as _cci
+
+    st.title("🌍 CubiCasa5k 도면검수")
+    st.caption("글로벌 데이터(CubiCasa5k) 도면을 원본+방 오버레이로 — 정상분(그래프 변환)·제외분(사유).")
+    if not _cci.CC_ROOT.is_dir():
+        st.error(f"CubiCasa5k 데이터 없음: {_cci.CC_ROOT}")
+        st.stop()
+
+    @st.cache_data(show_spinner="CubiCasa 샘플 스캔(최초 1회)...")
+    def _ccscan():
+        return _cci.scan()
+
+    s = _ccscan()
+    with st.expander("ℹ️ 분류 (꼭 읽기)", expanded=True):
+        st.markdown(
+            "- **정상분(converted)**: model.svg에서 방 폴리곤 추출 성공 → 그래프化(global_cubicasa)\n"
+            "- **제외분(excluded)**: 방 0개 / SVG 파싱 실패 → 제외\n\n"
+            "오버레이: :green[●] 방 · :red[●] 문 (SVG 주석을 F1_scaled.png에). "
+            "그려진 게 추출된 것 — 안 그려지면 추출 실패(제외 사유).")
+    cat_label = {"converted": "🟢 정상분(그래프 변환)", "excluded": "🔴 제외분(방없음/실패)"}
+    cat = st.sidebar.selectbox("분류", list(cat_label),
+                               format_func=lambda k: f"{cat_label[k]} ({len(s[k]):,})")
+    subs = sorted({r["sub"] for r in s[cat]})
+    subf = st.sidebar.selectbox("세트", ["(전체)"] + subs)
+    recs = [r for r in s[cat] if subf == "(전체)" or r["sub"] == subf]
+    overlay = st.sidebar.checkbox("🎨 방 오버레이", value=True)
+    res = st.sidebar.select_slider("표시 해상도(px)", options=[800, 1100, 1500, 2000, 2600],
+                                   value=1500, help="CubiCasa 원본은 ~1100px(AI-Hub보다 저해상).")
+    ncol = st.sidebar.radio("열 수", [1, 2], index=1, horizontal=True)
+    PER = ncol * 2
+    st.markdown(f"### {cat_label[cat]} — **{len(recs):,}개**")
+    npages = max(1, (len(recs) + PER - 1) // PER)
+    pg = st.sidebar.number_input(f"페이지 (1~{npages})", 1, npages, 1) - 1
+    st.sidebar.caption(f"한 페이지 {PER}장 · 총 {npages:,}페이지 · {res}px")
+    cols = st.columns(ncol)
+    for i, r in enumerate(recs[pg * PER:(pg + 1) * PER]):
+        try:
+            img = _cci.render(r, overlay=overlay)
+            img.thumbnail((res, res))
+            cap = f"{r['sub']}/{r['id']}"
+            if cat == "excluded":
+                cap += f" · 사유: {_cci.exclude_reason(r)}"
+            cols[i % ncol].image(img, use_container_width=True, caption=cap)
+        except Exception as e:  # noqa: BLE001
+            cols[i % ncol].warning(f"{r['id']} 표시 실패: {e}")
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
