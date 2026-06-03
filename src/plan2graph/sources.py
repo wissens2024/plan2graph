@@ -70,6 +70,46 @@ def tier_of(source_tag: str | None, default: int = 1) -> int:
     return s.tier if s else default
 
 
+# ── 경로 해석 (expand 패턴: staging/ 있으면 그쪽, 없으면 레거시) ──────────────
+# 전환기엔 코드가 양쪽을 다 인식해 데이터 이동 전에도 안 깨진다(DATASET_DESIGN §9).
+_LEGACY_GRAPHS = {
+    "aihub":      config.PROCESSED_DIR / "graphs",
+    "cubicasa5k": config.DATA_DIR / "releases" / "global_cubicasa" / "graphs",
+    "rplan":      config.DATA_DIR / "releases" / "global_rplan" / "graphs",
+}
+# AI-Hub 큐/원장은 현재 processed/ 직하. 글로벌은 staging 전까지 큐 없음.
+_LEGACY_QUEUE_ROOT = {"aihub": config.PROCESSED_DIR}
+
+
+def staging_root(source_id: str) -> Path:
+    return config.DATA_DIR / "staging" / source_id
+
+
+def graphs_dir(source_id: str) -> Path:
+    """그래프 디렉터리. staging/<id>/graphs 우선, 없으면 레거시 위치."""
+    s = staging_root(source_id) / "graphs"
+    if s.is_dir():
+        return s
+    return _LEGACY_GRAPHS.get(source_id, s)
+
+
+def queue_path(source_id: str, which: str) -> Path:
+    """검수 큐 CSV(accepted|quarantine). staging 우선, 없으면 레거시."""
+    fn = "quarantine.csv" if which == "quarantine" else "accepted.csv"
+    sroot = staging_root(source_id)
+    if sroot.is_dir():
+        return sroot / fn
+    return _LEGACY_QUEUE_ROOT.get(source_id, sroot) / fn
+
+
+def ledger_path(source_id: str) -> Path:
+    """결정 원장 CSV. staging 우선, 없으면 레거시(aihub=processed/ledger.csv)."""
+    sroot = staging_root(source_id)
+    if sroot.is_dir():
+        return sroot / "ledger.csv"
+    return _LEGACY_QUEUE_ROOT.get(source_id, sroot) / "ledger.csv"
+
+
 if __name__ == "__main__":
     try:
         sys.stdout.reconfigure(encoding="utf-8")

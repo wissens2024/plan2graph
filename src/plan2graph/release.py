@@ -56,7 +56,8 @@ def _is_clean(rec: dict) -> tuple[bool, str]:
 
 def freeze(version: str, src_graphs: Path = None) -> dict:
     """현재 채택 그래프에서 '정상' 세대만 골라 버전 스냅샷 동결."""
-    src = src_graphs or (config.PROCESSED_DIR / "graphs")
+    from plan2graph import sources
+    src = src_graphs or sources.graphs_dir("aihub")  # staging/aihub 우선·없으면 processed
     out = RELEASES / version
     if out.exists():
         shutil.rmtree(out)

@@ -16,11 +16,12 @@ for _p in (str(ROOT), str(ROOT / "src")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 import config  # noqa: E402
+from plan2graph import sources  # noqa: E402
 from plan2graph.adapters import cubicasa as _cc  # noqa: E402
 from plan2graph.adapters import common as _common  # noqa: E402
 
 CC_ROOT = config.DATA_DIR / "external" / "cubicasa5k"
-GRAPHS = config.DATA_DIR / "releases" / "global_cubicasa" / "graphs"
+GRAPHS = sources.graphs_dir("cubicasa5k")   # staging/cubicasa5k/graphs 우선·없으면 레거시
 
 
 def scan() -> dict:

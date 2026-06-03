@@ -19,12 +19,13 @@ for _p in (str(ROOT), str(ROOT / "src")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 import config  # noqa: E402
+from plan2graph import sources  # noqa: E402
 from plan2graph.adapters import rplan as _rp  # noqa: E402
 
 # 데이터 위치: 기본 data/external/rplan. 다른 곳에 풀었으면 PLAN2GRAPH_RPLAN로 지정.
 RP_ROOT = Path(os.environ.get("PLAN2GRAPH_RPLAN",
                               str(config.DATA_DIR / "external" / "rplan")))
-GRAPHS = config.DATA_DIR / "releases" / "global_rplan" / "graphs"
+GRAPHS = sources.graphs_dir("rplan")   # staging/rplan/graphs 우선·없으면 레거시
 
 # 카테고리(0~17) → 표시색(RGB). 0~12 방, 13 외부, 14·16 벽, 15·17 문.
 CAT_COLORS = {
