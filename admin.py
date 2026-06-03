@@ -139,6 +139,10 @@ if which.startswith("🔍"):
     st.markdown(f"### {cat_label[cat]} — **{len(recs):,}개**  ·  _{_ix.CATEGORIES[cat]}_")
     st.caption(f"분포: " + " · ".join(f"{k}:{len([r for r in src if r['house']==k]):,}"
                                      for k in ("APT", "DEH", "ROW")))
+    if cat == "dup" and src:
+        ng = len({r["group"] for r in src})
+        st.info(f"🔁 총 **{len(src):,}개 사본** = **{ng:,}그룹** · 원본 **{ng:,}개 채택** + "
+                f"중복 **{len(src)-ng:,}개 제외**. 같은 그룹은 연속(1/N…N/N), 모두 byte-identical.")
     overlay = st.sidebar.checkbox("🎨 라벨 오버레이(증거)", value=True)
     if overlay:
         st.markdown("**라벨 색**: :green[●] 방(SPA) · :red[●] 문 · :orange[●] 창 · :blue[●] 벽(STR) "
@@ -163,12 +167,14 @@ if which.startswith("🔍"):
         try:
             img = _ix.render(r, lblidx, overlay=overlay)
             img.thumbnail((res, res))
-            cap = f"{r['house']} · {r['key']} · 라벨={r['labels']}"
-            if r.get("dup_keys"):
-                cap += f" · 중복키({len(r['dup_keys'])}): {', '.join(r['dup_keys'])}"
+            if r.get("group"):   # 중복: 사본마다 i/N + 원본/제외
+                cap = (f"🔁중복그룹#{r['group']} · {r['label']} {r['i']}/{r['n']} · "
+                       f"key={r['key']} · {'✅원본(채택)' if r['kept'] else '❌중복(제외)'}")
+            else:
+                cap = f"{r['house']} · {r['key']} · 라벨={r['labels']}"
             cols[i % ncol].image(img, use_container_width=True, caption=cap)
         except Exception as e:  # noqa: BLE001
-            cols[i % ncol].warning(f"{r['key']} 표시 실패: {e}")
+            cols[i % ncol].warning(f"{r.get('key','?')} 표시 실패: {e}")
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════

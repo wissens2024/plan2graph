@@ -104,8 +104,9 @@ def nonfp_records(split: str = "Training") -> list:
 
 
 def duplicate_records(split: str = "Training") -> list:
-    """같은 도면(지문)이 *한 라벨종류 안에서 여러 9자리 키*로 중복 등장 — '완전배제'(복사본).
-    각 record: 대표 PNG + 중복 키 목록(byte-identical, 1장만 채택). FP만."""
+    """같은 도면(지문)이 *한 라벨종류 안에서 여러 9자리 키*로 중복 — 각 '사본'을 개별 레코드로.
+    중복이 N개면 N개 다 반환(원본 1 채택 + N-1 제외). 같은 그룹은 연속 배치(i/N).
+    → 갯수 정확(합=총 사본수)·'정말 중복'임을 눈으로. FP만, 전 라벨종류."""
     zips = [z for z in discover_zips()
             if z["content"] == "원천" and z["split"] == split]
     grp: dict = defaultdict(lambda: defaultdict(list))   # sig → label → [(key,zip,entry,house)]
@@ -115,15 +116,20 @@ def duplicate_records(split: str = "Training") -> list:
             continue
         sig = f"{info.CRC:08x}_{info.file_size}"
         grp[sig][m["label"]].append((m["key"], str(z["path"]), info.filename, m["house"]))
-    recs = []
+    recs, gid = [], 0
     for sig, labs in grp.items():
         for lab, ent in labs.items():
-            if len(ent) > 1:   # 같은 라벨 안 2키+ = 진짜 중복
-                key, zp, entry, house = ent[0]
+            if len(ent) <= 1:
+                continue
+            gid += 1
+            ent = sorted(ent, key=lambda e: e[0])   # 키 정렬 → 원본(첫번째) 안정
+            n = len(ent)
+            for i, (key, zp, entry, house) in enumerate(ent, 1):
                 recs.append({"sig": sig, "house": house, "key": key, "zip": zp,
-                             "entry": entry, "det": {}, "dup_keys": [e[0] for e in ent],
-                             "labels": [f"{lab}×{len(ent)}"]})
-    return sorted(recs, key=lambda r: -len(r["dup_keys"]))
+                             "entry": entry, "det": {}, "group": gid, "label": lab,
+                             "i": i, "n": n, "kept": (i == 1),
+                             "labels": [f"{lab} {i}/{n}"]})
+    return recs
 
 
 def objocr_only_records(split: str = "Training") -> list:
