@@ -17,6 +17,7 @@ RULE_KO = {
     "R3_unreachable_from_entrance": "현관에서 도달 불가",
     "R4_no_entrance": "현관(진입점) 없음",
     "R5_unresolved_doors": "미해소 문",
+    "duplicate": "중복(동일 평면도 사본)",
     "": "사유 미기록",
 }
 
