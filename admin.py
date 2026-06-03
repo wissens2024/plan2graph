@@ -136,6 +136,48 @@ def _graph_review(source_id, recs, render_original, graph_id_of):
     st.caption(f"원장: `{led}` · 결정 {len(review.load_ledger_from(led)):,}건")
 
 
+def _status_panel(source_id):
+    """출처 검수 현황(총/정상/격리 + 격리 사유 분포). summary(by_id 포함) 반환."""
+    from plan2graph import dataset_status, sources
+    gdir = sources.graphs_dir(source_id)
+    nkey = len(list(gdir.glob("*.json"))) if gdir.is_dir() else 0
+
+    @st.cache_data(show_spinner="검수 현황 집계(최초 1회)...")
+    def _agg(sid, _n):
+        return dataset_status.scan_status(sources.graphs_dir(sid))
+
+    s = _agg(source_id, nkey)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("총 그래프", f"{s['total']:,}")
+    rate = (s['success'] / s['total'] * 100) if s['total'] else 0
+    c2.metric("✅ 정상", f"{s['success']:,}", f"{rate:.1f}%")
+    c3.metric("⚠ 격리(보정 대상)", f"{s['quarantine']:,}")
+    if s["reasons"]:
+        st.caption("격리 사유별 분포 — 왜 그래프를 못 만들었나 (막대를 보고 사유 선택→원본 확인)")
+        st.bar_chart({dataset_status.reason_label(k): v for k, v in s["reasons"].items()})
+    return s
+
+
+def _status_filter(recs, summary, graph_id_of):
+    """사이드바 status/reason 필터 적용 → 필터된 recs. (graph_id_of(rec)→레코드 stem)"""
+    from plan2graph import dataset_status
+    by = summary["by_id"]
+    f = st.sidebar.radio("상태 필터", ["전체", "✅ 정상", "⚠ 격리"], index=0, horizontal=True)
+    if f == "전체":
+        return recs
+    want = "success" if f.startswith("✅") else "quarantine"
+    out = [r for r in recs if by.get(graph_id_of(r), ("success", ""))[0] == want]
+    if want == "quarantine" and summary["reasons"]:
+        opts = list(summary["reasons"].keys())
+        sel = st.sidebar.multiselect("격리 사유(택)", opts,
+                                     format_func=dataset_status.reason_label, default=opts)
+        ss = set(sel)
+        out = [r for r in out
+               if set((by.get(graph_id_of(r), ("", ""))[1] or "").split(",")) & ss]
+    st.sidebar.caption(f"필터 결과: {len(out):,}개")
+    return out
+
+
 @st.cache_resource(show_spinner="zip 인덱스 구축 중... (최초 1회)")
 def get_indices():
     return review.build_indices(("Training", "Validation"))  # 통합 풀
@@ -298,12 +340,16 @@ if which.startswith("🌍"):
             "- **제외분(excluded)**: 방 0개 / SVG 파싱 실패 → 제외\n\n"
             "오버레이: :green[●] 방 · :red[●] 문 (SVG 주석을 F1_scaled.png에). "
             "그려진 게 추출된 것 — 안 그려지면 추출 실패(제외 사유).")
+    # ── 검수 현황(총/정상/격리 + 사유 분포) ──
+    _ccsumm = _status_panel("cubicasa5k")
     cat_label = {"converted": "🟢 정상분(그래프 변환)", "excluded": "🔴 제외분(방없음/실패)"}
     cat = st.sidebar.selectbox("분류", list(cat_label),
                                format_func=lambda k: f"{cat_label[k]} ({len(s[k]):,})")
     subs = sorted({r["sub"] for r in s[cat]})
     subf = st.sidebar.selectbox("세트", ["(전체)"] + subs)
     recs = [r for r in s[cat] if subf == "(전체)" or r["sub"] == subf]
+    if cat == "converted":   # 정상/격리·사유 필터
+        recs = _status_filter(recs, _ccsumm, lambda r: f"CC_{r['id']}")
     view = st.sidebar.radio(
         "👁 보기 모드", ["🔗 그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
         index=0, help="그래프검수=원본∥위상그래프+결정 · 나란히=원본vs오버레이 · 겹쳐=원본 위 방·문 · 원본만")
@@ -368,7 +414,9 @@ if which.startswith("🏙"):
     if not s["converted"]:
         st.info("아직 그래프 변환 전입니다 — '전체(원본)'로 검수하세요. "
                 "변환됨/미변환 분류를 보려면 먼저 어댑터 실행: "
-                "`python src/plan2graph/adapters/rplan.py --src <RPLAN경로>`")
+                "`python src/plan2graph/adapters/rplan_vector.py --src <data_*_converted.pkl>`")
+    # ── 검수 현황(총/정상/격리 + 사유 분포) ──
+    _rpsumm = _status_panel("rplan")
     # 색 범례
     st.markdown("**방 색**: " + " · ".join(
         f":gray[■]{_rpi.CAT_KO[k]}" for k in sorted(_rpi.CAT_KO)))
@@ -377,6 +425,8 @@ if which.startswith("🏙"):
     cat = st.sidebar.selectbox("분류", list(cat_label),
                                format_func=lambda k: f"{cat_label[k]} ({len(s[k]):,})")
     recs = s[cat]
+    if cat == "converted":   # 정상/격리·사유 필터(원본 보고 '왜 못했나' 확인)
+        recs = _status_filter(recs, _rpsumm, lambda r: f"RPLAN_{r['id']}")
     view = st.sidebar.radio(
         "👁 보기 모드", ["🔗 그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
         index=0, help="그래프검수=원본∥위상그래프+결정 · 나란히=원본vs경계·문 오버레이")
