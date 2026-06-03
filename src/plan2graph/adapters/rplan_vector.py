@@ -84,13 +84,23 @@ def parse_struct(s) -> dict | None:
 
 
 def iter_structs(pkl_path: str):
-    """data_*_converted.pkl → (name, struct) 제너레이터."""
+    """data_*_converted.pkl → (name, struct) 제너레이터.
+    이름키는 배포본마다 다름(train=nameList, test=testNameList) → data 길이와
+    일치하는 키를 자동 선택."""
     import pickle
     with open(pkl_path, "rb") as f:
         d = pickle.load(f)
     data = d["data"]
+    names = None
+    for k in ("nameList", "testNameList", "trainNameList"):
+        v = d.get(k)
+        if v is not None and len(v) == len(data):
+            names = v
+            break
+    if names is None:
+        names = [str(i) for i in range(len(data))]
     for i in range(len(data)):
-        yield str(d["nameList"][i]), data[i]
+        yield str(names[i]), data[i]
 
 
 if __name__ == "__main__":
