@@ -18,6 +18,7 @@ RULE_KO = {
     "R4_no_entrance": "현관(진입점) 없음",
     "R5_unresolved_doors": "미해소 문",
     "duplicate": "중복(동일 평면도 사본)",
+    "untyped_rooms": "방 타입 미정(Undefined만)",
     "": "사유 미기록",
 }
 

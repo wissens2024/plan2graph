@@ -49,23 +49,28 @@ def parse(svg_path: str) -> dict | None:
     except Exception:
         return None
     ns = {"s": "http://www.w3.org/2000/svg"}
-    rooms, room_polys, doors = [], [], []
+    rooms, room_polys, doors, untyped = [], [], [], []
     for g in root.iter():
         cls = g.attrib.get("class", "")
         tag = g.tag.split("}")[-1]
         if "Space" in cls:                 # 방
             label = cls.replace("Space", "").strip().split()[0] if cls.strip() != "Space" else "room"
-            if label in _NON_ROOM:         # 비(非)방 클래스 제외(치수라벨·가구 등)
-                continue
             poly = None
             for child in g.iter():
                 if child.tag.split("}")[-1] in ("polygon", "path") and child.attrib.get("points"):
                     poly = _points(child.attrib["points"]); break
             st = _poly_stats(poly) if poly else None
-            if st:
-                rooms.append({"type": common.map_type(label), "centroid": st[0],
-                              "area_px": st[1]})
-                room_polys.append(st[2])
+            if not st:
+                continue
+            if label in _NON_ROOM:         # 비(非)방 클래스
+                # 치수라벨·가구는 공간 아님 → 무시. 그 외(Undefined/Outdoor 등)는
+                # '타입 미정 공간'으로 보관 → 정식 방이 0개면 격리 레코드로 살린다.
+                if label not in ("DimensionsLabel", "FixedFurniture"):
+                    untyped.append({"type": "공간_기타", "centroid": st[0], "area_px": st[1]})
+                continue
+            rooms.append({"type": common.map_type(label), "centroid": st[0],
+                          "area_px": st[1]})
+            room_polys.append(st[2])
         elif "Door" in cls:                # 문(중심점)
             for child in g.iter():
                 if child.attrib.get("points"):
@@ -74,6 +79,16 @@ def parse(svg_path: str) -> dict | None:
                         cx = sum(x for x, _ in p) / len(p); cy = sum(y for _, y in p) / len(p)
                         doors.append((cx, cy)); break
     if not rooms:
+        if untyped:        # 정식 방 0개지만 타입미정 공간 존재 → '방 타입 미정' 격리로 발행
+            gid = "CC_" + Path(svg_path).parent.name
+            ux = [r["centroid"][0] for r in untyped]
+            uy = [r["centroid"][1] for r in untyped]
+            w = int(max(ux) + 50) if ux else 256
+            h = int(max(uy) + 50) if uy else 256
+            rec = common.to_record(gid, "cubicasa5k", untyped, [], w, h)
+            rec["meta"]["status"] = "quarantine"
+            rec["meta"]["reason"] = "untyped_rooms"
+            return rec
         return None
     # 문 → 가장 가까운 두 방 연결(door). 문 없는 인접 방은 open(경계 근접).
     def _near(pt, poly):
