@@ -68,7 +68,73 @@ def _record(**kw):
 st.sidebar.title("🏗 Plan2Graph 관리자")
 st.sidebar.caption("데이터셋을 눈으로 검증하는 콘솔")
 which = st.sidebar.radio("큐", ["⚠ 격리 (교정)", "✅ 채택 (검수)", "📏 scale 검수/보정",
-                                "📜 법령 DB", "📊 결과 대시보드"], index=0)
+                                "📜 법령 DB", "📊 결과 대시보드", "🔍 배제 도면 검수"], index=0)
+
+# ════════════════════════════════════════════════════════════════════════════
+# 🔍 배제 도면 검수 — 그래프 대상에서 빠진 평면도를 실제 PNG로 육안 검증
+# ════════════════════════════════════════════════════════════════════════════
+if which.startswith("🔍"):
+    import io as _io
+    from PIL import Image as _PImage
+    from plan2graph import inspect_excluded as _ix
+
+    st.title("🔍 배제 도면 검수")
+    st.caption("그래프 대상에서 빠진 평면도를 실제 PNG로 확인 — '배제 사유가 맞는지' 육안 검증.")
+    if not config.RAW_SOURCE_ROOT.is_dir():
+        st.error(f"원본 RAW 없음: {config.RAW_SOURCE_ROOT}\n"
+                 "PLAN2GRAPH_RAW 환경변수를 SPA/STR zip이 있는 경로로 설정 후 재실행.")
+        st.stop()
+
+    with st.expander("ℹ️ 카테고리·배제 사유 (꼭 읽기)", expanded=True):
+        st.markdown(
+            "**이들은 '도면이 아닌 것'이 아닙니다.** 모두 진짜 평면도인데, 우리가 그래프를 만들려면 "
+            "**방(SPA)+문·벽(STR) 라벨이 둘 다** 필요한데 *한쪽만* 달려 있어 라벨만으론 위상그래프를 못 만드는 것입니다.\n"
+            "- **방만(spa_only)**: 방 라벨만 → 그래프 *엣지(문)*를 못 만듦 → V2V로 STR 예측해 복구\n"
+            "- **구조만(str_only)**: 문·벽만 → 그래프 *노드(방)*를 못 만듦 → V2V로 SPA 예측해 복구\n"
+            "- **둘 다(dual)**: 이미 v0에서 그래프화됨(참고)\n\n"
+            "※ OBJ/OCR만 있는 도면은 SPA/STR 원천 zip에 없어 여기 안 보입니다(별도).")
+
+    split = st.sidebar.selectbox("split", ["Training", "Validation"])
+
+    @st.cache_data(show_spinner="원천 PNG 지문 스캔(최초 1회)...")
+    def _excl_cats(sp):
+        return _ix.categorize(_ix.build_index(sp))
+
+    cats = _excl_cats(split)
+    cat_label = {"spa_only": "방만(STR 결손)", "str_only": "구조만(SPA 결손)", "dual": "둘 다(v0)"}
+    cat = st.sidebar.selectbox("카테고리", list(cat_label),
+                               format_func=lambda k: f"{cat_label[k]} ({len(cats[k]):,})")
+    house = st.sidebar.selectbox("거주형태", ["(전체)", "APT", "DEH", "ROW"])
+    recs = [r for r in cats[cat] if house == "(전체)" or r["house"] == house]
+
+    st.markdown(f"### {cat_label[cat]} — **{len(recs):,}개**  ·  _{_ix.CATEGORIES[cat]}_")
+    st.caption(f"분포: " + " · ".join(f"{k}:{len([r for r in cats[cat] if r['house']==k]):,}"
+                                     for k in ("APT", "DEH", "ROW")))
+    overlay = st.sidebar.checkbox("🎨 라벨 오버레이(증거)", value=True)
+    if overlay:
+        st.markdown("**라벨 색**: :green[●] 방(SPA) · :red[●] 문 · :orange[●] 창 · :blue[●] 벽(STR) "
+                    "— *그려진 게 라벨된 것. 안 그려진 종류 = 라벨 없음(배제 사유).*")
+
+    @st.cache_data(show_spinner="라벨 인덱스 구성(최초 1회)...")
+    def _lblidx(sp):
+        return _ix.label_index(sp)
+
+    lblidx = _lblidx(split) if overlay else {}
+    PER = 6
+    npages = max(1, (len(recs) + PER - 1) // PER)
+    pg = st.sidebar.number_input(f"페이지 (1~{npages})", 1, npages, 1) - 1
+    st.sidebar.caption(f"한 페이지 {PER}장씩 · 총 {npages:,}페이지")
+
+    cols = st.columns(2)
+    for i, r in enumerate(recs[pg * PER:(pg + 1) * PER]):
+        try:
+            img = _ix.render(r, lblidx, overlay=overlay)
+            img.thumbnail((720, 720))
+            cols[i % 2].image(img, use_container_width=True,
+                              caption=f"{r['house']} · {r['key']} · 라벨={r['labels']}")
+        except Exception as e:  # noqa: BLE001
+            cols[i % 2].warning(f"{r['key']} 표시 실패: {e}")
+    st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
 # 📊 결과 대시보드 — 데이터셋·모델·지표 시각화 (설명/PPT용)

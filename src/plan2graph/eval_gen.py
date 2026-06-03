@@ -212,6 +212,43 @@ def generalization_diag(version: str, temperature: float = 0.85) -> None:
                               "git_commit": exp.git_commit(), **m})
 
 
+def dwelling_diag(version: str, temperature: float = 0.85) -> None:
+    """거주형태(APT/DEH/ROW) 강건성 점검 — 좋은 평균이 소수 거주형태 실패를 가리는지.
+    학습 없이 평가만. test를 meta.house_type로 분할해 baseline vs neural 비교."""
+    from plan2graph.train_gen import NeuralGenerator
+    train = mb._load_split(version, "train")
+    test = mb._load_split(version, "test")
+    if not train or not test:
+        print(f"  [데이터 없음] {version}"); return
+    model = mb.fit(train)
+    gen_b, _ = gen_loop.baseline_gen_fn(model)
+    tsigs = model.get("train_sigs", set())
+    ckpt = ROOT / "models" / f"gen_{version}.pt"
+    ng = NeuralGenerator(str(ckpt)) if ckpt.exists() else None
+    base = ng.run_id if ng else "neural"
+
+    def htype(r):
+        return (r.get("meta", {}) or {}).get("house_type") or "?"
+    groups = {}
+    for r in test:
+        groups.setdefault(htype(r), []).append(r)
+
+    print(f"거주형태별 강건성 (T={temperature}, loop off) — 좋은 평균이 소수형태를 가리나?")
+    print(f"{'house':6} {'gen':9} {'n':>4} {'무결성':>7} {'법규':>6} {'인접L1':>7} {'다양성':>7}")
+    for ht, sub in sorted(groups.items(), key=lambda x: -len(x[1])):
+        gens = [("baseline", gen_b)]
+        if ng:
+            gens.append(("neural", _neural_gen(ng, temperature)))
+        for gname, gfn in gens:
+            m = _metrics(gfn, sub, tsigs, False, None)
+            print(f"{ht:6} {gname:9} {len(sub):>4} {m['integrity']:>7} {m['legal']:>6} "
+                  f"{m['adj_L1']:>7} {m['diversity']:>7}")
+            exp.append_index({"kind": "dwelling", "run_id": (base if gname == "neural"
+                              else exp.make_run_id("baseline", version, None, 0)),
+                              "house_type": ht, "n": len(sub), "generator": gname,
+                              "version": version, "git_commit": exp.git_commit(), **m})
+
+
 def run(versions: list[str], n_test: int | None = None) -> Path:
     rows = []
     for v in versions:
@@ -248,8 +285,12 @@ if __name__ == "__main__":
     ap.add_argument("--version", default="v0", help="스윕/진단 대상 버전")
     ap.add_argument("--generalization", action="store_true",
                     help="일반화 진단(본 program vs 못 본 program)")
+    ap.add_argument("--dwelling", action="store_true",
+                    help="거주형태(APT/DEH/ROW) 강건성 점검")
     a = ap.parse_args()
-    if a.generalization:
+    if a.dwelling:
+        dwelling_diag(a.version)
+    elif a.generalization:
         generalization_diag(a.version)
     elif a.sweep_temp:
         sweep_temperature(a.version, [float(x) for x in a.sweep_temp.split(",") if x.strip()])

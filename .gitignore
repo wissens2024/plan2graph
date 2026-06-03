@@ -1,6 +1,9 @@
 # ── 대용량 데이터 (서버에서 재생성, git 제외) ──
 /건축 도면 데이터/
+/aihub_raw/              # 서버 업로드된 AI-Hub 원본 zip(SPA/STR) — 재업로드 재현
+/aihub_stage/            # 업로드 스테이징
 /data/external/          # 글로벌 원본(CubiCasa zip·SVG 등) — 다운로드 재현
+/data/v2v/               # V2V YOLO 데이터셋·예측(이미지 다수) — 재생성
 /data/raw/
 /data/processed_val/
 /data/processed/graphs/
@@ -33,6 +36,8 @@
 
 # 런타임 로그(서버 nohup 산출 — 추적 제외)
 /logs/
+# YOLO(ultralytics) 학습 산출물 — 재생성(*.pt는 위 규칙으로 제외)
+/runs/segment/
 
 # Python / 환경 / OS
 __pycache__/
