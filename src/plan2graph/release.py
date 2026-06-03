@@ -27,7 +27,8 @@ for _p in (str(ROOT), str(ROOT / "src")):
 import config  # noqa: E402
 
 RELEASES = config.DATA_DIR / "releases"
-FROZEN_TEST = RELEASES / "_frozen_test.json"
+FROZEN_TEST = RELEASES / "_frozen_test.json"   # benchmark(AI-Hub) test 동결, v0에서 정의
+RECIPES = RELEASES / "recipes"                 # releases/recipes/<version>.json (안 지워짐)
 
 
 def _sheet_key(graph_id: str) -> str:
@@ -54,45 +55,87 @@ def _is_clean(rec: dict) -> tuple[bool, str]:
     return True, ""
 
 
-def freeze(version: str, src_graphs: Path = None) -> dict:
-    """현재 채택 그래프에서 '정상' 세대만 골라 버전 스냅샷 동결."""
+def _default_recipe(version: str) -> dict:
+    """레시피 미지정 시 = 기존 v0 동작(AI-Hub 정상분만, 단일세대 필터)."""
+    return {"version": version,
+            "include": [{"source": "aihub", "status": "success"}],
+            "test_from": ["aihub"],
+            "clean_filter": "현관==1"}
+
+
+def load_recipe(version: str, recipe: dict | None = None) -> dict:
+    """레시피 결정: 명시 인자 > releases/recipes/<version>.json > 기본(aihub)."""
+    if recipe is not None:
+        return recipe
+    rp = RECIPES / f"{version}.json"
+    if rp.exists():
+        return json.loads(rp.read_text(encoding="utf-8"))
+    return _default_recipe(version)
+
+
+def _collect(source_id: str, status: str | None) -> list[tuple[Path, dict]]:
+    """staging/<source>/graphs(없으면 레거시)에서 status 일치 레코드 수집."""
     from plan2graph import sources
-    src = src_graphs or sources.graphs_dir("aihub")  # staging/aihub 우선·없으면 processed
+    gdir = sources.graphs_dir(source_id)
+    out = []
+    if gdir.is_dir():
+        for f in sorted(gdir.glob("*.json")):
+            rec = json.loads(f.read_text(encoding="utf-8"))
+            if status and rec.get("meta", {}).get("status", "success") != status:
+                continue
+            out.append((f, rec))
+    return out
+
+
+def freeze(version: str, recipe: dict | None = None) -> dict:
+    """레시피(출처×상태×역할) 조합으로 버전 스냅샷 동결 (DATASET_DESIGN §5).
+    benchmark 출처 = 단일세대 필터 + train/val/test(동결 test 공유),
+    pretrain 출처 = status 통과분 전체 + train/val만(test 누수 방지)."""
+    from plan2graph import sources
+    recipe = load_recipe(version, recipe)
+    test_from = set(recipe.get("test_from", []))
+
     out = RELEASES / version
     if out.exists():
         shutil.rmtree(out)
     (out / "graphs").mkdir(parents=True)
     (out / "splits").mkdir()
 
-    files = sorted(src.glob("*.json"))
-    kept, excluded = [], Counter()
-    for f in files:
-        rec = json.loads(f.read_text(encoding="utf-8"))
-        ok, reason = _is_clean(rec)
-        if not ok:
-            excluded[reason.split("(")[0]] += 1
-            continue
-        kept.append(rec)
-        shutil.copy2(f, out / "graphs" / f.name)
-
-    # 고정 test 셋: v0에서 정의 → 저장. 이후 버전은 그 test를 재사용.
     frozen = json.loads(FROZEN_TEST.read_text(encoding="utf-8")) if FROZEN_TEST.exists() else None
     test_sheets = set(frozen["test_sheets"]) if frozen else None
 
     splits = {"train": [], "val": [], "test": []}
-    new_test = set()
-    for rec in kept:
-        sk = _sheet_key(rec["graph_id"])
-        if test_sheets is not None:
-            s = "test" if sk in test_sheets else (
-                "val" if _bucket(sk) == "val" else "train")  # 신규는 train/val만
-        else:
-            s = _bucket(sk)
-            if s == "test":
-                new_test.add(sk)
-        splits[s].append(rec["graph_id"])
+    new_test, excluded, per_source = set(), Counter(), {}
 
-    if test_sheets is None:   # v0: test 동결 저장
+    for entry in recipe["include"]:
+        sid = entry["source"]
+        status = entry.get("status", "success")
+        src = sources.resolve(sid)
+        role = entry.get("role") or (src.role if src else "pretrain")
+        is_bench = (sid in test_from) or (role == "benchmark")
+        cnt = 0
+        for f, rec in _collect(sid, status):
+            if is_bench:                              # 단일세대 필터(현관==1)
+                ok, reason = _is_clean(rec)
+                if not ok:
+                    excluded[f"{sid}:{reason.split('(')[0]}"] += 1
+                    continue
+            sk = _sheet_key(rec["graph_id"])
+            if is_bench:
+                if test_sheets is not None:
+                    s = "test" if sk in test_sheets else ("val" if _bucket(sk) == "val" else "train")
+                else:
+                    s = _bucket(sk)
+                    if s == "test":
+                        new_test.add(sk)
+            else:                                     # pretrain: test 금지(train/val만)
+                s = "val" if _bucket(sk) == "val" else "train"
+            splits[s].append(rec["graph_id"])
+            shutil.copy2(f, out / "graphs" / f.name)
+            cnt += 1
+        per_source[sid] = cnt
+
+    if test_sheets is None and new_test:              # v0: test 동결 저장
         FROZEN_TEST.parent.mkdir(parents=True, exist_ok=True)
         FROZEN_TEST.write_text(json.dumps(
             {"defined_by": version, "test_sheets": sorted(new_test)},
@@ -102,18 +145,20 @@ def freeze(version: str, src_graphs: Path = None) -> dict:
         (out / "splits" / f"{s}.txt").write_text("\n".join(sorted(ids)) + "\n",
                                                  encoding="utf-8")
 
-    n_scaled = sum(1 for r in kept if r["meta"].get("scale_confidence") == "ok")
+    RECIPES.mkdir(parents=True, exist_ok=True)
+    (out / "recipe.json").write_text(json.dumps(recipe, ensure_ascii=False, indent=2),
+                                     encoding="utf-8")
+    n_graphs = sum(per_source.values())
     manifest = {
         "version": version,
         "frozen_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "n_graphs": len(kept),
-        "n_sheets": len({_sheet_key(r["graph_id"]) for r in kept}),
+        "n_graphs": n_graphs,
+        "per_source": per_source,
         "splits": {s: len(v) for s, v in splits.items()},
         "test_frozen_by": (frozen or {}).get("defined_by", version),
-        "clean_filter": "현관==1 (단일세대), 멀티세대 병합 제외",
+        "test_from": sorted(test_from),
         "excluded": dict(excluded),
-        "n_scaled_m2": n_scaled,
-        "source": "AI-Hub 71465 (Training+Validation 통합, 지문중복 제거)",
+        "recipe": recipe,
     }
     (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2),
                                        encoding="utf-8")
