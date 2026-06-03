@@ -74,6 +74,11 @@ def scan() -> dict:
 
 def exclude_reason(rec: dict) -> str:
     """제외분 사유(재파싱)."""
+    import numpy as np
+    from PIL import Image
+    arr = np.array(Image.open(rec["png"]))
+    if arr.ndim != 3 or arr.shape[2] < 4:
+        return "렌더된 도면 이미지(4채널 인덱스맵 아님) — 그래프 변환 불가, 보기 전용"
     try:
         r = _rp.parse(rec["png"])
     except Exception as e:  # noqa: BLE001
@@ -85,22 +90,29 @@ def exclude_reason(rec: dict) -> str:
 
 
 def _load_channels(png_path: str):
-    """RPLAN PNG → (category, instance) 2D 배열. 형식 불량이면 (None, None)."""
+    """RPLAN '원본 인덱스맵' PNG → (category, instance) 2D 배열.
+    인덱스맵은 4채널(boundary/category/instance/inside)이어야 함. 그 외(이미 렌더된
+    3채널 RGB 도면 등)는 (None, None) → render가 원본 그대로 표시."""
     import numpy as np
     from PIL import Image
     arr = np.array(Image.open(png_path))
-    if arr.ndim != 3 or arr.shape[2] <= max(_rp.CAT_CH, _rp.INST_CH):
+    if arr.ndim != 3 or arr.shape[2] < 4:
         return None, None
     return arr[:, :, _rp.CAT_CH], arr[:, :, _rp.INST_CH]
 
 
 def render(rec: dict, overlay: bool = True):
-    """RPLAN PNG → 방 종류색 도면(PIL). overlay 시 instance 경계 외곽선 + 문 강조."""
+    """RPLAN PNG → 방 종류색 도면(PIL). overlay 시 instance 경계 외곽선 + 문 강조.
+    4채널 인덱스맵이 아니면(이미 렌더된 도면 패키지) 원본 이미지를 그대로 표시."""
     import numpy as np
     from PIL import Image
     cat, inst = _load_channels(rec["png"])
     if cat is None:
-        raise ValueError("4채널 PNG 아님(RPLAN 형식 불량)")
+        # 이미 렌더된 도면 이미지(예: snapshot_train·Img) → 원본 그대로. 작은 건 확대.
+        img = Image.open(rec["png"]).convert("RGB")
+        if max(img.size) < 600:
+            img = img.resize((img.size[0] * 3, img.size[1] * 3), Image.LANCZOS)
+        return img
     h, w = cat.shape
     rgb = np.full((h, w, 3), 245, dtype="uint8")
     for code, color in CAT_COLORS.items():
