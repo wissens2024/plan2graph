@@ -70,16 +70,18 @@ def build_graph_from_rooms(rooms: list[dict], edges: list[tuple],
                    n_windows=r.get("n_windows", 0),
                    window_len_px=r.get("window_len_px", 0.0),
                    objects=r.get("objects", []),
-                   is_entrance=(cls == config.ENTRANCE_CLASS))
+                   # 기본은 현관 클래스. 단 출처가 명시 지정하면(예: RPLAN 외곽선 문→진입실)
+                   # 현관 타입이 아니어도 기능적 진입점으로 표시.
+                   is_entrance=bool(r.get("is_entrance", cls == config.ENTRANCE_CLASS)))
     for a, b, via in edges:
         if a == b:
             continue
         if not G.has_edge(a, b):
             G.add_edge(a, b, via=via, door_type=None,
                        n_doors=1 if via == "door" else None)
-    # 현관 → 외부
-    for i, r in enumerate(rooms):
-        if r["type"] == config.ENTRANCE_CLASS and not G.has_edge(i, EXTERIOR):
+    # 진입실 → 외부 (현관 클래스 또는 명시 is_entrance)
+    for i in range(len(rooms)):
+        if G.nodes[i].get("is_entrance") and not G.has_edge(i, EXTERIOR):
             G.add_edge(i, EXTERIOR, via="entrance", door_type=None)
     if G.has_node(EXTERIOR):
         G.nodes[EXTERIOR].update(type="exterior", hierarchy=None, centroid=None)
