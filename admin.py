@@ -38,6 +38,35 @@ ORIGIN_NOTE = ("ℹ️ program·adjacency·위상은 **원본 라벨이 아니�
                "(원본엔 방 폴리곤·이름만 있음).")
 
 
+def _inspect_3mode(recs, mode, res, ncol, render, caption_fn):
+    """검수 3-모드 공용 표시. render(rec, overlay: bool)→PIL 이미지.
+      나란히 = 원본 | 라벨오버레이 를 같은 도면에 좌우 동시(원본을 항상 먼저 봄)
+      겹쳐보기 = 원본 위에 라벨을 겹친 1장
+      원본만   = 순수 원본 1장 (해석 개입 없음)."""
+    if mode == "나란히":
+        for r in recs:
+            try:
+                o = render(r, False); o.thumbnail((res, res))
+                v = render(r, True);  v.thumbnail((res, res))
+            except Exception as e:  # noqa: BLE001
+                st.warning(f"{caption_fn(r)} — 표시 실패: {e}")
+                continue
+            st.markdown(f"**{caption_fn(r)}**")
+            c = st.columns(2)
+            c[0].image(o, use_container_width=True, caption="① 원본 도면(raw PNG)")
+            c[1].image(v, use_container_width=True, caption="② 라벨 오버레이(해석)")
+            st.divider()
+    else:
+        cols = st.columns(ncol)
+        for i, r in enumerate(recs):
+            try:
+                img = render(r, mode == "겹쳐보기")
+                img.thumbnail((res, res))
+                cols[i % ncol].image(img, use_container_width=True, caption=caption_fn(r))
+            except Exception as e:  # noqa: BLE001
+                cols[i % ncol].warning(f"{r.get('key', r.get('id', '?'))} 표시 실패: {e}")
+
+
 @st.cache_resource(show_spinner="zip 인덱스 구축 중... (최초 1회)")
 def get_indices():
     return review.build_indices(("Training", "Validation"))  # 통합 풀
@@ -143,8 +172,13 @@ if which.startswith("🔍"):
         ng = len({r["group"] for r in src})
         st.info(f"🔁 총 **{len(src):,}개 사본** = **{ng:,}그룹** · 원본 **{ng:,}개 채택** + "
                 f"중복 **{len(src)-ng:,}개 제외**. 같은 그룹은 연속(1/N…N/N), 모두 byte-identical.")
-    overlay = st.sidebar.checkbox("🎨 라벨 오버레이(증거)", value=True)
-    if overlay:
+    view = st.sidebar.radio(
+        "👁 보기 모드", ["나란히(원본 | 오버레이)", "겹쳐보기", "원본만"], index=0,
+        help="나란히=원본을 먼저 보고 오른쪽 오버레이와 직접 대조 · 겹쳐=원본 위에 라벨 · 원본만=순수 원본")
+    mode = ("나란히" if view.startswith("나란히")
+            else "겹쳐보기" if view == "겹쳐보기" else "원본만")
+    need_overlay = mode != "원본만"
+    if need_overlay:
         st.markdown("**라벨 색**: :green[●] 방(SPA) · :red[●] 문 · :orange[●] 창 · :blue[●] 벽(STR) "
                     "— *그려진 게 라벨된 것. 안 그려진 종류 = 라벨 없음(배제 사유).*")
 
@@ -152,29 +186,24 @@ if which.startswith("🔍"):
     def _lblidx(sp):
         return _ix.label_index(sp)
 
-    lblidx = _lblidx(split) if overlay else {}
+    lblidx = _lblidx(split) if need_overlay else {}
     res = st.sidebar.select_slider("표시 해상도(px)", options=[1200, 1600, 2000, 2600, 3200, 4200],
                                    value=2000, help="원본 PNG는 ~17MB 고해상. 클릭→전체화면 시 이 해상도로 보임.")
-    ncol = st.sidebar.radio("열 수(클수록 크게)", [1, 2], index=1, horizontal=True)
-    PER = ncol * 2
+    ncol = st.sidebar.radio("열 수(겹쳐/원본만)", [1, 2], index=1, horizontal=True)
+    PER = 4 if mode == "나란히" else ncol * 2
     st.sidebar.caption("이미지 클릭 → 우상단 ⛶ 전체화면이면 더 크게 보입니다.")
     npages = max(1, (len(recs) + PER - 1) // PER)
     pg = st.sidebar.number_input(f"페이지 (1~{npages})", 1, npages, 1) - 1
     st.sidebar.caption(f"한 페이지 {PER}장 · 총 {npages:,}페이지 · 해상도 {res}px")
 
-    cols = st.columns(ncol)
-    for i, r in enumerate(recs[pg * PER:(pg + 1) * PER]):
-        try:
-            img = _ix.render(r, lblidx, overlay=overlay)
-            img.thumbnail((res, res))
-            if r.get("group"):   # 중복: 사본마다 i/N + 원본/제외
-                cap = (f"🔁중복그룹#{r['group']} · {r['label']} {r['i']}/{r['n']} · "
-                       f"key={r['key']} · {'✅원본(채택)' if r['kept'] else '❌중복(제외)'}")
-            else:
-                cap = f"{r['house']} · {r['key']} · 라벨={r['labels']}"
-            cols[i % ncol].image(img, use_container_width=True, caption=cap)
-        except Exception as e:  # noqa: BLE001
-            cols[i % ncol].warning(f"{r.get('key','?')} 표시 실패: {e}")
+    def _cap(r):
+        if r.get("group"):   # 중복: 사본마다 i/N + 원본/제외
+            return (f"🔁중복그룹#{r['group']} · {r['label']} {r['i']}/{r['n']} · "
+                    f"key={r['key']} · {'✅원본(채택)' if r['kept'] else '❌중복(제외)'}")
+        return f"{r['house']} · {r['key']} · 라벨={r['labels']}"
+
+    _inspect_3mode(recs[pg * PER:(pg + 1) * PER], mode, res, ncol,
+                   lambda r, ov: _ix.render(r, lblidx, overlay=ov), _cap)
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -206,26 +235,28 @@ if which.startswith("🌍"):
     subs = sorted({r["sub"] for r in s[cat]})
     subf = st.sidebar.selectbox("세트", ["(전체)"] + subs)
     recs = [r for r in s[cat] if subf == "(전체)" or r["sub"] == subf]
-    overlay = st.sidebar.checkbox("🎨 방 오버레이", value=True)
+    view = st.sidebar.radio(
+        "👁 보기 모드", ["나란히(원본 | 오버레이)", "겹쳐보기", "원본만"], index=0,
+        help="나란히=원본을 먼저 보고 오른쪽 오버레이와 직접 대조 · 겹쳐=원본 위에 방·문 · 원본만=순수 원본")
+    mode = ("나란히" if view.startswith("나란히")
+            else "겹쳐보기" if view == "겹쳐보기" else "원본만")
     res = st.sidebar.select_slider("표시 해상도(px)", options=[800, 1100, 1500, 2000, 2600],
                                    value=1500, help="CubiCasa 원본은 ~1100px(AI-Hub보다 저해상).")
-    ncol = st.sidebar.radio("열 수", [1, 2], index=1, horizontal=True)
-    PER = ncol * 2
+    ncol = st.sidebar.radio("열 수(겹쳐/원본만)", [1, 2], index=1, horizontal=True)
+    PER = 4 if mode == "나란히" else ncol * 2
     st.markdown(f"### {cat_label[cat]} — **{len(recs):,}개**")
     npages = max(1, (len(recs) + PER - 1) // PER)
     pg = st.sidebar.number_input(f"페이지 (1~{npages})", 1, npages, 1) - 1
     st.sidebar.caption(f"한 페이지 {PER}장 · 총 {npages:,}페이지 · {res}px")
-    cols = st.columns(ncol)
-    for i, r in enumerate(recs[pg * PER:(pg + 1) * PER]):
-        try:
-            img = _cci.render(r, overlay=overlay)
-            img.thumbnail((res, res))
-            cap = f"{r['sub']}/{r['id']}"
-            if cat == "excluded":
-                cap += f" · 사유: {_cci.exclude_reason(r)}"
-            cols[i % ncol].image(img, use_container_width=True, caption=cap)
-        except Exception as e:  # noqa: BLE001
-            cols[i % ncol].warning(f"{r['id']} 표시 실패: {e}")
+
+    def _cap(r):
+        c = f"{r['sub']}/{r['id']}"
+        if cat == "excluded":
+            c += f" · 사유: {_cci.exclude_reason(r)}"
+        return c
+
+    _inspect_3mode(recs[pg * PER:(pg + 1) * PER], mode, res, ncol,
+                   lambda r, ov: _cci.render(r, overlay=ov), _cap)
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -269,26 +300,28 @@ if which.startswith("🏙"):
     cat = st.sidebar.selectbox("분류", list(cat_label),
                                format_func=lambda k: f"{cat_label[k]} ({len(s[k]):,})")
     recs = s[cat]
-    overlay = st.sidebar.checkbox("🎨 경계·문 오버레이", value=True)
+    view = st.sidebar.radio(
+        "👁 보기 모드", ["나란히(원본 | 오버레이)", "겹쳐보기", "원본만"], index=0,
+        help="나란히=원본(인덱스맵)을 먼저 보고 오른쪽 경계·문 오버레이와 대조")
+    mode = ("나란히" if view.startswith("나란히")
+            else "겹쳐보기" if view == "겹쳐보기" else "원본만")
     res = st.sidebar.select_slider("표시 해상도(px)", options=[512, 768, 1024, 1536, 2048],
                                    value=1024, help="RPLAN 원본은 256px(인덱스 맵)을 ×4 확대해 표시.")
-    ncol = st.sidebar.radio("열 수", [1, 2, 3], index=1, horizontal=True)
-    PER = ncol * 2
+    ncol = st.sidebar.radio("열 수(겹쳐/원본만)", [1, 2, 3], index=1, horizontal=True)
+    PER = 4 if mode == "나란히" else ncol * 2
     st.markdown(f"### {cat_label[cat]} — **{len(recs):,}개**")
     npages = max(1, (len(recs) + PER - 1) // PER)
     pg = st.sidebar.number_input(f"페이지 (1~{npages})", 1, npages, 1) - 1
     st.sidebar.caption(f"한 페이지 {PER}장 · 총 {npages:,}페이지 · {res}px")
-    cols = st.columns(ncol)
-    for i, r in enumerate(recs[pg * PER:(pg + 1) * PER]):
-        try:
-            img = _rpi.render(r, overlay=overlay)
-            img.thumbnail((res, res))
-            cap = r["id"]
-            if cat == "excluded":
-                cap += f" · 사유: {_rpi.exclude_reason(r)}"
-            cols[i % ncol].image(img, use_container_width=True, caption=cap)
-        except Exception as e:  # noqa: BLE001
-            cols[i % ncol].warning(f"{r['id']} 표시 실패: {e}")
+
+    def _cap(r):
+        c = r["id"]
+        if cat == "excluded":
+            c += f" · 사유: {_rpi.exclude_reason(r)}"
+        return c
+
+    _inspect_3mode(recs[pg * PER:(pg + 1) * PER], mode, res, ncol,
+                   lambda r, ov: _rpi.render(r, overlay=ov), _cap)
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
