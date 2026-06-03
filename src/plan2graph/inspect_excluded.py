@@ -32,6 +32,7 @@ CATEGORIES = {
     "str_only": "[부분배제·V2V복구] 구조 라벨만(방 없음) → V2V로 SPA 예측",
     "nonfp": "[완전배제] 평면도가 아님(단면도/입면도/구조도) → 위상그래프 불가",
     "dup": "[완전배제] 같은 PNG가 한 라벨 안에서 여러 키로 중복 → 1장만 채택",
+    "objocr": "[완전배제] OBJ/OCR(객체·문자) 라벨만, 방·구조 없음 → 그래프 불가",
     "dual": "[참고] SPA+STR 둘 다(v0 그래프화 대상)",
 }
 DRAWING_NAME = {"CS": "단면도", "EP": "입면도", "SD": "구조도", "FP": "평면도"}
@@ -121,6 +122,29 @@ def duplicate_records(split: str = "Training") -> list:
                              "entry": entry, "det": {}, "dup_keys": [e[0] for e in ent],
                              "labels": [f"{lab}×{len(ent)}"]})
     return sorted(recs, key=lambda r: -len(r["dup_keys"]))
+
+
+def objocr_only_records(split: str = "Training") -> list:
+    """OBJ/OCR 라벨만 있고 SPA·STR 둘 다 없는 FP 도면 — '완전배제'(방·구조 라벨 없어 그래프 불가).
+    ※ OBJ/OCR 원천 zip이 업로드돼 있어야 보임(없으면 빈 리스트)."""
+    zips = [z for z in discover_zips()
+            if z["content"] == "원천" and z["split"] == split]
+    grp: dict = defaultdict(dict)
+    for z, info in iter_zipinfos(zips):
+        m = parse_name(Path(info.filename).stem)
+        if not m or m["drawing"] != config.TARGET_DRAWING_TYPE:
+            continue
+        sig = f"{info.CRC:08x}_{info.file_size}"
+        grp[sig][m["label"]] = {"zip": str(z["path"]), "entry": info.filename,
+                                "key": m["key"], "house": m["house"]}
+    recs = []
+    for sig, d in grp.items():
+        if ("OBJ" in d or "OCR" in d) and "SPA" not in d and "STR" not in d:
+            rep = d.get("OBJ") or d.get("OCR")
+            recs.append({"sig": sig, "house": rep["house"], "key": rep["key"],
+                         "zip": rep["zip"], "entry": rep["entry"], "det": {},
+                         "labels": sorted(d.keys())})
+    return sorted(recs, key=lambda r: (r["house"], r["key"]))
 
 
 def get_png(rec: dict) -> bytes:

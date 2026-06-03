@@ -112,18 +112,27 @@ if which.startswith("🔍"):
     def _dup(sp):
         return _ix.duplicate_records(sp)
 
+    @st.cache_data(show_spinner="OBJ/OCR-only 스캔...")
+    def _objocr(sp):
+        return _ix.objocr_only_records(sp)
+
     cats = _excl_cats(split)
     nonfp = _nonfp(split)
     dup = _dup(split)
+    objocr = _objocr(split)
     counts = {"spa_only": len(cats["spa_only"]), "str_only": len(cats["str_only"]),
-              "nonfp": len(nonfp), "dup": len(dup), "dual": len(cats["dual"])}
+              "nonfp": len(nonfp), "dup": len(dup), "objocr": len(objocr),
+              "dual": len(cats["dual"])}
     cat_label = {"spa_only": "🟡부분배제 방만(STR결손)", "str_only": "🟡부분배제 구조만(SPA결손)",
                  "nonfp": "🔴완전배제 비-FP(평면도아님)", "dup": "🔴완전배제 중복(복사본)",
-                 "dual": "⚪참고 둘다(v0)"}
+                 "objocr": "🔴완전배제 OBJ/OCR만", "dual": "⚪참고 둘다(v0)"}
     cat = st.sidebar.selectbox("카테고리", list(cat_label),
                                format_func=lambda k: f"{cat_label[k]} ({counts[k]:,})")
+    if cat == "objocr" and not objocr:
+        st.warning("OBJ/OCR 원천 zip이 아직 업로드/배치되지 않았습니다. "
+                   "scripts/objocr_upload.sh → objocr_setup.sh 후 표시됩니다.")
     house = st.sidebar.selectbox("거주형태", ["(전체)", "APT", "DEH", "ROW"])
-    src = {"nonfp": nonfp, "dup": dup}.get(cat, cats.get(cat, []))
+    src = {"nonfp": nonfp, "dup": dup, "objocr": objocr}.get(cat, cats.get(cat, []))
     recs = [r for r in src if house == "(전체)" or r["house"] == house]
 
     st.markdown(f"### {cat_label[cat]} — **{len(recs):,}개**  ·  _{_ix.CATEGORIES[cat]}_")
