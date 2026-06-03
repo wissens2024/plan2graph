@@ -235,27 +235,37 @@ if which.startswith("🏙"):
     from plan2graph import rplan_inspect as _rpi
 
     st.title("🏙 RPLAN 도면검수")
-    st.caption("글로벌 데이터(RPLAN ~80k) 도면을 방 종류색으로 — 정상분(그래프 변환)·제외분(사유).")
+    st.caption("글로벌 데이터(RPLAN ~80k) 도면을 방 종류색으로 — 원본 전체/변환됨/미변환 육안 검증.")
     if not _rpi.RP_ROOT.is_dir():
-        st.error(f"RPLAN 데이터 없음: {_rpi.RP_ROOT}\n"
-                 "Zenodo 'RPLAN dataset.zip'을 풀어 이 경로에 PNG들을 두세요.")
+        st.error(f"RPLAN 데이터 없음: {_rpi.RP_ROOT}\n\n"
+                 "Zenodo 'RPLAN dataset.zip'을 풀어 이 경로에 PNG들을 두거나,\n"
+                 "다른 곳에 풀었으면 환경변수 PLAN2GRAPH_RPLAN=<푼 경로> 로 지정 후 재실행하세요.")
         st.stop()
 
-    @st.cache_data(show_spinner="RPLAN 샘플 스캔(최초 1회)...")
+    @st.cache_data(show_spinner="RPLAN 원본 스캔(최초 1회)...")
     def _rpscan():
         return _rpi.scan()
 
     s = _rpscan()
+    if not s["all"]:
+        st.warning(f"{_rpi.RP_ROOT} 안에 PNG가 없습니다. zip을 이 경로에 풀었는지 확인하세요.")
+        st.stop()
     with st.expander("ℹ️ 분류 (꼭 읽기)", expanded=True):
         st.markdown(
-            "- **정상분(converted)**: instance 채널에서 방 인스턴스 추출 성공 → 그래프化(global_rplan)\n"
-            "- **제외분(excluded)**: 방 0개 / 4채널 PNG 아님 → 제외\n\n"
+            "- **전체(원본)**: 받은 PNG 전부 — 변환 안 해도 바로 도면 검수.\n"
+            "- **변환됨**: 어댑터로 그래프化된 것(global_rplan).\n"
+            "- **미변환**: 아직 변환 안 됐거나 변환 실패한 것.\n\n"
             "RPLAN 원본은 사람이 못 보는 **인덱스 맵**이라, 여기서는 category 채널을 "
             "방 종류색으로 칠해 보여줍니다. 오버레이: instance 경계=검정 외곽선 · 문=:red[●]빨강.")
+    if not s["converted"]:
+        st.info("아직 그래프 변환 전입니다 — '전체(원본)'로 검수하세요. "
+                "변환됨/미변환 분류를 보려면 먼저 어댑터 실행: "
+                "`python src/plan2graph/adapters/rplan.py --src <RPLAN경로>`")
     # 색 범례
     st.markdown("**방 색**: " + " · ".join(
         f":gray[■]{_rpi.CAT_KO[k]}" for k in sorted(_rpi.CAT_KO)))
-    cat_label = {"converted": "🟢 정상분(그래프 변환)", "excluded": "🔴 제외분(방없음/형식불량)"}
+    cat_label = {"all": "📋 전체(원본)", "converted": "🟢 변환됨(그래프)",
+                 "excluded": "🔴 미변환/실패"}
     cat = st.sidebar.selectbox("분류", list(cat_label),
                                format_func=lambda k: f"{cat_label[k]} ({len(s[k]):,})")
     recs = s[cat]

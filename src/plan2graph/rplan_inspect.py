@@ -10,6 +10,7 @@ RPLAN 샘플(256×256 4채널 PNG: boundary/category/instance/inside)을 어댑�
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -20,7 +21,9 @@ for _p in (str(ROOT), str(ROOT / "src")):
 import config  # noqa: E402
 from plan2graph.adapters import rplan as _rp  # noqa: E402
 
-RP_ROOT = config.DATA_DIR / "external" / "rplan"
+# 데이터 위치: 기본 data/external/rplan. 다른 곳에 풀었으면 PLAN2GRAPH_RPLAN로 지정.
+RP_ROOT = Path(os.environ.get("PLAN2GRAPH_RPLAN",
+                              str(config.DATA_DIR / "external" / "rplan")))
 GRAPHS = config.DATA_DIR / "releases" / "global_rplan" / "graphs"
 
 # 카테고리(0~17) → 표시색(RGB). 0~12 방, 13 외부, 14·16 벽, 15·17 문.
@@ -51,16 +54,22 @@ UPSCALE = 4   # 256px 원본을 ×4(=1024)로 확대(인덱스 맵이라 NEAREST
 
 
 def scan() -> dict:
-    """RPLAN 샘플 → {converted:[rec], excluded:[rec]}. graph_id=RPLAN_<stem> 기준 분류."""
+    """RPLAN 원본 PNG 스캔 → {all, converted, excluded}.
+
+    all       : 원본 도면 전체(변환 여부 무관) — zip만 풀면 바로 검수 가능.
+    converted : 이미 그래프化된 것(graph_id=RPLAN_<stem> 존재).
+    excluded  : 아직 변환 안 됐거나 변환 실패한 것.
+    ※ 어댑터(global_rplan) 미실행이면 converted=∅, all로 원본 검수.
+    """
     converted = {p.stem[len("RPLAN_"):] for p in GRAPHS.glob("*.json")} if GRAPHS.exists() else set()
-    out = {"converted": [], "excluded": []}
-    if not RP_ROOT.is_dir():
-        return out
-    for png in sorted(RP_ROOT.glob("**/*.png")):
-        sid = png.stem
-        rec = {"id": sid, "png": str(png)}
-        (out["converted"] if sid in converted else out["excluded"]).append(rec)
-    return out
+    allrecs = []
+    if RP_ROOT.is_dir():
+        for png in sorted(RP_ROOT.glob("**/*.png")):
+            sid = png.stem
+            allrecs.append({"id": sid, "png": str(png), "_conv": sid in converted})
+    return {"all": allrecs,
+            "converted": [r for r in allrecs if r["_conv"]],
+            "excluded": [r for r in allrecs if not r["_conv"]]}
 
 
 def exclude_reason(rec: dict) -> str:
@@ -113,4 +122,4 @@ def render(rec: dict, overlay: bool = True):
 
 if __name__ == "__main__":
     s = scan()
-    print(f"RPLAN: 정상분(변환) {len(s['converted'])} · 제외분 {len(s['excluded'])}")
+    print(f"RPLAN: 원본 {len(s['all'])} · 변환됨 {len(s['converted'])} · 미변환 {len(s['excluded'])}")
