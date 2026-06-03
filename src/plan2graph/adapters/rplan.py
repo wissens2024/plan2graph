@@ -1,10 +1,12 @@
 """RPLAN 어댑터 — RPLAN raster(다채널) → 공통 스키마 레코드.
 
-RPLAN(~80k): 256×256 다채널 PNG. 채널에 방 카테고리·인스턴스가 인코딩됨.
+RPLAN(~80k): 256×256 4채널 PNG. 채널에 방 카테고리·인스턴스가 인코딩됨.
 방 인스턴스별 마스크→폴리곤, 카테고리→우리 클래스, 인접/문→엣지 → common.to_record.
 
-⚠️ RPLAN 채널 레이아웃은 배포본마다 다름. CAT_CH/INST_CH/DOOR_CAT를 실파일로 확인할 것.
-   (기본값은 통용 레이아웃; 서버에서 1장 점검 후 조정.)
+채널 레이아웃(공식 RPLAN-Toolbox 기준, zzilch/RPLAN-Toolbox):
+   0=boundary, 1=category, 2=instance, 3=inside  → CAT_CH=1, INST_CH=2.
+카테고리 코드 0~12=방, 13=External, 14=ExteriorWall, 15=FrontDoor,
+   16=InteriorWall, 17=InteriorDoor (15·17=문).
 GPU 불요(이미지 처리). 서버(데이터 위치)에서 실행.
 """
 from __future__ import annotations
@@ -22,10 +24,12 @@ from plan2graph.adapters import common  # noqa: E402
 RPLAN_CATEGORIES = {
     0: "livingroom", 1: "masterroom", 2: "kitchen", 3: "bathroom", 4: "diningroom",
     5: "childroom", 6: "studyroom", 7: "secondroom", 8: "guestroom", 9: "balcony",
-    10: "entrance", 11: "storage", 12: "wall-in",
+    10: "entrance", 11: "storage", 12: "walkin",
+    13: "external", 14: "wall", 15: "frontdoor", 16: "wall", 17: "interiordoor",
 }
-CAT_CH, INST_CH = 0, 1          # 카테고리·인스턴스 채널(배포본 따라 조정)
-DOOR_CATS = {15, 17}            # FrontDoor/InteriorDoor 카테고리(조정)
+ROOM_CAT_MAX = 12               # 0~12만 '방'. 13(External)·14~17(벽·문)은 노드 아님.
+CAT_CH, INST_CH = 1, 2          # boundary,category,instance,inside → cat=1, inst=2
+DOOR_CATS = {15, 17}            # FrontDoor/InteriorDoor 카테고리
 ADJ_DILATE = 3                  # 인접 판정 팽창(px)
 
 
@@ -42,6 +46,8 @@ def _rooms_edges(cat, inst, door_mask):
             continue
         c = max(cnts, key=cv2.contourArea)
         catid = int(np.bincount(cat[m == 1].ravel()).argmax())
+        if catid > ROOM_CAT_MAX:        # External·벽·문 인스턴스는 방 아님 → 제외
+            continue
         M = cv2.moments(c)
         cx = M["m10"] / M["m00"] if M["m00"] else float(c[:, 0, 0].mean())
         cy = M["m01"] / M["m00"] if M["m00"] else float(c[:, 0, 1].mean())
@@ -91,7 +97,8 @@ def _self_test() -> bool:
     cat[10:40, 10:40] = 0; inst[10:40, 10:40] = 1
     cat[10:40, 42:60] = 1; inst[10:40, 42:60] = 2
     cat[42:55, 10:25] = 10; inst[42:55, 10:25] = 3
-    arr = np.stack([cat, inst, np.zeros_like(cat)], axis=2)
+    # 채널 순서 boundary,category,instance → [0,cat,inst]
+    arr = np.stack([np.zeros_like(cat), cat, inst], axis=2)
     from PIL import Image
     tmp = ROOT / "data" / "v2v" / "_rplan_test.png"
     tmp.parent.mkdir(parents=True, exist_ok=True)
@@ -123,7 +130,7 @@ if __name__ == "__main__":
     import json
     out = Path(a.out) / "graphs"; out.mkdir(parents=True, exist_ok=True)
     n = 0
-    for p in sorted(glob.glob(str(Path(a.src) / "*.png"))):
+    for p in sorted(glob.glob(str(Path(a.src) / "**" / "*.png"), recursive=True)):
         rec = parse(p)
         if rec:
             (out / f"{rec['graph_id']}.json").write_text(

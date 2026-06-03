@@ -69,7 +69,7 @@ st.sidebar.title("🏗 Plan2Graph 관리자")
 st.sidebar.caption("데이터셋을 눈으로 검증하는 콘솔")
 which = st.sidebar.radio("큐", ["⚠ 격리 (교정)", "✅ 채택 (검수)", "📏 scale 검수/보정",
                                 "📜 법령 DB", "📊 결과 대시보드", "🔍 AI-Hub 도면 검수",
-                                "🌍 CubiCasa5k 도면검수"], index=0)
+                                "🌍 CubiCasa5k 도면검수", "🏙 RPLAN 도면검수"], index=0)
 
 # ════════════════════════════════════════════════════════════════════════════
 # 🔍 배제 도면 검수 — 그래프 대상에서 빠진 평면도를 실제 PNG로 육안 검증
@@ -223,6 +223,59 @@ if which.startswith("🌍"):
             cap = f"{r['sub']}/{r['id']}"
             if cat == "excluded":
                 cap += f" · 사유: {_cci.exclude_reason(r)}"
+            cols[i % ncol].image(img, use_container_width=True, caption=cap)
+        except Exception as e:  # noqa: BLE001
+            cols[i % ncol].warning(f"{r['id']} 표시 실패: {e}")
+    st.stop()
+
+# ════════════════════════════════════════════════════════════════════════════
+# 🏙 RPLAN 도면검수 — 글로벌 데이터 정상분(변환)·제외분(사유) 육안 검증
+# ════════════════════════════════════════════════════════════════════════════
+if which.startswith("🏙"):
+    from plan2graph import rplan_inspect as _rpi
+
+    st.title("🏙 RPLAN 도면검수")
+    st.caption("글로벌 데이터(RPLAN ~80k) 도면을 방 종류색으로 — 정상분(그래프 변환)·제외분(사유).")
+    if not _rpi.RP_ROOT.is_dir():
+        st.error(f"RPLAN 데이터 없음: {_rpi.RP_ROOT}\n"
+                 "Zenodo 'RPLAN dataset.zip'을 풀어 이 경로에 PNG들을 두세요.")
+        st.stop()
+
+    @st.cache_data(show_spinner="RPLAN 샘플 스캔(최초 1회)...")
+    def _rpscan():
+        return _rpi.scan()
+
+    s = _rpscan()
+    with st.expander("ℹ️ 분류 (꼭 읽기)", expanded=True):
+        st.markdown(
+            "- **정상분(converted)**: instance 채널에서 방 인스턴스 추출 성공 → 그래프化(global_rplan)\n"
+            "- **제외분(excluded)**: 방 0개 / 4채널 PNG 아님 → 제외\n\n"
+            "RPLAN 원본은 사람이 못 보는 **인덱스 맵**이라, 여기서는 category 채널을 "
+            "방 종류색으로 칠해 보여줍니다. 오버레이: instance 경계=검정 외곽선 · 문=:red[●]빨강.")
+    # 색 범례
+    st.markdown("**방 색**: " + " · ".join(
+        f":gray[■]{_rpi.CAT_KO[k]}" for k in sorted(_rpi.CAT_KO)))
+    cat_label = {"converted": "🟢 정상분(그래프 변환)", "excluded": "🔴 제외분(방없음/형식불량)"}
+    cat = st.sidebar.selectbox("분류", list(cat_label),
+                               format_func=lambda k: f"{cat_label[k]} ({len(s[k]):,})")
+    recs = s[cat]
+    overlay = st.sidebar.checkbox("🎨 경계·문 오버레이", value=True)
+    res = st.sidebar.select_slider("표시 해상도(px)", options=[512, 768, 1024, 1536, 2048],
+                                   value=1024, help="RPLAN 원본은 256px(인덱스 맵)을 ×4 확대해 표시.")
+    ncol = st.sidebar.radio("열 수", [1, 2, 3], index=1, horizontal=True)
+    PER = ncol * 2
+    st.markdown(f"### {cat_label[cat]} — **{len(recs):,}개**")
+    npages = max(1, (len(recs) + PER - 1) // PER)
+    pg = st.sidebar.number_input(f"페이지 (1~{npages})", 1, npages, 1) - 1
+    st.sidebar.caption(f"한 페이지 {PER}장 · 총 {npages:,}페이지 · {res}px")
+    cols = st.columns(ncol)
+    for i, r in enumerate(recs[pg * PER:(pg + 1) * PER]):
+        try:
+            img = _rpi.render(r, overlay=overlay)
+            img.thumbnail((res, res))
+            cap = r["id"]
+            if cat == "excluded":
+                cap += f" · 사유: {_rpi.exclude_reason(r)}"
             cols[i % ncol].image(img, use_container_width=True, caption=cap)
         except Exception as e:  # noqa: BLE001
             cols[i % ncol].warning(f"{r['id']} 표시 실패: {e}")
