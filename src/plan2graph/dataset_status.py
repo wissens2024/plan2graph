@@ -44,8 +44,8 @@ def scan_status(graphs_dir: Path) -> dict:
             by_id[f.stem] = (stt, rsn)
             if stt == "success":
                 success += 1
-            else:
-                for r in (rsn.split(",") if rsn else [""]):
+            else:   # 레코드당 사유는 중복제거(같은 규칙 다회 위반=1로 카운트)
+                for r in (set(rsn.split(",")) if rsn else {""}):
                     reasons[r.strip()] += 1
     return {"total": total, "success": success, "quarantine": total - success,
             "reasons": dict(reasons.most_common()), "by_id": by_id}

@@ -102,8 +102,14 @@ def to_record(graph_id: str, source: str, rooms: list[dict], edges: list[tuple],
     # 정상/격리 = 위상 무결성(integrity) 기준. 법규(채광 등)는 데이터 포함여부와 무관.
     integ = val.get("integrity", {}).get("passed", val.get("passed"))
     status = "success" if integ else "quarantine"
-    reason = "" if integ else ",".join(
-        v.get("rule", "") for v in val.get("integrity", {}).get("violations", []))[:120]
+    # 사유 = 위반 '규칙'들(중복제거, 무절단). 같은 규칙 다회 위반은 1회로.
+    seen: list[str] = []
+    if not integ:
+        for v in val.get("integrity", {}).get("violations", []):
+            r = v.get("rule", "")
+            if r and r not in seen:
+                seen.append(r)
+    reason = ",".join(seen)
     rec = serialize(G, graph_id=graph_id, house_type=None,
                     width=width, height=height, validation=val,
                     status=status, reason=reason,
