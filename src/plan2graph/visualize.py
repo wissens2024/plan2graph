@@ -30,6 +30,16 @@ for _f in ("Malgun Gothic", "AppleGothic", "NanumGothic"):
     if _f in _available:
         KFONT = _f
         break
+# 시스템에 한글 폰트가 없으면(예: 리눅스 서버) 번들 TTF를 등록 — 한글이 □로 깨지는 것 방지.
+#   fonts/NanumGothic.ttf : github.com/google/fonts/ofl/nanumgothic (OFL) 에서 받아둘 것.
+if KFONT == "DejaVu Sans":
+    from pathlib import Path as _Path
+    for _p in (_Path(__file__).resolve().parents[2] / "fonts" / "NanumGothic.ttf",
+               _Path.home() / ".fonts" / "NanumGothic.ttf"):
+        if _p.exists():
+            _fm.fontManager.addfont(str(_p))
+            KFONT = _fm.FontProperties(fname=str(_p)).get_name()
+            break
 matplotlib.rcParams["font.family"] = KFONT
 matplotlib.rcParams["axes.unicode_minus"] = False
 

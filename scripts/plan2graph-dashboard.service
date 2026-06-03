@@ -1,0 +1,25 @@
+[Unit]
+Description=Plan2Graph 관리자 대시보드 (streamlit) — https://plan2graph.aines.kr
+After=network.target
+
+[Service]
+Type=simple
+User=ju
+WorkingDirectory=/home/ju/plan2graph
+Environment=PLAN2GRAPH_RAW=/home/ju/plan2graph/aihub_raw/01-1.정식개방데이터
+Environment=PYTHONPATH=src
+ExecStart=/home/ju/bin/micromamba run -n p2g streamlit run admin.py \
+  --server.address 0.0.0.0 --server.port 8501 --server.headless true \
+  --server.enableCORS false --server.enableXsrfProtection false
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
+# 설치(서버에서 sudo로):
+#   sudo cp ~/plan2graph/scripts/plan2graph-dashboard.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now plan2graph-dashboard
+#   (확인) systemctl status plan2graph-dashboard
+# → 재부팅·프로세스 사망 시 자동 재기동. 기존 수동 streamlit은 fuser -k 8501/tcp 로 종료 후.

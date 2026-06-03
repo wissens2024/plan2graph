@@ -108,16 +108,22 @@ if which.startswith("🔍"):
     def _nonfp(sp):
         return _ix.nonfp_records(sp)
 
+    @st.cache_data(show_spinner="중복 도면 스캔...")
+    def _dup(sp):
+        return _ix.duplicate_records(sp)
+
     cats = _excl_cats(split)
     nonfp = _nonfp(split)
+    dup = _dup(split)
     counts = {"spa_only": len(cats["spa_only"]), "str_only": len(cats["str_only"]),
-              "nonfp": len(nonfp), "dual": len(cats["dual"])}
+              "nonfp": len(nonfp), "dup": len(dup), "dual": len(cats["dual"])}
     cat_label = {"spa_only": "🟡부분배제 방만(STR결손)", "str_only": "🟡부분배제 구조만(SPA결손)",
-                 "nonfp": "🔴완전배제 비-FP(평면도아님)", "dual": "⚪참고 둘다(v0)"}
+                 "nonfp": "🔴완전배제 비-FP(평면도아님)", "dup": "🔴완전배제 중복(복사본)",
+                 "dual": "⚪참고 둘다(v0)"}
     cat = st.sidebar.selectbox("카테고리", list(cat_label),
                                format_func=lambda k: f"{cat_label[k]} ({counts[k]:,})")
     house = st.sidebar.selectbox("거주형태", ["(전체)", "APT", "DEH", "ROW"])
-    src = nonfp if cat == "nonfp" else cats[cat]
+    src = {"nonfp": nonfp, "dup": dup}.get(cat, cats.get(cat, []))
     recs = [r for r in src if house == "(전체)" or r["house"] == house]
 
     st.markdown(f"### {cat_label[cat]} — **{len(recs):,}개**  ·  _{_ix.CATEGORIES[cat]}_")
@@ -143,8 +149,10 @@ if which.startswith("🔍"):
         try:
             img = _ix.render(r, lblidx, overlay=overlay)
             img.thumbnail((720, 720))
-            cols[i % 2].image(img, use_container_width=True,
-                              caption=f"{r['house']} · {r['key']} · 라벨={r['labels']}")
+            cap = f"{r['house']} · {r['key']} · 라벨={r['labels']}"
+            if r.get("dup_keys"):
+                cap += f" · 중복키({len(r['dup_keys'])}): {', '.join(r['dup_keys'])}"
+            cols[i % 2].image(img, use_container_width=True, caption=cap)
         except Exception as e:  # noqa: BLE001
             cols[i % 2].warning(f"{r['key']} 표시 실패: {e}")
     st.stop()

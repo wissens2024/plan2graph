@@ -31,6 +31,7 @@ CATEGORIES = {
     "spa_only": "[부분배제·V2V복구] 방 라벨만(문·벽 없음) → V2V로 STR 예측",
     "str_only": "[부분배제·V2V복구] 구조 라벨만(방 없음) → V2V로 SPA 예측",
     "nonfp": "[완전배제] 평면도가 아님(단면도/입면도/구조도) → 위상그래프 불가",
+    "dup": "[완전배제] 같은 PNG가 한 라벨 안에서 여러 키로 중복 → 1장만 채택",
     "dual": "[참고] SPA+STR 둘 다(v0 그래프화 대상)",
 }
 DRAWING_NAME = {"CS": "단면도", "EP": "입면도", "SD": "구조도", "FP": "평면도"}
@@ -97,6 +98,29 @@ def nonfp_records(split: str = "Training") -> list:
                          "key": m["key"], "zip": str(z["path"]), "entry": info.filename,
                          "labels": [DRAWING_NAME.get(m["drawing"], m["drawing"])], "det": {}}
     return sorted(seen.values(), key=lambda r: (r["drawing"], r["house"], r["key"]))
+
+
+def duplicate_records(split: str = "Training") -> list:
+    """같은 도면(지문)이 *한 라벨종류 안에서 여러 9자리 키*로 중복 등장 — '완전배제'(복사본).
+    각 record: 대표 PNG + 중복 키 목록(byte-identical, 1장만 채택). FP만."""
+    zips = [z for z in discover_zips()
+            if z["content"] == "원천" and z["split"] == split]
+    grp: dict = defaultdict(lambda: defaultdict(list))   # sig → label → [(key,zip,entry,house)]
+    for z, info in iter_zipinfos(zips):
+        m = parse_name(Path(info.filename).stem)
+        if not m or m["drawing"] != config.TARGET_DRAWING_TYPE:
+            continue
+        sig = f"{info.CRC:08x}_{info.file_size}"
+        grp[sig][m["label"]].append((m["key"], str(z["path"]), info.filename, m["house"]))
+    recs = []
+    for sig, labs in grp.items():
+        for lab, ent in labs.items():
+            if len(ent) > 1:   # 같은 라벨 안 2키+ = 진짜 중복
+                key, zp, entry, house = ent[0]
+                recs.append({"sig": sig, "house": house, "key": key, "zip": zp,
+                             "entry": entry, "det": {}, "dup_keys": [e[0] for e in ent],
+                             "labels": [f"{lab}×{len(ent)}"]})
+    return sorted(recs, key=lambda r: -len(r["dup_keys"]))
 
 
 def get_png(rec: dict) -> bytes:
