@@ -98,8 +98,15 @@ def to_record(graph_id: str, source: str, rooms: list[dict], edges: list[tuple],
     from plan2graph.rules import validate
     from plan2graph import sources
     G = build_graph_from_rooms(rooms, edges, graph_id)
+    val = validate(G)
+    # 정상/격리 = 위상 무결성(integrity) 기준. 법규(채광 등)는 데이터 포함여부와 무관.
+    integ = val.get("integrity", {}).get("passed", val.get("passed"))
+    status = "success" if integ else "quarantine"
+    reason = "" if integ else ",".join(
+        v.get("rule", "") for v in val.get("integrity", {}).get("violations", []))[:120]
     rec = serialize(G, graph_id=graph_id, house_type=None,
-                    width=width, height=height, validation=validate(G),
+                    width=width, height=height, validation=val,
+                    status=status, reason=reason,
                     role=sources.role_of(source), tier=sources.tier_of(source))
     rec["meta"]["source"] = source       # 'rplan' / 'cubicasa5k'
     rec["meta"]["provenance"] = "global_pretrain"
