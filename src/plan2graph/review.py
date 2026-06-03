@@ -224,21 +224,30 @@ def evaluate(dr: Drawing, G: nx.Graph) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 # 결정 원장
 # ─────────────────────────────────────────────────────────────────────────────
-def record_decision(row: dict) -> None:
-    LEDGER.parent.mkdir(parents=True, exist_ok=True)
-    new = not LEDGER.exists()
-    with open(LEDGER, "a", newline="", encoding="utf-8") as f:
+def record_decision_to(ledger: "Path", row: dict) -> None:
+    """임의 원장 경로에 결정 1건 추가(출처별 staging 원장 공용)."""
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    new = not ledger.exists()
+    with open(ledger, "a", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=LEDGER_FIELDS)
         if new:
             w.writeheader()
         w.writerow({k: row.get(k, "") for k in LEDGER_FIELDS})
 
 
-def load_ledger() -> list[dict]:
-    if not LEDGER.exists():
+def load_ledger_from(ledger: "Path") -> list[dict]:
+    if not ledger.exists():
         return []
-    with open(LEDGER, encoding="utf-8") as f:
+    with open(ledger, encoding="utf-8") as f:
         return list(csv.DictReader(f))
+
+
+def record_decision(row: dict) -> None:
+    record_decision_to(LEDGER, row)
+
+
+def load_ledger() -> list[dict]:
+    return load_ledger_from(LEDGER)
 
 
 def load_queue(which: str, processed_dir: Path = config.PROCESSED_DIR) -> list[dict]:

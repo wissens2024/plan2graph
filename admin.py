@@ -67,6 +67,75 @@ def _inspect_3mode(recs, mode, res, ncol, render, caption_fn):
                 cols[i % ncol].warning(f"{r.get('key', r.get('id', '?'))} 표시 실패: {e}")
 
 
+def _graph_review(source_id, recs, render_original, graph_id_of):
+    """원본 ∥ 그래프 단건 검수 + 정상/격리·결정버튼 (DATASET_DESIGN §7 공통 불변식).
+    글로벌 출처(cubicasa/rplan)가 '변환됨' 레코드를 사람이 도면+그래프로 검증·판정.
+      render_original(rec, overlay) → PIL · graph_id_of(rec) → 'CC_..'/'RPLAN_..'"""
+    import json as _json
+    from plan2graph import sources
+    if not recs:
+        st.info("변환된(converted) 레코드가 없습니다. 어댑터 변환 후 검수하세요.")
+        return
+    key = f"gri_{source_id}"
+    st.session_state.setdefault(key, 0)
+    st.session_state[key] = max(0, min(st.session_state[key], len(recs) - 1))
+    i = st.session_state[key]
+    n1, n2, n3 = st.columns([1, 2, 1])
+    if n1.button("◀ 이전", key=f"{key}_p", use_container_width=True):
+        st.session_state[key] -= 1; st.rerun()
+    if n3.button("다음 ▶", key=f"{key}_n", use_container_width=True):
+        st.session_state[key] += 1; st.rerun()
+    n2.progress((i + 1) / len(recs), text=f"{i + 1} / {len(recs)}")
+
+    r = recs[i]
+    gid = graph_id_of(r)
+    gpath = sources.graphs_dir(source_id) / f"{gid}.json"
+    if not gpath.exists():
+        st.warning(f"그래프 레코드 없음: {gpath}")
+        return
+    rec = _json.loads(gpath.read_text(encoding="utf-8"))
+    v1, v2 = st.columns([1, 1])
+    with v1:
+        st.caption("① 원본 도면")
+        try:
+            img = render_original(r, True); img.thumbnail((1400, 1400))
+            st.image(img, use_container_width=True)
+        except Exception as e:  # noqa: BLE001
+            st.warning(f"원본 표시 실패: {e}")
+    with v2:
+        st.caption("② 변환된 위상 그래프")
+        st.pyplot(review.render_graph_fig(review.record_to_graph(rec), title=gid,
+                  node_size=2200, font_size=12, layout="spatial"),
+                  use_container_width=True)
+    st.caption(LEGEND)
+    m = rec["meta"]; cst = rec["constraints"]
+    st.markdown(f"**방 {m.get('n_rooms')} · 문 {m.get('n_doors')} · 무결성 "
+                f"{'✅통과' if rec['validation'].get('passed') else '❌위반'}** · "
+                f"role=`{m.get('role')}` tier=`{m.get('tier')}` status=`{m.get('status')}`")
+    st.caption(ORIGIN_NOTE)
+    cc1, cc2 = st.columns(2)
+    cc1.markdown("**program (방 구성)**"); cc1.json(cst["program"])
+    cc2.markdown("**adjacency (인접 요구)**"); cc2.write(cst["adjacency"])
+
+    note = st.text_input("결정 메모(선택)", key=f"{key}_note")
+    led = sources.ledger_path(source_id)
+
+    def _dec(action, status):
+        review.record_decision_to(led, {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"), "graph_id": gid,
+            "action": action, "result_status": status, "note": note})
+        st.session_state[key] += 1; st.rerun()
+
+    b1, b2, b3 = st.columns(3)
+    if b1.button("✔ 승인(정상)", type="primary", key=f"{key}_ap", use_container_width=True):
+        _dec("approve", "approved");
+    if b2.button("⚠ 격리", key=f"{key}_q", use_container_width=True):
+        _dec("quarantine", "quarantined")
+    if b3.button("🗑 제외", key=f"{key}_x", use_container_width=True):
+        _dec("exclude", "excluded")
+    st.caption(f"원장: `{led}` · 결정 {len(review.load_ledger_from(led)):,}건")
+
+
 @st.cache_resource(show_spinner="zip 인덱스 구축 중... (최초 1회)")
 def get_indices():
     return review.build_indices(("Training", "Validation"))  # 통합 풀
@@ -236,8 +305,15 @@ if which.startswith("🌍"):
     subf = st.sidebar.selectbox("세트", ["(전체)"] + subs)
     recs = [r for r in s[cat] if subf == "(전체)" or r["sub"] == subf]
     view = st.sidebar.radio(
-        "👁 보기 모드", ["나란히(원본 | 오버레이)", "겹쳐보기", "원본만"], index=0,
-        help="나란히=원본을 먼저 보고 오른쪽 오버레이와 직접 대조 · 겹쳐=원본 위에 방·문 · 원본만=순수 원본")
+        "👁 보기 모드", ["🔗 그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
+        index=0, help="그래프검수=원본∥위상그래프+결정 · 나란히=원본vs오버레이 · 겹쳐=원본 위 방·문 · 원본만")
+    if view.startswith("🔗"):
+        if cat != "converted":
+            st.info("그래프검수는 '정상분(converted)'에서만 가능합니다(사이드바 분류를 정상분으로).")
+        else:
+            _graph_review("cubicasa5k", recs, lambda r, ov: _cci.render(r, overlay=ov),
+                          lambda r: f"CC_{r['id']}")
+        st.stop()
     mode = ("나란히" if view.startswith("나란히")
             else "겹쳐보기" if view == "겹쳐보기" else "원본만")
     res = st.sidebar.select_slider("표시 해상도(px)", options=[800, 1100, 1500, 2000, 2600],
@@ -302,8 +378,15 @@ if which.startswith("🏙"):
                                format_func=lambda k: f"{cat_label[k]} ({len(s[k]):,})")
     recs = s[cat]
     view = st.sidebar.radio(
-        "👁 보기 모드", ["나란히(원본 | 오버레이)", "겹쳐보기", "원본만"], index=0,
-        help="나란히=원본(인덱스맵)을 먼저 보고 오른쪽 경계·문 오버레이와 대조")
+        "👁 보기 모드", ["🔗 그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
+        index=0, help="그래프검수=원본∥위상그래프+결정 · 나란히=원본vs경계·문 오버레이")
+    if view.startswith("🔗"):
+        if cat != "converted":
+            st.info("그래프검수는 '변환됨(converted)'에서만 가능합니다(사이드바 분류를 변환됨으로).")
+        else:
+            _graph_review("rplan", recs, lambda r, ov: _rpi.render(r, overlay=ov),
+                          lambda r: f"RPLAN_{r['id']}")
+        st.stop()
     mode = ("나란히" if view.startswith("나란히")
             else "겹쳐보기" if view == "겹쳐보기" else "원본만")
     res = st.sidebar.select_slider("표시 해상도(px)", options=[512, 768, 1024, 1536, 2048],
