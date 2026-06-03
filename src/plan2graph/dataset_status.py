@@ -19,6 +19,9 @@ RULE_KO = {
     "R5_unresolved_doors": "미해소 문",
     "duplicate": "중복(동일 평면도 사본)",
     "untyped_rooms": "방 타입 미정(Undefined만)",
+    "empty_svg": "빈 도면(공간 폴리곤 0)",
+    "svg_parse_error": "SVG 파싱 실패(손상)",
+    "empty_layout": "빈 레이아웃(방 0)",
     "": "사유 미기록",
 }
 

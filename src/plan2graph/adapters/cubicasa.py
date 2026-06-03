@@ -42,12 +42,13 @@ def _poly_stats(pts):
 
 
 def parse(svg_path: str) -> dict | None:
-    """CubiCasa model.svg 1장 → 공통 레코드."""
+    """CubiCasa model.svg 1장 → 공통 레코드. 빈/파싱실패도 0-노드 격리로 발행(회계 보존)."""
     import math
+    gid = "CC_" + Path(svg_path).parent.name
     try:
         root = ET.parse(svg_path).getroot()
     except Exception:
-        return None
+        return common.empty_record(gid, "cubicasa5k", "svg_parse_error")
     ns = {"s": "http://www.w3.org/2000/svg"}
     rooms, room_polys, doors, untyped = [], [], [], []
     for g in root.iter():
@@ -80,7 +81,6 @@ def parse(svg_path: str) -> dict | None:
                         doors.append((cx, cy)); break
     if not rooms:
         if untyped:        # 정식 방 0개지만 타입미정 공간 존재 → '방 타입 미정' 격리로 발행
-            gid = "CC_" + Path(svg_path).parent.name
             ux = [r["centroid"][0] for r in untyped]
             uy = [r["centroid"][1] for r in untyped]
             w = int(max(ux) + 50) if ux else 256
@@ -89,7 +89,7 @@ def parse(svg_path: str) -> dict | None:
             rec["meta"]["status"] = "quarantine"
             rec["meta"]["reason"] = "untyped_rooms"
             return rec
-        return None
+        return common.empty_record(gid, "cubicasa5k", "empty_svg")   # 공간 폴리곤 0
     # 문 → 가장 가까운 두 방 연결(door). 문 없는 인접 방은 open(경계 근접).
     def _near(pt, poly):
         return min(((pt[0] - x) ** 2 + (pt[1] - y) ** 2) ** 0.5 for x, y in poly)

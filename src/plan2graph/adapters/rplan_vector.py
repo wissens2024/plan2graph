@@ -52,9 +52,10 @@ def _entrance_idx(boundary, boxes):
 def parse_struct(s) -> dict | None:
     """mat_struct 1개(한 플랜) → 공통 레코드. 실패 시 None."""
     import numpy as np
+    gid = "RPLAN_" + str(getattr(s, "name", "unknown"))
     box = np.asarray(s.box)
     if box.ndim != 2 or box.shape[0] == 0:
-        return None
+        return common.empty_record(gid, "rplan", "empty_layout")
     rooms = []
     for r in box:
         t = int(r[4])
@@ -66,7 +67,7 @@ def parse_struct(s) -> dict | None:
                       "area_px": float(abs((x1 - x0) * (y1 - y0))),
                       "is_entrance": False})
     if not rooms:
-        return None
+        return common.empty_record(gid, "rplan", "empty_layout")
     # 외곽선 문 → 진입실 표시(현관 규칙 충족)
     ei = _entrance_idx(s.boundary, box)
     if ei is not None and 0 <= ei < len(rooms):
@@ -78,7 +79,6 @@ def parse_struct(s) -> dict | None:
         u, v = int(e[0]), int(e[1])
         if u != v and 0 <= u < len(rooms) and 0 <= v < len(rooms):
             edges.append((u, v, "open"))
-    gid = "RPLAN_" + str(s.name)
     w = int(box[:, :4].max()) + 1
     return common.to_record(gid, "rplan", rooms, edges, w, w)
 

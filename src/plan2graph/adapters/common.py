@@ -119,6 +119,22 @@ def to_record(graph_id: str, source: str, rooms: list[dict], edges: list[tuple],
     return rec
 
 
+def empty_record(graph_id: str, source: str, reason: str,
+                 width: int = 256, height: int = 256) -> dict:
+    """방 0개(빈/파싱실패) 도면도 회계에 남기기 위한 0-노드 격리 레코드.
+    원본은 존재하나 추출할 방이 없으므로 status=quarantine·지정 사유로 기록."""
+    from plan2graph import sources
+    G = nx.Graph(graph_id=graph_id, n_rooms=0, n_doors=0)
+    rec = serialize(G, graph_id=graph_id, house_type=None, width=width, height=height,
+                    validation={"passed": False, "integrity": {"passed": False},
+                                "reason": reason},
+                    status="quarantine", reason=reason,
+                    role=sources.role_of(source), tier=sources.tier_of(source))
+    rec["meta"]["source"] = source
+    rec["meta"]["provenance"] = "global_pretrain"
+    return rec
+
+
 def _self_test() -> bool:
     """합성 (방+연결) → 레코드 생성 + 스키마 필드 확인(파서 불요)."""
     rooms = [
