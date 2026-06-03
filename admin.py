@@ -68,7 +68,8 @@ def _record(**kw):
 st.sidebar.title("🏗 Plan2Graph 관리자")
 st.sidebar.caption("데이터셋을 눈으로 검증하는 콘솔")
 which = st.sidebar.radio("큐", ["⚠ 격리 (교정)", "✅ 채택 (검수)", "📏 scale 검수/보정",
-                                "📜 법령 DB", "📊 결과 대시보드", "🔍 배제 도면 검수"], index=0)
+                                "📜 법령 DB", "📊 결과 대시보드", "🔍 AI-Hub 도면 검수(제외분)"],
+                         index=0)
 
 # ════════════════════════════════════════════════════════════════════════════
 # 🔍 배제 도면 검수 — 그래프 대상에서 빠진 평면도를 실제 PNG로 육안 검증
@@ -78,8 +79,8 @@ if which.startswith("🔍"):
     from PIL import Image as _PImage
     from plan2graph import inspect_excluded as _ix
 
-    st.title("🔍 배제 도면 검수")
-    st.caption("그래프 대상에서 빠진 평면도를 실제 PNG로 확인 — '배제 사유가 맞는지' 육안 검증.")
+    st.title("🔍 AI-Hub 도면 검수 (제외분)")
+    st.caption("그래프 대상에서 빠진 AI-Hub 도면을 원본 PNG로 확인 — '제외 사유가 맞는지' 육안 검증.")
     if not config.RAW_SOURCE_ROOT.is_dir():
         st.error(f"원본 RAW 없음: {config.RAW_SOURCE_ROOT}\n"
                  "PLAN2GRAPH_RAW 환경변수를 SPA/STR zip이 있는 경로로 설정 후 재실행.")
@@ -148,22 +149,26 @@ if which.startswith("🔍"):
         return _ix.label_index(sp)
 
     lblidx = _lblidx(split) if overlay else {}
-    PER = 6
+    res = st.sidebar.select_slider("표시 해상도(px)", options=[1200, 1600, 2000, 2600, 3200, 4200],
+                                   value=2000, help="원본 PNG는 ~17MB 고해상. 클릭→전체화면 시 이 해상도로 보임.")
+    ncol = st.sidebar.radio("열 수(클수록 크게)", [1, 2], index=1, horizontal=True)
+    PER = ncol * 2
+    st.sidebar.caption("이미지 클릭 → 우상단 ⛶ 전체화면이면 더 크게 보입니다.")
     npages = max(1, (len(recs) + PER - 1) // PER)
     pg = st.sidebar.number_input(f"페이지 (1~{npages})", 1, npages, 1) - 1
-    st.sidebar.caption(f"한 페이지 {PER}장씩 · 총 {npages:,}페이지")
+    st.sidebar.caption(f"한 페이지 {PER}장 · 총 {npages:,}페이지 · 해상도 {res}px")
 
-    cols = st.columns(2)
+    cols = st.columns(ncol)
     for i, r in enumerate(recs[pg * PER:(pg + 1) * PER]):
         try:
             img = _ix.render(r, lblidx, overlay=overlay)
-            img.thumbnail((720, 720))
+            img.thumbnail((res, res))
             cap = f"{r['house']} · {r['key']} · 라벨={r['labels']}"
             if r.get("dup_keys"):
                 cap += f" · 중복키({len(r['dup_keys'])}): {', '.join(r['dup_keys'])}"
-            cols[i % 2].image(img, use_container_width=True, caption=cap)
+            cols[i % ncol].image(img, use_container_width=True, caption=cap)
         except Exception as e:  # noqa: BLE001
-            cols[i % 2].warning(f"{r['key']} 표시 실패: {e}")
+            cols[i % ncol].warning(f"{r['key']} 표시 실패: {e}")
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
