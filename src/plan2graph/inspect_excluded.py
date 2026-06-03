@@ -71,6 +71,8 @@ def categorize(groups: dict) -> dict:
     for sig, d in groups.items():
         has_spa, has_str = "SPA" in d, "STR" in d
         rep = d.get("SPA") or d.get("STR")
+        if rep is None:        # OBJ/OCR만 있는 그룹(SPA·STR 없음) → 여기선 제외(objocr 카테고리가 담당)
+            continue
         rec = {"sig": sig, "labels": sorted(d.keys()), "house": rep["house"],
                "key": rep["key"], "zip": rep["zip"], "entry": rep["entry"], "det": d}
         if has_spa and has_str:

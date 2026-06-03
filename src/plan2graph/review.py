@@ -301,6 +301,14 @@ from matplotlib.patches import Polygon as MplPolygon  # noqa: E402
 _avail = {f.name for f in _fm.fontManager.ttflist}
 KFONT = next((f for f in ("Malgun Gothic", "AppleGothic", "NanumGothic")
               if f in _avail), "DejaVu Sans")
+if KFONT == "DejaVu Sans":   # 시스템에 한글폰트 없으면 번들 TTF 등록(한글 □ 방지)
+    from pathlib import Path as _Path
+    for _p in (_Path(__file__).resolve().parents[2] / "fonts" / "NanumGothic.ttf",
+               _Path.home() / ".fonts" / "NanumGothic.ttf"):
+        if _p.exists():
+            _fm.fontManager.addfont(str(_p))
+            KFONT = _fm.FontProperties(fname=str(_p)).get_name()
+            break
 matplotlib.rcParams["font.family"] = KFONT
 matplotlib.rcParams["axes.unicode_minus"] = False
 
