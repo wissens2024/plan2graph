@@ -169,16 +169,17 @@ def _scale_one(sid: str) -> dict:
 
 def scale_pass(jobs: int = 6) -> Path:
     """채택 그래프의 고유 시트 전체에 scale OCR → data/interim/scale.csv."""
-    import csv
-    import config
-    acc = config.PROCESSED_DIR / "accepted.csv"
+    import csv  # noqa: F401
+    import glob
+    import config  # noqa: F401
+    from plan2graph import sources
+    gdir = sources.graphs_dir("aihub")   # staging/aihub/graphs (processed 은퇴)
     sids = []
     seen = set()
-    with open(acc, encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            s = row["sheet_id"]
-            if s and s not in seen:
-                seen.add(s); sids.append(s)
+    for fp in glob.glob(str(gdir / "*.json")):
+        s = Path(fp).stem.rsplit("_u", 1)[0]
+        if s and s not in seen:
+            seen.add(s); sids.append(s)
     # 증분: 이미 scale.csv에 신뢰결과(ok/low/none) 있는 시트는 건너뜀
     done = {s: r for s, r in load_scale_csv().items()
             if r.get("confidence") in ("ok", "low", "none", "quarantined")}
@@ -222,9 +223,10 @@ def apply_scale() -> None:
     with open(config.INTERIM_DIR / "scale.csv", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             scale_map[row["sheet_id"]] = row
+    from plan2graph import sources
     applied = 0
     quarantined = set()
-    for fp in glob.glob(str(config.PROCESSED_DIR / "graphs" / "*.json")):
+    for fp in glob.glob(str(sources.graphs_dir("aihub") / "*.json")):
         rec = json.loads(Path(fp).read_text(encoding="utf-8"))
         sid = rec["graph_id"].rsplit("_u", 1)[0]
         info = scale_map.get(sid)
@@ -249,7 +251,7 @@ def apply_scale() -> None:
         Path(fp).write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
         applied += 1
     # 격리 목록
-    qp = config.PROCESSED_DIR / "scale_quarantine.csv"
+    qp = config.INTERIM_DIR / "scale_quarantine.csv"
     with open(qp, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["sheet_id", "confidence", "scale_mm_per_px", "bedroom_med_m2"])
@@ -300,9 +302,10 @@ def apply_scale_one_sheet(sheet_id: str, scale: float | None) -> int:
     """한 시트의 그래프 JSON들에 scale 적용(㎡). scale=None이면 해제."""
     import glob
     import json
-    import config
+    import config  # noqa: F401
+    from plan2graph import sources
     n = 0
-    for fp in glob.glob(str(config.PROCESSED_DIR / "graphs" / f"{sheet_id}_u*.json")):
+    for fp in glob.glob(str(sources.graphs_dir("aihub") / f"{sheet_id}_u*.json")):
         rec = json.loads(Path(fp).read_text(encoding="utf-8"))
         if scale:
             rec["meta"]["scale"] = round(scale, 4)

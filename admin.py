@@ -224,10 +224,9 @@ def _record(**kw):
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
 st.sidebar.title("🏗 Plan2Graph 관리자")
 st.sidebar.caption("데이터셋을 눈으로 검증하는 콘솔")
-which = st.sidebar.radio("큐", ["⚠ 격리 (교정)", "✅ 채택 (검수)", "📏 scale 검수/보정",
-                                "📜 법령 DB", "📊 결과 대시보드", "🧮 검수 현황(종합)",
-                                "🔍 AI-Hub 도면 검수",
-                                "🌍 CubiCasa5k 도면검수", "🏙 RPLAN 도면검수"], index=0)
+which = st.sidebar.radio("큐", ["🧮 검수 현황(종합)", "🔍 AI-Hub 도면 검수",
+                                "🌍 CubiCasa5k 도면검수", "🏙 RPLAN 도면검수",
+                                "📏 scale 검수/보정", "📜 법령 DB", "📊 결과 대시보드"], index=0)
 
 # ════════════════════════════════════════════════════════════════════════════
 # 🧮 검수 현황(종합) — AI-Hub·CubiCasa·RPLAN 변환 결과를 한 화면에서 비교
@@ -395,19 +394,34 @@ if which.startswith("🔍"):
 
     st.markdown(f"### {cat} — **{len(sel):,}개**" +
                 (f"  ·  _렌더가능 {len(recs):,}_" if len(recs) != len(sel) else ""))
+    @st.cache_data(show_spinner="라벨 인덱스 구성(최초 1회)...")
+    def _lblidx(sp):
+        return _ix.label_index(sp)
+
     view = st.sidebar.radio(
-        "👁 보기 모드", ["나란히(원본 | 오버레이)", "겹쳐보기", "원본만"], index=0,
-        help="나란히=원본을 먼저 보고 오른쪽 오버레이와 직접 대조 · 겹쳐=원본 위에 라벨 · 원본만=순수 원본")
+        "👁 보기 모드", ["🔗 그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
+        index=0, help="그래프검수=원본∥그래프+결정(승인/격리/제외) · 나란히=원본vs오버레이 · 겹쳐 · 원본만")
+    if view.startswith("🔗"):    # ⚠격리/✅채택 흡수 — staging/aihub 그래프 검수·결정(ledger 기록)
+        lblidx = _lblidx(split)
+        items = []
+        for r in sel:
+            if r.get("became_graph") and r["fingerprint"] in ridx:
+                rr = ridx[r["fingerprint"]]
+                for gid in r.get("graph_ids", []):
+                    items.append({"gid": gid, "rr": rr})
+        if not items:
+            st.info("이 분류엔 변환된 그래프가 없습니다(제외/복구대상). '✅ 사용' 분류에서 그래프검수하세요.")
+        else:
+            _graph_review("aihub", items,
+                          lambda it, ov: _ix.render(it["rr"], lblidx, overlay=ov),
+                          lambda it: it["gid"])
+        st.stop()
     mode = ("나란히" if view.startswith("나란히")
             else "겹쳐보기" if view == "겹쳐보기" else "원본만")
     need_overlay = mode != "원본만"
     if need_overlay:
         st.markdown("**라벨 색**: :green[●] 방(SPA) · :red[●] 문 · :orange[●] 창 · :blue[●] 벽(STR) "
                     "— *그려진 게 라벨된 것. 안 그려진 종류 = 라벨 없음(배제 사유).*")
-
-    @st.cache_data(show_spinner="라벨 인덱스 구성(최초 1회)...")
-    def _lblidx(sp):
-        return _ix.label_index(sp)
 
     lblidx = _lblidx(split) if need_overlay else {}
     res = st.sidebar.select_slider("표시 해상도(px)", options=[1200, 1600, 2000, 2600, 3200, 4200],
