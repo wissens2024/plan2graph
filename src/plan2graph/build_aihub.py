@@ -48,28 +48,34 @@ V0 = config.DATA_DIR / "releases" / "v0" / "graphs"
 V2 = config.DATA_DIR / "releases" / "v2" / "graphs"
 
 
-def scan_sources() -> dict:
-    """원천 zip 전체 1패스 → fp -> {types:set, pk:{label->keys}}. (fp 단위 고유 도면).
-    중복은 '같은 라벨 안에서 키가 여러 개'일 때만(서로 다른 라벨=같은 도면의 다른 주석)."""
-    sig: dict = defaultdict(lambda: {"types": set(), "pk": defaultdict(set), "house": None})
+def scan_sources():
+    """원천 zip 전체 1패스 → (sig_info, entries).
+    sig_info: 지문 -> {types,labels,house} (분류용, 고유 도면).
+    entries : **받은 raw 원천 PNG를 있는 그대로** 한 건씩 [(sig,label,key,house)].
+              len(entries) = 다운로드 원천 PNG 수(=전체). byte-identical 사본도 전부 포함."""
+    sig: dict = defaultdict(lambda: {"types": set(), "labels": set(), "house": None})
+    entries: list = []
     zips = [z for z in discover_zips() if z["content"] == "원천"]
     for z, info in iter_zipinfos(zips):
-        m = parse_name(Path(info.filename).stem)
-        if not m:
+        if not info.filename.lower().endswith(".png"):
             continue
+        m = parse_name(Path(info.filename).stem)
         s = "%08x_%d" % (info.CRC, info.file_size)
-        d = sig[s]
-        d["types"].add(m["drawing"])
-        d["pk"][m["label"]].add(m["key"])
-        if d["house"] is None:
-            d["house"] = m.get("house")
-    return sig
+        if m:
+            d = sig[s]
+            d["types"].add(m["drawing"]); d["labels"].add(m["label"])
+            if d["house"] is None:
+                d["house"] = m.get("house")
+            entries.append((s, m["label"], m["key"], m.get("house")))
+        else:   # 파싱 실패도 raw 1건으로 회계(누락 없음)
+            entries.append((s, None, Path(info.filename).stem, None))
+    return sig, entries
 
 
 def category_of(d: dict) -> str:
     if FP not in d["types"]:
         return "nonfp"
-    L = set(d["pk"])
+    L = d["labels"]
     if "SPA" in L and "STR" in L:
         return "dual"
     if "SPA" in L:
@@ -132,9 +138,9 @@ def main():
     a = ap.parse_args()
     at = a.at
 
-    print("1) 원천 zip 스캔(고유 도면)...", flush=True)
-    sig = scan_sources()
-    print("   고유 도면(fp):", len(sig))
+    print("1) 원천 zip 스캔(raw 그대로)...", flush=True)
+    sig, entries = scan_sources()
+    print("   raw 원천 PNG(=전체):", len(entries), "· 고유 도면(지문):", len(sig))
     print("2) v0∪v2 그래프 인덱스...", flush=True)
     gidx, gpath = graph_index()
     print("   그래프 graph_id:", len(gpath), "· 그래프 보유 fp:", len(gidx))
@@ -160,36 +166,32 @@ def main():
             n += 1
         print(f"   그래프 병합 완료: {n} → {GRAPHS_OUT}")
 
-    # ── manifest.jsonl (받은 원천 도면 1장=1줄) ──
+    # ── manifest.jsonl : raw 원천 PNG 1건 = 1줄 (전체=raw, 사본도 전부 기록) ──
     OUT.mkdir(parents=True, exist_ok=True)
     mpath = OUT / "manifest.jsonl"
     bucket = defaultdict(int)
     lines = 0
+    repped = set()   # 지문별 첫 1건만 대표(분류), 나머지는 중복 제외
     with mpath.open("w", encoding="utf-8") as fo:
-        for fp, d in sig.items():
-            cat = category_of(d)
-            gids = gidx.get(fp.split("_")[0], [])    # 그래프 지문 = CRC8
-            became = len(gids) > 0
-            all_keys = sorted({k for ks in d["pk"].values() for k in ks})
-            disp, reason, corrected = _disposition(cat, became, at)
-            rep = {"drawing_id": all_keys[0], "fingerprint": fp, "source": "aihub",
-                   "house": d.get("house"),
-                   "disposition": disp, "reason": reason, "became_graph": became,
-                   "graph_ids": gids, "corrected": corrected, "dup_of": None}
-            fo.write(json.dumps(rep, ensure_ascii=False) + "\n")
-            bucket[(disp, reason)] += 1
+        for s, label, key, house in entries:
+            if s not in repped and s in sig:
+                repped.add(s)
+                cat = category_of(sig[s])
+                gids = gidx.get(s.split("_")[0], [])     # 그래프 지문 = CRC8
+                disp, reason, corrected = _disposition(cat, len(gids) > 0, at)
+                row = {"drawing_id": key, "fingerprint": s, "source": "aihub", "house": house,
+                       "disposition": disp, "reason": reason, "became_graph": len(gids) > 0,
+                       "graph_ids": gids, "corrected": corrected, "dup_of": None}
+            else:   # byte-identical 사본(라벨/키 중복) 또는 파싱실패 → 제외, raw에 그대로 남김
+                rs = "duplicate" if s in sig else "parse_fail"
+                row = {"drawing_id": f"{key}@{label}" if label else str(key),
+                       "fingerprint": s, "source": "aihub", "house": house,
+                       "disposition": "excl", "reason": rs, "became_graph": False,
+                       "graph_ids": [], "corrected": None, "dup_of": (s if rs == "duplicate" else None)}
+            fo.write(json.dumps(row, ensure_ascii=False) + "\n")
+            bucket[(row["disposition"], row["reason"])] += 1
             lines += 1
-            # 중복 사본 = 같은 라벨 안에서 첫 키 외 추가 키(완전 제거)
-            for lab, ks in d["pk"].items():
-                for k in sorted(ks)[1:]:
-                    dup = {"drawing_id": f"{k}@{lab}", "fingerprint": fp, "source": "aihub",
-                           "house": d.get("house"),
-                           "disposition": "excl", "reason": "duplicate", "became_graph": False,
-                           "graph_ids": [], "corrected": None, "dup_of": fp}
-                    fo.write(json.dumps(dup, ensure_ascii=False) + "\n")
-                    bucket[("excl", "duplicate")] += 1
-                    lines += 1
-    print(f"3) manifest 작성: {mpath} · {lines:,}줄")
+    print(f"3) manifest 작성: {mpath} · {lines:,}줄 (=raw 원천 PNG)")
 
     # ── 검증 ──
     print("4) 검증 — 버킷별(처분·사유):")
