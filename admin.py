@@ -136,31 +136,19 @@ def _graph_review(source_id, recs, render_original, graph_id_of):
     st.caption(f"원장: `{led}` · 결정 {len(review.load_ledger_from(led)):,}건")
 
 
-def _status_panel(source_id):
-    """출처 검수 현황(총/정상/격리 + 격리 사유 분포). summary(by_id 포함) 반환."""
+def _status_summary(source_id):
+    """출처 검수 현황 데이터(총/정상/격리/사유/by_id)만 집계 — 렌더링 없음.
+    개별 페이지의 격리사유 필터와 '검수 현황(종합)' 페이지가 함께 쓴다. 화면 점유를
+    없애기 위해 메트릭·차트는 그리지 않고, 종합 페이지에서만 시각화한다."""
     from plan2graph import dataset_status, sources
     gdir = sources.graphs_dir(source_id)
-    nkey = len(list(gdir.glob("*.json"))) if gdir.is_dir() else 0
+    nkey = len(list(gdir.glob("*.json"))) if gdir.is_dir() else 0  # 파일수 변동=자동 무효화
 
     @st.cache_data(show_spinner="검수 현황 집계(최초 1회)...")
     def _agg(sid, _n):
         return dataset_status.scan_status(sources.graphs_dir(sid))
 
-    s = _agg(source_id, nkey)
-    h1, h2 = st.columns([4, 1])
-    h1.markdown(f"#### 📋 {source_id} 검수 현황")
-    if h2.button("🔄 재집계", key=f"refresh_{source_id}",
-                 help="재변환·dedup 후 현황을 다시 집계(캐시 비움)"):
-        st.cache_data.clear(); st.rerun()
-    c1, c2, c3 = st.columns(3)
-    c1.metric("총 그래프", f"{s['total']:,}")
-    rate = (s['success'] / s['total'] * 100) if s['total'] else 0
-    c2.metric("✅ 정상", f"{s['success']:,}", f"{rate:.1f}%")
-    c3.metric("⚠ 격리(보정 대상)", f"{s['quarantine']:,}")
-    if s["reasons"]:
-        st.caption("격리 사유별 분포 — 왜 그래프를 못 만들었나 (막대를 보고 사유 선택→원본 확인)")
-        st.bar_chart({dataset_status.reason_label(k): v for k, v in s["reasons"].items()})
-    return s
+    return _agg(source_id, nkey)
 
 
 def _status_filter(recs, summary, graph_id_of):
@@ -213,8 +201,49 @@ def _record(**kw):
 st.sidebar.title("🏗 Plan2Graph 관리자")
 st.sidebar.caption("데이터셋을 눈으로 검증하는 콘솔")
 which = st.sidebar.radio("큐", ["⚠ 격리 (교정)", "✅ 채택 (검수)", "📏 scale 검수/보정",
-                                "📜 법령 DB", "📊 결과 대시보드", "🔍 AI-Hub 도면 검수",
+                                "📜 법령 DB", "📊 결과 대시보드", "🧮 검수 현황(종합)",
+                                "🔍 AI-Hub 도면 검수",
                                 "🌍 CubiCasa5k 도면검수", "🏙 RPLAN 도면검수"], index=0)
+
+# ════════════════════════════════════════════════════════════════════════════
+# 🧮 검수 현황(종합) — AI-Hub·CubiCasa·RPLAN 변환 결과를 한 화면에서 비교
+# ════════════════════════════════════════════════════════════════════════════
+if which.startswith("🧮"):
+    from plan2graph import dataset_status
+
+    st.title("🧮 검수 현황(종합)")
+    st.caption("AI-Hub · CubiCasa5k · RPLAN 세 출처의 그래프 변환 결과를 한눈에 — "
+               "총/정상/격리(보정 대상)와 격리 사유 분포. 개별 검수는 각 도면검수 메뉴에서.")
+    if st.button("🔄 재집계(캐시 비움)", help="재변환·dedup 후 현황을 다시 집계"):
+        st.cache_data.clear(); st.rerun()
+
+    SRC = [("aihub", "🔍 AI-Hub"), ("cubicasa5k", "🌍 CubiCasa5k"), ("rplan", "🏙 RPLAN")]
+    rows = [(name, _status_summary(sid)) for sid, name in SRC]
+    tot = {k: sum(s[k] for _, s in rows) for k in ("total", "success", "quarantine")}
+
+    g = st.columns(3)
+    g[0].metric("총 그래프 (3출처 합)", f"{tot['total']:,}")
+    _r = (tot['success'] / tot['total'] * 100) if tot['total'] else 0
+    g[1].metric("✅ 정상", f"{tot['success']:,}", f"{_r:.1f}%")
+    g[2].metric("⚠ 격리(보정 대상)", f"{tot['quarantine']:,}")
+    st.divider()
+
+    for name, s in rows:
+        st.markdown(f"#### {name}")
+        c = st.columns(3)
+        c[0].metric("총 그래프", f"{s['total']:,}")
+        r = (s['success'] / s['total'] * 100) if s['total'] else 0
+        c[1].metric("✅ 정상", f"{s['success']:,}", f"{r:.1f}%")
+        c[2].metric("⚠ 격리", f"{s['quarantine']:,}")
+        if s["reasons"]:
+            n = sum(s["reasons"].values())
+            with st.expander(f"격리 사유 분포 ({n:,}건) — 왜 그래프를 못 만들었나", expanded=False):
+                st.bar_chart({dataset_status.reason_label(k): v
+                              for k, v in s["reasons"].items()})
+        elif s["total"] == 0:
+            st.caption("아직 변환된 그래프가 없습니다(어댑터 미실행).")
+        st.divider()
+    st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
 # 🔍 배제 도면 검수 — 그래프 대상에서 빠진 평면도를 실제 PNG로 육안 검증
@@ -345,8 +374,8 @@ if which.startswith("🌍"):
             "- **제외분(excluded)**: 방 0개 / SVG 파싱 실패 → 제외\n\n"
             "오버레이: :green[●] 방 · :red[●] 문 (SVG 주석을 F1_scaled.png에). "
             "그려진 게 추출된 것 — 안 그려지면 추출 실패(제외 사유).")
-    # ── 검수 현황(총/정상/격리 + 사유 분포) ──
-    _ccsumm = _status_panel("cubicasa5k")
+    # 검수 현황은 '🧮 검수 현황(종합)' 메뉴로 분리 — 여기선 필터용 데이터만 조용히 집계.
+    _ccsumm = _status_summary("cubicasa5k")
     cat_label = {"converted": "🟢 정상분(그래프 변환)", "excluded": "🔴 제외분(방없음/실패)"}
     cat = st.sidebar.selectbox("분류", list(cat_label),
                                format_func=lambda k: f"{cat_label[k]} ({len(s[k]):,})")
@@ -420,8 +449,8 @@ if which.startswith("🏙"):
         st.info("아직 그래프 변환 전입니다 — '전체(원본)'로 검수하세요. "
                 "변환됨/미변환 분류를 보려면 먼저 어댑터 실행: "
                 "`python src/plan2graph/adapters/rplan_vector.py --src <data_*_converted.pkl>`")
-    # ── 검수 현황(총/정상/격리 + 사유 분포) ──
-    _rpsumm = _status_panel("rplan")
+    # 검수 현황은 '🧮 검수 현황(종합)' 메뉴로 분리 — 여기선 필터용 데이터만 조용히 집계.
+    _rpsumm = _status_summary("rplan")
     # 색 범례
     st.markdown("**방 색**: " + " · ".join(
         f":gray[■]{_rpi.CAT_KO[k]}" for k in sorted(_rpi.CAT_KO)))
