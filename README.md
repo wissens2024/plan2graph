@@ -51,6 +51,46 @@ plan2graph/
 
 원칙: **raw(원본) → staging(작업) → releases(동결)**. 코드·문서는 git, 대용량 데이터는 서버(115) 단일.
 
+## 스크립트 (`scripts/`)
+
+대부분 **115 서버에서 실행**한다. 공통 전제: `cd ~/plan2graph`, micromamba env `p2g`, `PYTHONPATH=src`.
+
+### 운영 — 대시보드
+
+| 스크립트 | 하는 일 |
+|---|---|
+| **`start_dashboard.sh`** | 대시보드 수동 기동/재시작. `nginx(443)`→`streamlit(:8501)`. 환경변수(`PLAN2GRAPH_RAW`·`PLAN2GRAPH_RPLAN`)를 **export로** 전달(서버옵션은 `.streamlit/config.toml` — `micromamba run`이 CLI 플래그를 삼켜서), `fuser -k 8501/tcp`로 기존 종료 후 nohup 기동, health 체크. **재부팅·종료 후 이것만 다시 실행하면 됨.** |
+| `plan2graph-dashboard.service` | systemd 유닛(상시기동 대안). 현재는 위 수동 방식을 사용. |
+
+```bash
+bash scripts/start_dashboard.sh        # → https://plan2graph.aines.kr/  (로그: logs/streamlit.log)
+```
+
+### 학습·실험 (GPU1만 — 운영 GPU0 보호)
+
+| 스크립트 | 하는 일 |
+|---|---|
+| **`run_matrix.sh`** | 신뢰성 매트릭스: `noPretrain×5시드` + `preCubicasa×5시드`. 각 학습 직후 eval+일반화 진단을 `runs/index.jsonl`에 누적. `CUDA_VISIBLE_DEVICES=1` 고정. 끝나면 `python -m plan2graph.experiments agg`로 평균±표준편차 → **'시드 노이즈' 판정**. |
+
+### 데이터 업로드·배치 (노트북 → 서버, scp 재시도+크기검증)
+
+| 스크립트 | 하는 일 |
+|---|---|
+| `v2v_upload.sh` | V2V용 **SPA+STR zip(~13.5GB)** 노트북→서버 `~/aihub_stage`. 파일단위 5회 재시도, 크기 일치 검증, 전송속도 표시. |
+| `v2v_setup_raw.sh` | 스테이징 zip을 **RAW 한글 구조**(`{Training,Validation}/{01.원천데이터,02.라벨링데이터}`)로 배치. 이후 `export PLAN2GRAPH_RAW=<RAW>`로 파이프라인 사용. |
+| `objocr_upload.sh` | **OBJ/OCR 원천 zip(~11.9GB)** 업로드 — OBJ/OCR-only 도면을 검수 GUI에 표시하기 위함(원천 PNG만). |
+| `objocr_setup.sh` | OBJ/OCR zip을 RAW `01.원천데이터`로 배치. |
+
+### 검증·유틸 (파이썬)
+
+| 스크립트 | 하는 일 |
+|---|---|
+| `verify_dedup.py` | CRC32+크기 지문 기반 **'고유 도면' dedup 정확성** 검증(충돌 0 증명). |
+| `_render_test.py` | 카테고리별 오버레이 썸네일 1장씩 PNG 저장(육안 확인). |
+| `_inject_pwindow.py` | 기존 `gen_<ver>.pt` 체크포인트에 `p_window`(타입별 창 보유 확률)만 주입. |
+
+> 업로드 스크립트의 로컬 경로(`건축 도면 데이터/…`)는 **과거 노트북 기준**이며, 현재 원본은 서버 `data/raw/`에 단일 보관됨(재업로드 시 참고용).
+
 ## 문서 (`docs/`)
 
 | 문서 | 내용 |
