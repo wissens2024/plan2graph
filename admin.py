@@ -252,9 +252,10 @@ def _record(**kw):
 
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
 st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
-which = st.sidebar.radio("큐", ["🧮 검수 현황(종합)", "🔍 AI-Hub 도면 검수",
-                                "🌍 CubiCasa5k 도면검수", "🏙 RPLAN 도면검수",
-                                "📏 scale 검수/보정", "📜 법령 DB", "📊 결과 대시보드"], index=0)
+which = st.sidebar.radio("메뉴", ["🧮 검수 현황(종합)", "🔍 AI-Hub 도면 검수",
+                                 "🌍 CubiCasa5k 도면검수", "🏙 RPLAN 도면검수",
+                                 "📏 scale 검수/보정", "📜 법령 DB", "📊 결과 대시보드"],
+                          index=0, label_visibility="collapsed")
 
 # ════════════════════════════════════════════════════════════════════════════
 # 🧮 검수 현황(종합) — AI-Hub·CubiCasa·RPLAN 변환 결과를 한 화면에서 비교
@@ -328,19 +329,6 @@ if which.startswith("🔍"):
                  "PLAN2GRAPH_RAW 환경변수를 SPA/STR zip이 있는 경로로 설정 후 재실행.")
         st.stop()
 
-    with st.expander("ℹ️ 배제 분류 전체 (꼭 읽기)", expanded=True):
-        st.markdown(
-            "**🟡 부분배제 (V2V로 복구 가능)** — 진짜 평면도인데 라벨이 한쪽만:\n"
-            "- **방만(spa_only)**: 방 라벨만 → 엣지(문) 못 만듦 → V2V로 STR 예측 복구\n"
-            "- **구조만(str_only)**: 문·벽만 → 노드(방) 못 만듦 → V2V로 SPA 예측 복구\n\n"
-            "**🔴 완전배제 (데이터셋에서 영구 제외)**:\n"
-            "- **비-FP(평면도 아님)**: 단면도·입면도·구조도 — *위상(방-문-방) 자체가 없음* → 그래프 불가\n"
-            "- **중복**: 같은 도면이 라벨종류별로 byte-identical 복제 → 지문(CRC+크기)으로 1장만 남기고 제외 "
-            "(전수 SHA256 검증·0충돌)\n"
-            "- **OBJ/OCR만**: 객체·문자 라벨만(방·구조 없음) → 그래프 불가. "
-            "*※ 이 zip은 미업로드(12.5GB)라 여기 표시 안 됨 — 보려면 OBJ/OCR 원천 업로드 필요.*\n\n"
-            "**⚪ 참고**: dual(둘 다) = 이미 v0 그래프화. 품질게이트 격리는 좌측 '⚠ 격리' 메뉴에서 도면+그래프+사유로 검수.")
-
     # AI-Hub의 Training/Validation은 벤더가 다운로드를 나눠준 '포장 폴더'일 뿐 —
     # 도면이 비-FP·중복·OBJ만인지는 이미지 속성이라 포장과 무관하고, 우리 dataset의
     # train/val/test(release._bucket, 시드 해싱)와도 별개다. 검수엔 분리 가치가 없어
@@ -405,11 +393,14 @@ if which.startswith("🔍"):
     from collections import Counter as _C
     _cnt = _C(_albl(r) for r in rows)
     disp = [(lab, _cnt[lab]) for lab in _AIHUB_ORDER if _cnt.get(lab, 0)]
-    with st.expander("ℹ️ 처분 분류 (합=다운로드)", expanded=False):
+    with st.expander("ℹ️ 분류 안내 (꼭 읽기)", expanded=False):
         st.markdown(
-            f"- 검수 대상 = 받은 원천 도면 전량 **{len(rows):,}장**(고유+중복사본).\n"
-            "- 도면 1장 = **처분 1칸**(대표 사유, 상호배타). 모든 칸 합 = 전량 = 다운로드.\n"
-            "- 🟡 방만/구조만 = V2V 복구 대상(복구되면 ✅사용으로 이동). 🔴 비-FP·OBJ·중복 = 영구 제외.")
+            f"검수 대상 = 받은 원천 도면 전량 **{len(rows):,}장**(고유+중복사본). "
+            "도면 1장 = **처분 1칸**(대표 사유, 상호배타), 모든 칸 합 = 다운로드.\n\n"
+            "- **✅ 사용**: dual(SPA+STR) 직접변환 · 방만/구조만은 **V2V로 복구**해 사용\n"
+            "- **🛠 보정·복구**: 방만/구조만 V2V 대기 · dual인데 변환 실패(품질게이트)\n"
+            "- **🚫 제외(영구)**: 비-FP(단면/입면/구조=평면도 아님) · OBJ/OCR만(방·구조 없음) · "
+            "중복(같은 PNG byte-identical, 1장만 채택)")
     keymap = {"📋 전체": len(rows)}
     keymap.update(dict(disp))
     cat = st.sidebar.selectbox("분류", ["📋 전체"] + [lab for lab, _ in disp],
@@ -427,9 +418,9 @@ if which.startswith("🔍"):
         return _ix.label_index(sp)
 
     view = st.sidebar.radio(
-        "👁 보기 모드", ["🔗 그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
+        "보기 모드", ["그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
         index=0, help="그래프검수=원본∥그래프+결정(승인/격리/제외) · 나란히=원본vs오버레이 · 겹쳐 · 원본만")
-    if view.startswith("🔗"):    # ⚠격리/✅채택 흡수 — staging/aihub 그래프 검수·결정(ledger 기록)
+    if view.startswith("그래프검수"):    # ⚠격리/✅채택 흡수 — staging/aihub 그래프 검수·결정(ledger 기록)
         lblidx = _lblidx(split)
         items = []
         for r in sel:
@@ -522,9 +513,9 @@ if which.startswith("🌍"):
     recs = [r for r in universe
             if (cat == "📋 전체" or _disp(r) == cat) and (subf == "(전체)" or r["sub"] == subf)]
     view = st.sidebar.radio(
-        "👁 보기 모드", ["🔗 그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
+        "보기 모드", ["그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
         index=0, help="그래프검수=원본∥위상그래프+결정 · 나란히=원본vs오버레이 · 겹쳐=원본 위 방·문 · 원본만")
-    if view.startswith("🔗"):
+    if view.startswith("그래프검수"):
         _graph_review("cubicasa5k", recs, lambda r, ov: _cci.render(r, overlay=ov), _gid)
         st.stop()
     mode = ("나란히" if view.startswith("나란히")
@@ -595,9 +586,9 @@ if which.startswith("🏙"):
         recs = [r for r in s["all"]
                 if _ds.disposition_label(*by.get(r["graph_id"], ("success", ""))) == cat]
     view = st.sidebar.radio(
-        "👁 보기 모드", ["🔗 그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
+        "보기 모드", ["그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
         index=0, help="그래프검수=원본∥위상그래프+결정 · 나란히=원본vs경계·문 오버레이")
-    if view.startswith("🔗"):
+    if view.startswith("그래프검수"):
         _graph_review("rplan", recs, lambda r, ov: _rpi.render(r, overlay=ov),
                       lambda r: r["graph_id"])
         st.stop()
