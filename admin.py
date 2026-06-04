@@ -26,6 +26,13 @@ from plan2graph import scale_ocr  # noqa: E402
 from plan2graph import legal_harvest, law_api  # noqa: E402
 
 st.set_page_config(page_title="Plan2Graph 관리자", layout="wide")
+# 상·하 여백을 줄여 사이드바 스크롤(페이징·옵션 잠식) 최소화
+st.markdown("""<style>
+.block-container{padding-top:1.6rem;padding-bottom:1rem;}
+section[data-testid="stSidebar"] .block-container,
+section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{padding-top:1rem;}
+section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.35rem;}
+</style>""", unsafe_allow_html=True)
 SPLIT = "Training"
 GRAPHS = config.PROCESSED_DIR / "graphs"
 FLAGGED = config.PROCESSED_DIR / "flagged"
@@ -36,6 +43,28 @@ LEGEND = (
 )
 ORIGIN_NOTE = ("ℹ️ program·adjacency·위상은 **원본 라벨이 아니라 우리가 기하추론으로 생성**한 것"
                "(원본엔 방 폴리곤·이름만 있음).")
+
+
+def _pager(skey: str, npages: int, loc: str) -> int:
+    """본문 페이지 내비(⏮ ◀ X/N ▶ ⏭). 같은 skey로 상·하단 동기화. 반환=현재 0-base 페이지.
+    하단 '다음 ▶'을 누르면 rerun으로 화면이 위에서부터 다시 그려진다(전수 조사용)."""
+    st.session_state.setdefault(skey, 0)
+    cur = max(0, min(int(st.session_state[skey]), npages - 1))
+    st.session_state[skey] = cur
+    c = st.columns([1, 1, 2, 1, 1])
+    if c[0].button("⏮", key=f"{skey}_{loc}_f", disabled=cur <= 0,
+                   use_container_width=True, help="처음"):
+        st.session_state[skey] = 0; st.rerun()
+    if c[1].button("◀ 이전", key=f"{skey}_{loc}_p", disabled=cur <= 0, use_container_width=True):
+        st.session_state[skey] = cur - 1; st.rerun()
+    c[2].markdown(f"<div style='text-align:center;padding-top:.4rem'><b>{cur+1} / {npages}</b></div>",
+                  unsafe_allow_html=True)
+    if c[3].button("다음 ▶", key=f"{skey}_{loc}_n", disabled=cur >= npages - 1, use_container_width=True):
+        st.session_state[skey] = cur + 1; st.rerun()
+    if c[4].button("⏭", key=f"{skey}_{loc}_l", disabled=cur >= npages - 1,
+                   use_container_width=True, help="끝"):
+        st.session_state[skey] = npages - 1; st.rerun()
+    return cur
 
 
 def _inspect_3mode(recs, mode, res, ncol, render, caption_fn):
@@ -222,8 +251,7 @@ def _record(**kw):
 
 
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
-st.sidebar.title("🏗 Plan2Graph 관리자")
-st.sidebar.caption("데이터셋을 눈으로 검증하는 콘솔")
+st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
 which = st.sidebar.radio("큐", ["🧮 검수 현황(종합)", "🔍 AI-Hub 도면 검수",
                                 "🌍 CubiCasa5k 도면검수", "🏙 RPLAN 도면검수",
                                 "📏 scale 검수/보정", "📜 법령 DB", "📊 결과 대시보드"], index=0)
@@ -430,8 +458,8 @@ if which.startswith("🔍"):
     PER = 4 if mode == "나란히" else ncol * 2
     st.sidebar.caption("이미지 클릭 → 우상단 ⛶ 전체화면이면 더 크게 보입니다.")
     npages = max(1, (len(recs) + PER - 1) // PER)
-    pg = st.sidebar.number_input(f"페이지 (1~{npages})", 1, npages, 1) - 1
     st.sidebar.caption(f"한 페이지 {PER}장 · 총 {npages:,}페이지 · 해상도 {res}px")
+    pg = _pager("pg_aihub", npages, "top")
 
     def _cap(r):
         if r.get("group"):   # 중복: 사본마다 i/N + 원본/제외
@@ -441,6 +469,7 @@ if which.startswith("🔍"):
 
     _inspect_3mode(recs[pg * PER:(pg + 1) * PER], mode, res, ncol,
                    lambda r, ov: _ix.render(r, lblidx, overlay=ov), _cap)
+    _pager("pg_aihub", npages, "bot")
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -506,8 +535,8 @@ if which.startswith("🌍"):
     PER = 4 if mode == "나란히" else ncol * 2
     st.markdown(f"### {cat} — **{len(recs):,}개**")
     npages = max(1, (len(recs) + PER - 1) // PER)
-    pg = st.sidebar.number_input(f"페이지 (1~{npages})", 1, npages, 1) - 1
     st.sidebar.caption(f"한 페이지 {PER}장 · 총 {npages:,}페이지 · {res}px")
+    pg = _pager("pg_cubicasa", npages, "top")
 
     def _cap(r):
         g = _gid(r)
@@ -517,6 +546,7 @@ if which.startswith("🌍"):
 
     _inspect_3mode(recs[pg * PER:(pg + 1) * PER], mode, res, ncol,
                    lambda r, ov: _cci.render(r, overlay=ov), _cap)
+    _pager("pg_cubicasa", npages, "bot")
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -579,8 +609,8 @@ if which.startswith("🏙"):
     PER = 4 if mode == "나란히" else ncol * 2
     st.markdown(f"### {cat} — **{len(recs):,}개**")
     npages = max(1, (len(recs) + PER - 1) // PER)
-    pg = st.sidebar.number_input(f"페이지 (1~{npages})", 1, npages, 1) - 1
     st.sidebar.caption(f"한 페이지 {PER}장 · 총 {npages:,}페이지 · {res}px")
+    pg = _pager("pg_rplan", npages, "top")
 
     def _cap(r):
         stt, rsn = by.get(r["graph_id"], ("success", ""))
@@ -591,6 +621,7 @@ if which.startswith("🏙"):
 
     _inspect_3mode(recs[pg * PER:(pg + 1) * PER], mode, res, ncol,
                    lambda r, ov: _rpi.render(r, overlay=ov), _cap)
+    _pager("pg_rplan", npages, "bot")
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
