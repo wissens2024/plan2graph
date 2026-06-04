@@ -35,11 +35,16 @@ plan2graph/
 ├─ config.py  admin.py  doctor.py  requirements*.txt
 ├─ docs/                       # 문서 (아래 목록)
 ├─ src/plan2graph/             # 패키지 (adapters/{rplan,cubicasa}, schema, rules …)
-├─ scripts/  tests/  notebooks/  legal/  ontology/  fonts/
+├─ scripts/                    # 운영·셋업 (start_dashboard·*_setup·run_matrix·verify_dedup·systemd)
+├─ tests/                      # 테스트
+├─ legal/                      # 법규 규칙 DB (catalog/law_manifest/rules.json — 채광 등 법규 검증)
+├─ ontology/                   # OWL 온톨로지 (floorplan.owl — 공간추론·SWRL; *.owl 미추적, 재생성)
+├─ fonts/                      # NanumGothic.ttf — matplotlib·대시보드 한글 렌더
+├─ notebooks/                  # 시각화·검증 산출(PNG, 대부분 .gitignore — 스크래치)
 ├─ data/                       # 데이터 (대부분 .gitignore, 서버 보관)
 │   ├─ raw/{aihub,cubicasa5k,rplan}      # 원본 다운로드
 │   ├─ staging/{aihub,cubicasa5k,rplan}  # 작업본: graphs + manifest + ledger
-│   ├─ releases/v0             # 동결 벤치마크(평가 test 고정)
+│   ├─ releases/{v0,v2}        # 동결 릴리스(v0=벤치마크, v2=+CubiCasa 사전학습; test v0 공유)
 │   └─ interim/  v2v/
 └─ runs/                       # 실험 원장(provenance·비교표)
 ```
