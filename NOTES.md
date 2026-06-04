@@ -145,6 +145,17 @@ README §2.2는 "동일 도면의 여러 라벨을 {9자리} 키로 묶는다"�
 - 결정 버튼: 교정적용·채택 / 그대로채택 / 영구제외 / 보류. → `review_decisions.csv` 원장 기록 + 완벽 세대는 graphs/에 재편입.
 - 의의: 격리 일회성 목록을 지속형 human-in-the-loop 큐레이션으로 전환. 결정 누적 = 규칙 튜닝/자동화(Phase 3 self-correction) 학습데이터.
 
+## 글로벌 사전학습셋 전량 변환 완료 (2026-06-04, 115 서버 실측)
+- 트랙3(글로벌 어댑터)의 변환 단계 종료. 두 출처 모두 공통 스키마 0.2·role=pretrain으로 발행, 전량 회계(모든 도면 success/quarantine 분기).
+- **RPLAN**: `data/external/rplan/Network/data.mat`(전체 80,788) → `staging/rplan/graphs` **80,788건 변환, 실패 0**. 정상 **80,371(99.5%)** / 격리 417(R4 현관없음 369·R1 조각 48·R3 도달불가 48·R2 문없는방 47). 벡터 구조 데이터(rType+gtBoxNew+rEdge)라 거의 전량 성공.
+  - ⚠️ 한계: RPLAN 벡터엔 창 라벨 없음 → n_windows=0 고정 → 법규 L1 채광은 전건 실패(데이터 부재, 변환 버그 아님). 무결성(R1~R5)은 통과 기준.
+  - 방-방 edge는 전부 via='open'(인접). 문/개방 정밀 구분은 boundary·rBoundary 기하 후속.
+  - 현관: RPLAN은 현관을 방으로 라벨 안 함 → 외곽선 정문(boundary doorFlag) 최근접 방을 기능적 진입실(is_entrance)로 표시해 R4 충족.
+- **CubiCasa5k**: `staging/cubicasa5k/graphs` 5,000건. 정상 **3,018(60.4%)** / 격리 1,982(R1 조각 943·R4 현관없음 868·R3 도달불가 598·untyped_rooms 233·R2 174·duplicate 23·empty_svg 1). SVG 원본 특성상 현관 미라벨·다세대 조각이 많아 격리율 높음(원본 특성, 회계는 전량 보존).
+- **pretrain 정상 합계 ≈ 83,389** (RPLAN 80,371 + CubiCasa 3,018). AI-Hub(benchmark)와 동일 노드/엣지 규약 공유.
+- 실행: `PYTHONPATH=src <p2g python> -m plan2graph.adapters.rplan_vector --src data/external/rplan/Network/data.mat` (out 기본=staging/rplan/graphs). 집계: `python -m plan2graph.dataset_status {rplan|cubicasa5k}`.
+- 후속: ① 공통포맷 교차검증(글로벌↔AI-Hub 노드/엣지/클래스 매핑 동일성 정량 확인) ② recipe.json 기반 결합 릴리스(v2=aihub+cubicasa, v3=+rplan pretrain).
+
 ## 임계값 변경 이력
 <!-- DOOR_BUFFER_PX 등 config 임계값을 게이트에서 조정할 때마다 기록 -->
 - 초기값: DOOR_BUFFER_PX=30, DOOR_PROBE_DIST_PX=40, DOOR_MAX_GAP_PX=60 (미검증, 1장 게이트에서 조정 예정).
