@@ -76,6 +76,16 @@ def _disposition_order() -> list[str]:
     return [_USE_LABEL] + fix + excl
 
 
+def disposition_groups(summary: dict) -> dict:
+    """scan_status summary → {use, fix, excl, total}. 종합 패널의 처분 3분류 집계."""
+    from collections import Counter
+    c: Counter = Counter()
+    for _stem, (stt, rsn) in summary.get("by_id", {}).items():
+        c[disposition_of(stt, rsn)[0]] += 1
+    return {"use": c.get("use", 0), "fix": c.get("fix", 0),
+            "excl": c.get("excl", 0), "total": sum(c.values())}
+
+
 def disposition_combo(summary: dict) -> list[tuple[str, int]]:
     """scan_status summary → 정렬된 [(대표라벨, 건수)] (건수>0만). 상호배타라 합=total."""
     from collections import Counter

@@ -236,8 +236,8 @@ if which.startswith("🧮"):
     from plan2graph import dataset_status
 
     st.title("🧮 검수 현황(종합)")
-    st.caption("AI-Hub · CubiCasa5k · RPLAN 세 출처의 그래프 변환 결과를 한눈에 — "
-               "총/정상/격리(보정 대상)와 격리 사유 분포. 개별 검수는 각 도면검수 메뉴에서.")
+    st.caption("AI-Hub · CubiCasa5k · RPLAN — 처분(✅사용 / 🛠보정·복구필요 / 🚫제외)별, "
+               "각 출처 합 = 다운로드 원본 수. 개별 검수는 각 도면검수 메뉴에서.")
     SRC = [("aihub", "🔍 AI-Hub"), ("cubicasa5k", "🌍 CubiCasa5k"), ("rplan", "🏙 RPLAN")]
     if st.button("🔄 재집계(캐시 비움)", help="재변환·dedup 후 현황을 다시 집계(디스크 캐시도 삭제)"):
         for sid, _ in SRC:     # 디스크 영속 캐시까지 지워야 내용변경(재변환)이 반영됨
@@ -247,30 +247,42 @@ if which.startswith("🧮"):
                 pass
         st.cache_data.clear(); st.rerun()
 
-    rows = [(name, _status_summary(sid)) for sid, name in SRC]
-    tot = {k: sum(s[k] for _, s in rows) for k in ("total", "success", "quarantine")}
+    def _disp_of_source(sid):
+        """출처별 처분 집계 {use,fix,excl,total}. AI-Hub는 원본 manifest, 나머지는 그래프 상태."""
+        if sid == "aihub":
+            mp = config.DATA_DIR / "staging" / "aihub" / "manifest.jsonl"
+            if not mp.exists():
+                return {"use": 0, "fix": 0, "excl": 0, "total": 0}
 
-    g = st.columns(3)
-    g[0].metric("총 그래프 (3출처 합)", f"{tot['total']:,}")
-    _r = (tot['success'] / tot['total'] * 100) if tot['total'] else 0
-    g[1].metric("✅ 정상", f"{tot['success']:,}", f"{_r:.1f}%")
-    g[2].metric("⚠ 격리(보정 대상)", f"{tot['quarantine']:,}")
+            @st.cache_data(show_spinner="AI-Hub 회계 집계...")
+            def _agg_aihub(_n):
+                from collections import Counter
+                c = Counter(json.loads(ln)["disposition"]
+                            for ln in mp.read_text(encoding="utf-8").splitlines() if ln.strip())
+                return {"use": c.get("use", 0), "fix": c.get("fix", 0),
+                        "excl": c.get("excl", 0), "total": sum(c.values())}
+            return _agg_aihub(mp.stat().st_size)
+        return dataset_status.disposition_groups(_status_summary(sid))
+
+    rows = [(name, _disp_of_source(sid)) for sid, name in SRC]
+    tot = {k: sum(d[k] for _, d in rows) for k in ("use", "fix", "excl", "total")}
+
+    g = st.columns(4)
+    g[0].metric("받은 원본 (3출처 합)", f"{tot['total']:,}")
+    g[1].metric("✅ 사용", f"{tot['use']:,}")
+    g[2].metric("🛠 보정·복구 필요", f"{tot['fix']:,}")
+    g[3].metric("🚫 제외", f"{tot['excl']:,}")
+    st.caption("※ AI-Hub는 원본 도면 기준(그래프는 다세대 분할로 더 많음). 합 = 받은 원본.")
     st.divider()
 
-    for name, s in rows:
-        st.markdown(f"#### {name}")
+    for name, d in rows:
+        st.markdown(f"#### {name} — 받은 원본 **{d['total']:,}**")
         c = st.columns(3)
-        c[0].metric("총 그래프", f"{s['total']:,}")
-        r = (s['success'] / s['total'] * 100) if s['total'] else 0
-        c[1].metric("✅ 정상", f"{s['success']:,}", f"{r:.1f}%")
-        c[2].metric("⚠ 격리", f"{s['quarantine']:,}")
-        if s["reasons"]:
-            n = sum(s["reasons"].values())
-            with st.expander(f"격리 사유 분포 ({n:,}건) — 왜 그래프를 못 만들었나", expanded=False):
-                st.bar_chart({dataset_status.reason_label(k): v
-                              for k, v in s["reasons"].items()})
-        elif s["total"] == 0:
-            st.caption("아직 변환된 그래프가 없습니다(어댑터 미실행).")
+        rate = (d["use"] / d["total"] * 100) if d["total"] else 0
+        c[0].metric("✅ 사용", f"{d['use']:,}", f"{rate:.1f}%")
+        c[1].metric("🛠 보정·복구 필요", f"{d['fix']:,}")
+        c[2].metric("🚫 제외", f"{d['excl']:,}")
+        st.caption(f"사용 {d['use']:,} + 보정·복구 {d['fix']:,} + 제외 {d['excl']:,} = {d['total']:,} (=다운로드)")
         st.divider()
     st.stop()
 
