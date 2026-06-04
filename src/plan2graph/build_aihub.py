@@ -88,10 +88,12 @@ def category_of(d: dict) -> str:
 
 
 def graph_index() -> tuple[dict, dict]:
-    """v0∪v2 그래프 → (fp -> [graph_id...]), (graph_id -> 원본 경로). graph_id 중복은 첫 채택."""
+    """변환된 그래프 → (fp -> [graph_id...]), (graph_id -> 경로). graph_id 중복은 첫 채택.
+    통합본(staging/aihub/graphs)이 있으면 그걸, 없으면 옛 v0∪v2를 읽는다."""
     idx: dict = defaultdict(list)
     path: dict = {}
-    for base in (V0, V2):
+    bases = [GRAPHS_OUT] if GRAPHS_OUT.is_dir() else [V0, V2]
+    for base in bases:
         for f in sorted(glob.glob(str(base) + "/*.json")):
             gid = os.path.basename(f)[:-5]
             if gid in path:
