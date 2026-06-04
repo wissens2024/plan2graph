@@ -32,7 +32,9 @@
 
 ## 4. AI-Hub 상세 — 원본 회계 매니페스트
 
-`data/staging/aihub/manifest.jsonl`(**raw 원천 PNG 1건=1줄**, [build_aihub.py](src/plan2graph/build_aihub.py) 생성). **받은 raw 43,219장 = 전체**. 줄 수 = 다운로드 = 검증 가능.
+`data/staging/aihub/manifest.jsonl`(**raw 원천 PNG 1건=1줄**, [build_aihub.py](src/plan2graph/build_aihub.py) 생성). **받은 raw 43,219장 = 전체(확정)**. 줄 수 = 다운로드 = 검증 가능.
+
+> **43,219 vs 48,033 (확정·2026-06-04):** AI-Hub 페이지 "3-2-5 원천데이터 구축수량"은 **48,033**(APT/DEH/ROW×FP/CS/EP/SD×라벨). 그러나 **정식개방데이터의 실제 배포 원천 zip(8 Train+4 Val, 전량·온전)에는 43,219장**뿐 — 모든 셀이 균일 90%(구축≠개방, QA·비식별 누락 추정). **신뢰 기준 = 실제 받은 파일 43,219로 확정.** 48,033 차이는 AI-Hub에 문의 접수함. (재다운로드해도 채워지지 않음 — 배포본이 43,219.)
 
 | 처분 | 사유 | 수 | 복구 경로 |
 |---|---|---|---|
