@@ -328,28 +328,61 @@ if which.startswith("🔍"):
     nonfp = _nonfp(split)
     dup = _dup(split)
     objocr = _objocr(split)
-    counts = {"spa_only": len(cats["spa_only"]), "str_only": len(cats["str_only"]),
-              "nonfp": len(nonfp), "dup": len(dup), "objocr": len(objocr),
-              "dual": len(cats["dual"])}
-    cat_label = {"spa_only": "🟡부분배제 방만(STR결손)", "str_only": "🟡부분배제 구조만(SPA결손)",
-                 "nonfp": "🔴완전배제 비-FP(평면도아님)", "dup": "🔴완전배제 중복(복사본)",
-                 "objocr": "🔴완전배제 OBJ/OCR만", "dual": "⚪참고 둘다(v0)"}
-    cat = st.sidebar.selectbox("카테고리", list(cat_label),
-                               format_func=lambda k: f"{cat_label[k]} ({counts[k]:,})")
-    if cat == "objocr" and not objocr:
-        st.warning("OBJ/OCR 원천 zip이 아직 업로드/배치되지 않았습니다. "
-                   "scripts/objocr_upload.sh → objocr_setup.sh 후 표시됩니다.")
-    house = st.sidebar.selectbox("거주형태", ["(전체)", "APT", "DEH", "ROW"])
-    src = {"nonfp": nonfp, "dup": dup, "objocr": objocr}.get(cat, cats.get(cat, []))
-    recs = [r for r in src if house == "(전체)" or r["house"] == house]
 
-    st.markdown(f"### {cat_label[cat]} — **{len(recs):,}개**  ·  _{_ix.CATEGORIES[cat]}_")
-    st.caption(f"분포: " + " · ".join(f"{k}:{len([r for r in src if r['house']==k]):,}"
-                                     for k in ("APT", "DEH", "ROW")))
-    if cat == "dup" and src:
-        ng = len({r["group"] for r in src})
-        st.info(f"🔁 총 **{len(src):,}개 사본** = **{ng:,}그룹** · 원본 **{ng:,}개 채택** + "
-                f"중복 **{len(src)-ng:,}개 제외**. 같은 그룹은 연속(1/N…N/N), 모두 byte-identical.")
+    # 렌더 인덱스: 지문(sig) → 표시용 레코드(zip/entry). 모든 분류 합침(중복은 대표 1개).
+    ridx = {}
+    for grp in (cats["dual"], cats["spa_only"], cats["str_only"], nonfp, objocr, dup):
+        for r in grp:
+            ridx.setdefault(r["sig"], r)
+
+    # manifest(권위 회계) — 처분·사유·house. 콤보 카운트는 여기서(합=다운로드).
+    _mpath = config.DATA_DIR / "staging" / "aihub" / "manifest.jsonl"
+    if not _mpath.exists():
+        st.error("AI-Hub manifest 없음. 서버에서 `python src/plan2graph/build_aihub.py` 먼저 실행.")
+        st.stop()
+
+    @st.cache_data(show_spinner="AI-Hub 회계(manifest) 로드...")
+    def _aihub_manifest(_n):
+        return [json.loads(ln) for ln in _mpath.read_text(encoding="utf-8").splitlines() if ln.strip()]
+
+    rows = _aihub_manifest(_mpath.stat().st_size)
+    AIHUB_LABEL = {
+        ("use", "dual"): "✅ 사용 · dual(직접변환)",
+        ("use", "v2v_str_recovered"): "✅ 사용 · 방만→V2V STR복구",
+        ("use", "v2v_spa_recovered"): "✅ 사용 · 구조만→V2V SPA복구",
+        ("fix", "convert_failed"): "🛠 보정필요 · 변환실패(dual)",
+        ("fix", "spa_only_pending"): "🛠 복구대상 · 방만(V2V 대기)",
+        ("fix", "str_only_pending"): "🛠 복구대상 · 구조만(V2V 대기)",
+        ("excl", "nonfp"): "🚫 제외 · 비-FP(평면도 아님)",
+        ("excl", "objocr"): "🚫 제외 · OBJ/OCR만",
+        ("excl", "duplicate"): "🔁 제외 · 중복(사본)",
+    }
+    _AIHUB_ORDER = list(AIHUB_LABEL.values())
+
+    def _albl(row):
+        return AIHUB_LABEL.get((row["disposition"], row["reason"]),
+                               f"{row['disposition']}·{row['reason']}")
+
+    from collections import Counter as _C
+    _cnt = _C(_albl(r) for r in rows)
+    disp = [(lab, _cnt[lab]) for lab in _AIHUB_ORDER if _cnt.get(lab, 0)]
+    with st.expander("ℹ️ 처분 분류 (합=다운로드)", expanded=False):
+        st.markdown(
+            f"- 검수 대상 = 받은 원천 도면 전량 **{len(rows):,}장**(고유+중복사본).\n"
+            "- 도면 1장 = **처분 1칸**(대표 사유, 상호배타). 모든 칸 합 = 전량 = 다운로드.\n"
+            "- 🟡 방만/구조만 = V2V 복구 대상(복구되면 ✅사용으로 이동). 🔴 비-FP·OBJ·중복 = 영구 제외.")
+    keymap = {"📋 전체": len(rows)}
+    keymap.update(dict(disp))
+    cat = st.sidebar.selectbox("분류", ["📋 전체"] + [lab for lab, _ in disp],
+                               format_func=lambda k: f"{k} ({keymap[k]:,})")
+    house = st.sidebar.selectbox("거주형태", ["(전체)", "APT", "DEH", "ROW"])
+    sel = [r for r in rows
+           if (cat == "📋 전체" or _albl(r) == cat) and (house == "(전체)" or r.get("house") == house)]
+    # 렌더 대상: manifest 행의 지문 → 렌더 인덱스(없으면 스킵). 카운트는 manifest(sel)가 권위.
+    recs = [ridx[r["fingerprint"]] for r in sel if r["fingerprint"] in ridx]
+
+    st.markdown(f"### {cat} — **{len(sel):,}개**" +
+                (f"  ·  _렌더가능 {len(recs):,}_" if len(recs) != len(sel) else ""))
     view = st.sidebar.radio(
         "👁 보기 모드", ["나란히(원본 | 오버레이)", "겹쳐보기", "원본만"], index=0,
         help="나란히=원본을 먼저 보고 오른쪽 오버레이와 직접 대조 · 겹쳐=원본 위에 라벨 · 원본만=순수 원본")
