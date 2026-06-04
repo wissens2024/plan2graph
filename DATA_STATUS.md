@@ -59,11 +59,12 @@
 | `staging/cubicasa5k/graphs` | CubiCasa 작업본 | 5,000 |
 | `staging/rplan/graphs` | RPLAN 작업본 | 80,788 |
 | `releases/v0` | **동결 벤치마크(평가)** | dual 5,648 + **고정 test split**(모델 비교 기준, 불변). 보존 필수 |
-| `processed/` | v0 벤치마크 **작업본 + ⚠/✅ 검수 큐** | graphs 5,648 + accepted/quarantine.csv(빌드 자동산출). 사람 결정 원장 없음 |
 
+- **`processed/` 은퇴(제거)**: ⚠격리/✅채택 검수는 AI-Hub 검수의 **🔗 그래프검수**(staging/aihub + ledger)로 흡수, scale_ocr·scale 메뉴는 `staging/aihub`를 읽게 전환. 백업: `/tmp/processed_retired_*`.
 - **`releases/v2` 삭제됨**(미완 스모크 빌드. V2V 그래프는 staging/aihub에 100% 보존 확인 후 제거).
-- **보존 절대**: 원본(`external/`·`aihub_raw/`)·V2V 산출물(`data/v2v` 5.4G, GPU 시간). 파생물만 재생성.
+- **보존 절대**: 원본(`external/`·`aihub_raw/`)·V2V 산출물(`data/v2v`). data/ = external·interim·releases·staging·v2v.
+- **scale**: AI-Hub=OCR(📏에서 보정, staging 적용), CubiCasa=SVG 치수 자동(95%, ㎡), RPLAN=없음. RPLAN 렌더는 rBoundary(실제 방 폴리곤).
 
 ## 6. 검수 도구 (정부과제 — 수치마다 근거 도면)
-- https://plan2graph.aines.kr — 🔍AI-Hub / 🌍CubiCasa / 🏙RPLAN 도면검수(처분 콤보, 합=다운로드) · 🧮검수 현황(종합, 처분 3분류) · ⚠격리/✅채택(벤치마크 품질게이트).
+- https://plan2graph.aines.kr — 🧮검수 현황(종합, 처분 3분류) · 🔍AI-Hub(🔗그래프검수·결정 포함) / 🌍CubiCasa / 🏙RPLAN 도면검수(처분 콤보, 합=다운로드) · 📏scale 검수/보정.
 - 기동: `bash scripts/start_dashboard.sh` (115). [[dataset-version-scheme]]
