@@ -425,55 +425,60 @@ if which.startswith("🌍"):
 if which.startswith("🏙"):
     from plan2graph import rplan_inspect as _rpi
 
+    from plan2graph import dataset_status as _ds
     st.title("🏙 RPLAN 도면검수")
-    st.caption("글로벌 데이터(RPLAN ~80k) 도면을 방 종류색으로 — 원본 전체/변환됨/미변환 육안 검증.")
-    if not _rpi.RP_ROOT.is_dir():
-        st.error(f"RPLAN 데이터 없음: {_rpi.RP_ROOT}\n\n"
-                 "Zenodo 'RPLAN dataset.zip'을 풀어 이 경로에 PNG들을 두거나,\n"
-                 "다른 곳에 풀었으면 환경변수 PLAN2GRAPH_RPLAN=<푼 경로> 로 지정 후 재실행하세요.")
-        st.stop()
+    st.caption("RPLAN 변환 그래프 전량을 원본(snapshot RGB 또는 .mat 벡터)으로 검수 — "
+               "콤보 숫자 = 종합 패널 '총 그래프' = 다운로드(.mat) 엔트리 수로 항상 일치.")
 
-    @st.cache_data(show_spinner="RPLAN 원본 스캔(최초 1회)...")
-    def _rpscan():
+    @st.cache_data(show_spinner="RPLAN 레코드 스캔(최초 1회)...")
+    def _rpscan(_n):
         return _rpi.scan()
 
-    s = _rpscan()
-    if not s["all"]:
-        st.warning(f"{_rpi.RP_ROOT} 안에 PNG가 없습니다. zip을 이 경로에 풀었는지 확인하세요.")
-        st.stop()
-    with st.expander("ℹ️ 분류 (꼭 읽기)", expanded=True):
-        st.markdown(
-            "- **전체(원본)**: 받은 PNG 전부 — 변환 안 해도 바로 도면 검수.\n"
-            "- **변환됨**: 어댑터로 그래프化된 것(global_rplan).\n"
-            "- **미변환**: 아직 변환 안 됐거나 변환 실패한 것.\n\n"
-            "RPLAN 원본이 **4채널 인덱스 맵**이면 category 채널을 방 종류색으로 칠해 보여주고"
-            "(오버레이: instance 경계=검정 외곽선·문=:red[●]빨강), **이미 렌더된 도면 패키지**"
-            "(snapshot_train 등)면 원본 이미지를 그대로 표시합니다.")
-    if not s["converted"]:
-        st.info("아직 그래프 변환 전입니다 — '전체(원본)'로 검수하세요. "
-                "변환됨/미변환 분류를 보려면 먼저 어댑터 실행: "
-                "`python src/plan2graph/adapters/rplan_vector.py --src <data_*_converted.pkl>`")
-    # 검수 현황은 '🧮 검수 현황(종합)' 메뉴로 분리 — 여기선 필터용 데이터만 조용히 집계.
+    # 콤보·헤더·패널이 '같은 한 소스'(_status_summary)를 읽어 숫자가 절대 어긋나지 않게 함
     _rpsumm = _status_summary("rplan")
-    # 색 범례
+    s = _rpscan(_rpsumm["total"])     # 그래프 수 변동 시 스캔 캐시도 갱신
+    if not s["all"]:
+        st.warning("변환된 RPLAN 그래프가 없습니다(staging/rplan/graphs 비어 있음). "
+                   "어댑터를 먼저 실행: "
+                   "`python src/plan2graph/adapters/rplan_vector.py --src data/external/rplan/Network/data.mat`")
+        st.stop()
+    by = _rpsumm["by_id"]
+    nrec, npng = _rpsumm["total"], len(s["with_png"])
+    with st.expander("ℹ️ 분류 (꼭 읽기)", expanded=False):
+        st.markdown(
+            f"- **검수 대상 = 변환된 그래프 전량 {nrec:,}개** "
+            f"(= 종합 패널 '총 그래프' = 다운로드 RPLAN .mat 엔트리 수). 합이 곧 전체.\n"
+            f"- 상태로 가름: **정상 {_rpsumm['success']:,} + 격리 {_rpsumm['quarantine']:,} "
+            f"= {nrec:,}**. 사이드바 '분류'에서 선택.\n"
+            f"- 원본 보기: snapshot RGB 렌더가 있는 **{npng:,}개**는 그 이미지로, "
+            f"나머지 **{nrec - npng:,}개**는 .mat 벡터(gtBoxNew)로 방 박스를 그려 표시"
+            f"(어댑터와 같은 좌표 → 그래프뷰·centroid와 일치).")
     st.markdown("**방 색**: " + " · ".join(
         f":gray[■]{_rpi.CAT_KO[k]}" for k in sorted(_rpi.CAT_KO)))
-    cat_label = {"all": "📋 전체(원본)", "converted": "🟢 변환됨(그래프)",
-                 "excluded": "🔴 미변환/실패"}
-    cat = st.sidebar.selectbox("분류", list(cat_label),
-                               format_func=lambda k: f"{cat_label[k]} ({len(s[k]):,})")
-    recs = s[cat]
-    if cat == "converted":   # 정상/격리·사유 필터(원본 보고 '왜 못했나' 확인)
-        recs = _status_filter(recs, _rpsumm, lambda r: f"RPLAN_{r['id']}")
+    # 분류 콤보 — 카운트가 종합 패널과 동일(같은 _status_summary에서 파생)
+    cat_opts = {"all": ("📋 전체(변환 전량)", _rpsumm["total"]),
+                "success": ("✅ 정상", _rpsumm["success"]),
+                "quarantine": ("⚠ 격리(보정 대상)", _rpsumm["quarantine"])}
+    cat = st.sidebar.selectbox("분류", list(cat_opts),
+                               format_func=lambda k: f"{cat_opts[k][0]} ({cat_opts[k][1]:,})")
+    if cat == "all":
+        recs = s["all"]
+    else:
+        recs = [r for r in s["all"] if by.get(r["graph_id"], ("success", ""))[0] == cat]
+    if cat == "quarantine" and _rpsumm["reasons"]:
+        opts = list(_rpsumm["reasons"].keys())
+        sel = st.sidebar.multiselect("격리 사유(택)", opts,
+                                     format_func=_ds.reason_label, default=opts)
+        ss = set(sel)
+        recs = [r for r in recs
+                if set((by.get(r["graph_id"], ("", ""))[1] or "").split(",")) & ss]
+        st.sidebar.caption(f"사유 필터 결과: {len(recs):,}개")
     view = st.sidebar.radio(
         "👁 보기 모드", ["🔗 그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
         index=0, help="그래프검수=원본∥위상그래프+결정 · 나란히=원본vs경계·문 오버레이")
     if view.startswith("🔗"):
-        if cat != "converted":
-            st.info("그래프검수는 '변환됨(converted)'에서만 가능합니다(사이드바 분류를 변환됨으로).")
-        else:
-            _graph_review("rplan", recs, lambda r, ov: _rpi.render(r, overlay=ov),
-                          lambda r: f"RPLAN_{r['id']}")
+        _graph_review("rplan", recs, lambda r, ov: _rpi.render(r, overlay=ov),
+                      lambda r: r["graph_id"])
         st.stop()
     mode = ("나란히" if view.startswith("나란히")
             else "겹쳐보기" if view == "겹쳐보기" else "원본만")
@@ -481,16 +486,16 @@ if which.startswith("🏙"):
                                    value=1024, help="RPLAN 원본은 256px(인덱스 맵)을 ×4 확대해 표시.")
     ncol = st.sidebar.radio("열 수(겹쳐/원본만)", [1, 2, 3], index=1, horizontal=True)
     PER = 4 if mode == "나란히" else ncol * 2
-    st.markdown(f"### {cat_label[cat]} — **{len(recs):,}개**")
+    st.markdown(f"### {cat_opts[cat][0]} — **{len(recs):,}개**")
     npages = max(1, (len(recs) + PER - 1) // PER)
     pg = st.sidebar.number_input(f"페이지 (1~{npages})", 1, npages, 1) - 1
     st.sidebar.caption(f"한 페이지 {PER}장 · 총 {npages:,}페이지 · {res}px")
 
     def _cap(r):
-        c = r["id"]
-        if cat == "excluded":
-            c += f" · 사유: {_rpi.exclude_reason(r)}"
-        return c
+        stt, rsn = by.get(r["graph_id"], ("success", ""))
+        tag = "✅정상" if stt == "success" else f"⚠격리:{_ds.reason_label((rsn or '').split(',')[0])}"
+        src = "snapshot RGB" if r.get("png") else ".mat 벡터박스"
+        return f"{r['graph_id']} · {tag} · [{src}]"
 
     _inspect_3mode(recs[pg * PER:(pg + 1) * PER], mode, res, ncol,
                    lambda r, ov: _rpi.render(r, overlay=ov), _cap)

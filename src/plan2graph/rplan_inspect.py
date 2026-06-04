@@ -55,22 +55,32 @@ UPSCALE = 4   # 256px 원본을 ×4(=1024)로 확대(인덱스 맵이라 NEAREST
 
 
 def scan() -> dict:
-    """RPLAN 원본 PNG 스캔 → {all, converted, excluded}.
+    """RPLAN 검수 universe = 변환된 그래프 레코드 전량 = 다운로드(.mat) 총수.
 
-    all       : 원본 도면 전체(변환 여부 무관) — zip만 풀면 바로 검수 가능.
-    converted : 이미 그래프化된 것(graph_id=RPLAN_<stem> 존재).
-    excluded  : 아직 변환 안 됐거나 변환 실패한 것.
-    ※ 어댑터(global_rplan) 미실행이면 converted=∅, all로 원본 검수.
+    원본 1장 = 그래프 레코드 1개(RPLAN_<idx>.json)다. 콤보 '전체'가 곧 그래프 수이고,
+    이는 종합 패널 총수(scan_status)·다운로드 .mat 엔트리 수와 항상 동일하다(같은 graphs
+    디렉터리를 셈). 상태(정상/격리)는 레코드 meta로 갈리며 패널과 한 소스를 공유한다.
+
+    원본 미리보기:
+      png  : snapshot_train RGB 렌더가 있으면 그 경로(부분집합 ~67k, 예쁜 도면).
+      idx  : .mat 인덱스(=stem 숫자) — PNG 없는 ~13k는 gtBoxNew 박스로 렌더(render 참조).
+    반환: {all, with_png, no_png}. (이전의 converted/excluded는 폐기 — 전량이 변환됨)
     """
-    converted = {p.stem[len("RPLAN_"):] for p in GRAPHS.glob("*.json")} if GRAPHS.exists() else set()
-    allrecs = []
+    png_by_stem: dict = {}
     if RP_ROOT.is_dir():
-        for png in sorted(RP_ROOT.glob("**/*.png")):
-            sid = png.stem
-            allrecs.append({"id": sid, "png": str(png), "_conv": sid in converted})
-    return {"all": allrecs,
-            "converted": [r for r in allrecs if r["_conv"]],
-            "excluded": [r for r in allrecs if not r["_conv"]]}
+        for png in RP_ROOT.glob("**/*.png"):
+            png_by_stem.setdefault(png.stem, str(png))
+    recs = []
+    if GRAPHS.is_dir():
+        for j in GRAPHS.glob("RPLAN_*.json"):
+            stem = j.stem[len("RPLAN_"):]
+            recs.append({"id": stem, "graph_id": j.stem,
+                         "png": png_by_stem.get(stem),
+                         "idx": int(stem) if stem.isdigit() else None})
+    recs.sort(key=lambda r: (r["idx"] is None, r["idx"] if r["idx"] is not None else 0, r["id"]))
+    return {"all": recs,
+            "with_png": [r for r in recs if r.get("png")],
+            "no_png": [r for r in recs if not r.get("png")]}
 
 
 def exclude_reason(rec: dict) -> str:
@@ -103,14 +113,28 @@ def _load_channels(png_path: str):
 
 
 def render(rec: dict, overlay: bool = True):
-    """RPLAN PNG → 방 종류색 도면(PIL). overlay 시 instance 경계 외곽선 + 문 강조.
-    4채널 인덱스맵이 아니면(이미 렌더된 도면 패키지) 원본 이미지를 그대로 표시."""
+    """원본 도면 1장(PIL). snapshot PNG가 있으면 그걸로, 없으면 .mat 벡터 박스로 렌더."""
+    png = rec.get("png")
+    if png:
+        return _render_png(png, overlay)
+    img = _render_boxes(rec.get("idx"), overlay)
+    if img is not None:
+        return img
+    from PIL import Image, ImageDraw
+    img = Image.new("RGB", (512, 512), (245, 245, 245))
+    ImageDraw.Draw(img).text((16, 16), f"{rec.get('graph_id', '?')}\n미리보기 불가\n(snapshot PNG·data.mat 모두 없음)",
+                             fill=(120, 120, 120))
+    return img
+
+
+def _render_png(png_path: str, overlay: bool = True):
+    """snapshot_train PNG 표시. 4채널 인덱스맵이면 방 종류색으로 칠하고(경계·문 오버레이),
+    이미 렌더된 RGB 도면이면 원본 그대로."""
     import numpy as np
     from PIL import Image
-    cat, inst = _load_channels(rec["png"])
+    cat, inst = _load_channels(png_path)
     if cat is None:
-        # 이미 렌더된 도면 이미지(예: snapshot_train·Img) → 원본 그대로. 작은 건 확대.
-        img = Image.open(rec["png"]).convert("RGB")
+        img = Image.open(png_path).convert("RGB")
         if max(img.size) < 600:
             img = img.resize((img.size[0] * 3, img.size[1] * 3), Image.LANCZOS)
         return img
@@ -119,12 +143,10 @@ def render(rec: dict, overlay: bool = True):
     for code, color in CAT_COLORS.items():
         rgb[cat == code] = color
     if overlay:
-        # instance 경계(오른쪽·아래 이웃과 다르면 외곽선) → 방 구분 시각화
         edge = np.zeros((h, w), bool)
         edge[:, :-1] |= inst[:, :-1] != inst[:, 1:]
         edge[:-1, :] |= inst[:-1, :] != inst[1:, :]
         rgb[edge] = (40, 40, 40)
-        # 문 픽셀(FrontDoor·InteriorDoor) 강조 — 경계 위에 덮어 다시 칠함
         door = np.isin(cat, list(_rp.DOOR_CATS))
         rgb[door] = (220, 30, 30)
     img = Image.fromarray(rgb, "RGB")
@@ -133,6 +155,72 @@ def render(rec: dict, overlay: bool = True):
     return img
 
 
+_MAT_DATA = None   # data.mat(전체 80,788 벡터) 1회 로드 캐시 — PNG 없는 레코드 렌더용
+
+
+def _mat_data():
+    """RPLAN Network/data.mat의 'data'(플랜별 구조 배열)를 1회 로드해 캐시.
+    RP_ROOT가 snapshot_train을 가리켜도 rplan 루트 밑에서 data.mat을 탐색한다."""
+    global _MAT_DATA
+    if _MAT_DATA is None:
+        import scipy.io as sio
+        cands = [RP_ROOT / "Network" / "data.mat",
+                 config.DATA_DIR / "external" / "rplan" / "Network" / "data.mat"]
+        p = next((c for c in cands if c.exists()), None)
+        if p is None:
+            found = list((config.DATA_DIR / "external" / "rplan").glob("**/data.mat"))
+            p = found[0] if found else None
+        try:
+            _MAT_DATA = (sio.loadmat(str(p), struct_as_record=False,
+                                     squeeze_me=True)["data"] if p and p.exists() else [])
+        except Exception:  # noqa: BLE001
+            _MAT_DATA = []
+    return _MAT_DATA
+
+
+def _render_boxes(idx, overlay: bool = True):
+    """data.mat[idx]의 gtBoxNew+rType → 방 박스 색칠(PIL).
+    어댑터와 동일 좌표 규약([x0,y0,x1,y1]=x:열·y:행, 방 타입 0~12만) → 그래프뷰·centroid와 일치."""
+    import numpy as np
+    from PIL import Image
+    data = _mat_data()
+    if idx is None or not (0 <= idx < len(data)):
+        return None
+    e = data[idx]
+    boxes = getattr(e, "gtBoxNew", None)
+    if boxes is None:
+        boxes = getattr(e, "gtBox", None)
+    types = getattr(e, "rType", None)
+    if boxes is None or types is None:
+        return None
+    boxes = np.atleast_2d(np.asarray(boxes))
+    types = np.atleast_1d(np.asarray(types)).ravel()
+    if boxes.ndim != 2 or boxes.shape[0] == 0:
+        return None
+    w = int(boxes[:, :4].max()) + 1
+    rgb = np.full((w, w, 3), 245, dtype="uint8")
+    n = min(len(types), len(boxes))
+    # 큰 방부터 칠해 작은 방이 위에 오게(겹침 시 가독성)
+    order = sorted(range(n), key=lambda i: -abs(int(boxes[i][2] - boxes[i][0]) *
+                                                int(boxes[i][3] - boxes[i][1])))
+    for i in order:
+        t = int(types[i])
+        if t > 12:   # 방(0~12)만 — 어댑터 ROOM_CAT_MAX와 동일(13+ 외부·벽·문 제외)
+            continue
+        x0, y0, x1, y1 = (int(boxes[i][0]), int(boxes[i][1]),
+                          int(boxes[i][2]), int(boxes[i][3]))
+        if x1 <= x0 or y1 <= y0:
+            continue
+        rgb[y0:y1, x0:x1] = CAT_COLORS.get(t, (200, 200, 200))
+        if overlay:   # 방 외곽선
+            rgb[y0:y1, x0] = (40, 40, 40); rgb[y0:y1, x1 - 1] = (40, 40, 40)
+            rgb[y0, x0:x1] = (40, 40, 40); rgb[y1 - 1, x0:x1] = (40, 40, 40)
+    img = Image.fromarray(rgb, "RGB")
+    s = max(1, 1024 // w)
+    return img.resize((w * s, w * s), Image.NEAREST)
+
+
 if __name__ == "__main__":
     s = scan()
-    print(f"RPLAN: 원본 {len(s['all'])} · 변환됨 {len(s['converted'])} · 미변환 {len(s['excluded'])}")
+    print(f"RPLAN: 변환 전량 {len(s['all'])} · PNG미리보기 {len(s['with_png'])} · "
+          f".mat렌더 {len(s['no_png'])}")
