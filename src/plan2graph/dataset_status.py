@@ -30,6 +30,64 @@ def reason_label(rule: str) -> str:
     return RULE_KO.get(rule, rule or "사유 미기록")
 
 
+# ── 처분(disposition): 도면 1장 → 대표 사유 1개로 상호배타 배정 ──────────────────
+# 격리 레코드는 사유가 여럿 겹칠 수 있어(합>격리수), 그대로 사유별로 쪼개면 칸이 겹쳐
+# '합=다운로드'가 깨진다. 그래서 우선순위 총순서로 '제일 센/근본 사유 1개'만 배정해
+# 모든 칸을 상호배타로 만든다(도면 1장=한 칸). 도면의 전체 위반은 레코드 detail에 남음.
+#   group: use(사용) · fix(보정필요, 살릴 수 있음) · excl(영구제외)
+# 순서 = 위에서부터 우선(영구제외 먼저 → 보정필요는 근본원인 순). untyped_rooms는
+# '방 폴리곤은 있고 타입만 미정'이라 재라벨로 살릴 수 있어 fix(보정필요)로 둔다.
+DISPOSITION_PRIORITY = [
+    ("duplicate",                    "excl", "🔁 제외 · 중복(복사본)"),
+    ("svg_parse_error",              "excl", "⬜ 제외 · 변환실패(손상)"),
+    ("empty_svg",                    "excl", "⬜ 제외 · 빈 도면"),
+    ("empty_layout",                 "excl", "⬜ 제외 · 빈 레이아웃(방 0)"),
+    ("untyped_rooms",                "fix",  "🛠 보정필요 · 방 타입 미정"),
+    ("R4_no_entrance",               "fix",  "🛠 보정필요 · 현관 없음"),
+    ("R1_isolated_component",        "fix",  "🛠 보정필요 · 분리 덩어리"),
+    ("R3_unreachable_from_entrance", "fix",  "🛠 보정필요 · 도달 불가"),
+    ("R2_doorless_room",             "fix",  "🛠 보정필요 · 문 없는 방"),
+    ("R5_unresolved_doors",          "fix",  "🛠 보정필요 · 미해소 문"),
+]
+_USE_LABEL = "✅ 사용 · 변환·채택"
+_FIX_ETC_LABEL = "🛠 보정필요 · 기타"
+
+
+def disposition_of(status: str, reason: str) -> tuple[str, str]:
+    """레코드 1개 → (group, 대표 라벨). 정상이면 사용, 격리면 최우선(센·근본) 사유 1개.
+    group ∈ {use, fix, excl}."""
+    if status == "success":
+        return ("use", _USE_LABEL)
+    rs = {r.strip() for r in (reason or "").split(",") if r.strip()}
+    for key, group, label in DISPOSITION_PRIORITY:
+        if key in rs:
+            return (group, label)
+    return ("fix", _FIX_ETC_LABEL)
+
+
+def disposition_label(status: str, reason: str) -> str:
+    return disposition_of(status, reason)[1]
+
+
+def _disposition_order() -> list[str]:
+    """콤보 표시 순서: 사용 → 보정필요(우선순위) → 영구제외."""
+    fix = [lab for _, g, lab in DISPOSITION_PRIORITY if g == "fix"] + [_FIX_ETC_LABEL]
+    excl = [lab for _, g, lab in DISPOSITION_PRIORITY if g == "excl"]
+    return [_USE_LABEL] + fix + excl
+
+
+def disposition_combo(summary: dict) -> list[tuple[str, int]]:
+    """scan_status summary → 정렬된 [(대표라벨, 건수)] (건수>0만). 상호배타라 합=total."""
+    from collections import Counter
+    c: Counter = Counter()
+    for _stem, (stt, rsn) in summary.get("by_id", {}).items():
+        c[disposition_label(stt, rsn)] += 1
+    order = _disposition_order()
+    known = [(lab, c[lab]) for lab in order if c.get(lab, 0)]
+    extra = [(lab, n) for lab, n in c.items() if lab not in order and n]  # 방어
+    return known + extra
+
+
 def scan_status(graphs_dir: Path) -> dict:
     """graphs_dir/*.json 메타 집계.
     반환: {total, success, quarantine, reasons:{rule:count}, by_id:{stem:(status,reason)}}.

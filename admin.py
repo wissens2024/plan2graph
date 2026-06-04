@@ -391,7 +391,7 @@ if which.startswith("🌍"):
     from plan2graph import cubicasa_inspect as _cci
 
     st.title("🌍 CubiCasa5k 도면검수")
-    st.caption("글로벌 데이터(CubiCasa5k) 도면을 원본+방 오버레이로 — 정상분(그래프 변환)·제외분(사유).")
+    st.caption("CubiCasa5k 케이스 전량을 원본+오버레이로 — 처분(사용/보정필요/제외)별, 합=다운로드.")
     if not _cci.CC_ROOT.is_dir():
         st.error(f"CubiCasa5k 데이터 없음: {_cci.CC_ROOT}")
         st.stop()
@@ -401,31 +401,43 @@ if which.startswith("🌍"):
         return _cci.scan()
 
     s = _ccscan()
-    with st.expander("ℹ️ 분류 (꼭 읽기)", expanded=True):
-        st.markdown(
-            "- **정상분(converted)**: model.svg에서 방 폴리곤 추출 성공 → 그래프化(global_cubicasa)\n"
-            "- **제외분(excluded)**: 방 0개 / SVG 파싱 실패 → 제외\n\n"
-            "오버레이: :green[●] 방 · :red[●] 문 (SVG 주석을 F1_scaled.png에). "
-            "그려진 게 추출된 것 — 안 그려지면 추출 실패(제외 사유).")
-    # 검수 현황은 '🧮 검수 현황(종합)' 메뉴로 분리 — 여기선 필터용 데이터만 조용히 집계.
+    from plan2graph import dataset_status as _ds
+    # 콤보·헤더가 종합 패널과 같은 _status_summary를 읽어 숫자가 어긋나지 않게 함
     _ccsumm = _status_summary("cubicasa5k")
-    cat_label = {"converted": "🟢 정상분(그래프 변환)", "excluded": "🔴 제외분(방없음/실패)"}
-    cat = st.sidebar.selectbox("분류", list(cat_label),
-                               format_func=lambda k: f"{cat_label[k]} ({len(s[k]):,})")
-    subs = sorted({r["sub"] for r in s[cat]})
+    by = _ccsumm["by_id"]
+    universe = s.get("converted", []) + s.get("excluded", [])   # 케이스 전량(=다운로드)
+
+    def _gid(r):
+        return f"CC_{r['id']}"
+
+    def _disp(r):   # 도면 1장 → 대표 처분 1칸(상호배타)
+        g = _gid(r)
+        return _ds.disposition_label(*by[g]) if g in by else "❔ 미변환(그래프 없음)"
+
+    from collections import Counter as _C
+    _cnt = _C(_disp(r) for r in universe)
+    _order = _ds._disposition_order() + ["❔ 미변환(그래프 없음)"]
+    disp = [(lab, _cnt[lab]) for lab in _order if _cnt.get(lab, 0)]
+    with st.expander("ℹ️ 분류 (꼭 읽기)", expanded=False):
+        st.markdown(
+            f"- 검수 대상 = CubiCasa 케이스 전량 **{len(universe):,}개** "
+            f"(= 다운로드 = 종합 패널 총수).\n"
+            f"- 도면 1장 = **처분 1칸**(대표 사유, 상호배타). 모든 칸 합 = {len(universe):,}.\n"
+            "- 오버레이: :green[●] 방 · :red[●] 문. 그려진 게 추출된 것.")
+    # 분류 콤보(처분 버킷, 상호배타) + 세트(facet)
+    keymap = {"📋 전체": len(universe)}
+    keymap.update(dict(disp))
+    cat = st.sidebar.selectbox("분류", ["📋 전체"] + [lab for lab, _ in disp],
+                               format_func=lambda k: f"{k} ({keymap[k]:,})")
+    subs = sorted({r["sub"] for r in universe})
     subf = st.sidebar.selectbox("세트", ["(전체)"] + subs)
-    recs = [r for r in s[cat] if subf == "(전체)" or r["sub"] == subf]
-    if cat == "converted":   # 정상/격리·사유 필터
-        recs = _status_filter(recs, _ccsumm, lambda r: f"CC_{r['id']}")
+    recs = [r for r in universe
+            if (cat == "📋 전체" or _disp(r) == cat) and (subf == "(전체)" or r["sub"] == subf)]
     view = st.sidebar.radio(
         "👁 보기 모드", ["🔗 그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
         index=0, help="그래프검수=원본∥위상그래프+결정 · 나란히=원본vs오버레이 · 겹쳐=원본 위 방·문 · 원본만")
     if view.startswith("🔗"):
-        if cat != "converted":
-            st.info("그래프검수는 '정상분(converted)'에서만 가능합니다(사이드바 분류를 정상분으로).")
-        else:
-            _graph_review("cubicasa5k", recs, lambda r, ov: _cci.render(r, overlay=ov),
-                          lambda r: f"CC_{r['id']}")
+        _graph_review("cubicasa5k", recs, lambda r, ov: _cci.render(r, overlay=ov), _gid)
         st.stop()
     mode = ("나란히" if view.startswith("나란히")
             else "겹쳐보기" if view == "겹쳐보기" else "원본만")
@@ -433,16 +445,16 @@ if which.startswith("🌍"):
                                    value=1500, help="CubiCasa 원본은 ~1100px(AI-Hub보다 저해상).")
     ncol = st.sidebar.radio("열 수(겹쳐/원본만)", [1, 2], index=1, horizontal=True)
     PER = 4 if mode == "나란히" else ncol * 2
-    st.markdown(f"### {cat_label[cat]} — **{len(recs):,}개**")
+    st.markdown(f"### {cat} — **{len(recs):,}개**")
     npages = max(1, (len(recs) + PER - 1) // PER)
     pg = st.sidebar.number_input(f"페이지 (1~{npages})", 1, npages, 1) - 1
     st.sidebar.caption(f"한 페이지 {PER}장 · 총 {npages:,}페이지 · {res}px")
 
     def _cap(r):
-        c = f"{r['sub']}/{r['id']}"
-        if cat == "excluded":
-            c += f" · 사유: {_cci.exclude_reason(r)}"
-        return c
+        g = _gid(r)
+        stt, rsn = by.get(g, ("", ""))
+        full = f" (전체위반:{rsn})" if g in by and stt != "success" and rsn else ""
+        return f"{r['sub']}/{r['id']} · {_disp(r)}{full}"
 
     _inspect_3mode(recs[pg * PER:(pg + 1) * PER], mode, res, ncol,
                    lambda r, ov: _cci.render(r, overlay=ov), _cap)
@@ -473,35 +485,26 @@ if which.startswith("🏙"):
         st.stop()
     by = _rpsumm["by_id"]
     nrec, npng = _rpsumm["total"], len(s["with_png"])
+    disp = _ds.disposition_combo(_rpsumm)   # [(대표라벨, 건수)] 상호배타, 합=nrec
     with st.expander("ℹ️ 분류 (꼭 읽기)", expanded=False):
         st.markdown(
             f"- **검수 대상 = 변환된 그래프 전량 {nrec:,}개** "
-            f"(= 종합 패널 '총 그래프' = 다운로드 RPLAN .mat 엔트리 수). 합이 곧 전체.\n"
-            f"- 상태로 가름: **정상 {_rpsumm['success']:,} + 격리 {_rpsumm['quarantine']:,} "
-            f"= {nrec:,}**. 사이드바 '분류'에서 선택.\n"
-            f"- 원본 보기: snapshot RGB 렌더가 있는 **{npng:,}개**는 그 이미지로, "
-            f"나머지 **{nrec - npng:,}개**는 .mat 벡터(gtBoxNew)로 방 박스를 그려 표시"
-            f"(어댑터와 같은 좌표 → 그래프뷰·centroid와 일치).")
+            f"(= 종합 패널 '총 그래프' = 다운로드 RPLAN .mat 엔트리 수).\n"
+            f"- 도면 1장 = **처분 1칸**(대표 사유). 모든 칸 합 = {nrec:,} = 다운로드.\n"
+            f"- 원본 보기: snapshot RGB 렌더 **{npng:,}개**는 이미지로, 나머지 "
+            f"**{nrec - npng:,}개**는 .mat 벡터(gtBoxNew) 박스로 표시.")
     st.markdown("**방 색**: " + " · ".join(
         f":gray[■]{_rpi.CAT_KO[k]}" for k in sorted(_rpi.CAT_KO)))
-    # 분류 콤보 — 카운트가 종합 패널과 동일(같은 _status_summary에서 파생)
-    cat_opts = {"all": ("📋 전체(변환 전량)", _rpsumm["total"]),
-                "success": ("✅ 정상", _rpsumm["success"]),
-                "quarantine": ("⚠ 격리(보정 대상)", _rpsumm["quarantine"])}
-    cat = st.sidebar.selectbox("분류", list(cat_opts),
-                               format_func=lambda k: f"{cat_opts[k][0]} ({cat_opts[k][1]:,})")
-    if cat == "all":
+    # 분류 콤보 — 처분 버킷(상호배타). '전체' + 각 대표사유. 합=다운로드.
+    keymap = {"📋 전체": nrec}
+    keymap.update(dict(disp))
+    cat = st.sidebar.selectbox("분류", ["📋 전체"] + [lab for lab, _ in disp],
+                               format_func=lambda k: f"{k} ({keymap[k]:,})")
+    if cat == "📋 전체":
         recs = s["all"]
     else:
-        recs = [r for r in s["all"] if by.get(r["graph_id"], ("success", ""))[0] == cat]
-    if cat == "quarantine" and _rpsumm["reasons"]:
-        opts = list(_rpsumm["reasons"].keys())
-        sel = st.sidebar.multiselect("격리 사유(택)", opts,
-                                     format_func=_ds.reason_label, default=opts)
-        ss = set(sel)
-        recs = [r for r in recs
-                if set((by.get(r["graph_id"], ("", ""))[1] or "").split(",")) & ss]
-        st.sidebar.caption(f"사유 필터 결과: {len(recs):,}개")
+        recs = [r for r in s["all"]
+                if _ds.disposition_label(*by.get(r["graph_id"], ("success", ""))) == cat]
     view = st.sidebar.radio(
         "👁 보기 모드", ["🔗 그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
         index=0, help="그래프검수=원본∥위상그래프+결정 · 나란히=원본vs경계·문 오버레이")
@@ -515,16 +518,17 @@ if which.startswith("🏙"):
                                    value=1024, help="RPLAN 원본은 256px(인덱스 맵)을 ×4 확대해 표시.")
     ncol = st.sidebar.radio("열 수(겹쳐/원본만)", [1, 2, 3], index=1, horizontal=True)
     PER = 4 if mode == "나란히" else ncol * 2
-    st.markdown(f"### {cat_opts[cat][0]} — **{len(recs):,}개**")
+    st.markdown(f"### {cat} — **{len(recs):,}개**")
     npages = max(1, (len(recs) + PER - 1) // PER)
     pg = st.sidebar.number_input(f"페이지 (1~{npages})", 1, npages, 1) - 1
     st.sidebar.caption(f"한 페이지 {PER}장 · 총 {npages:,}페이지 · {res}px")
 
     def _cap(r):
         stt, rsn = by.get(r["graph_id"], ("success", ""))
-        tag = "✅정상" if stt == "success" else f"⚠격리:{_ds.reason_label((rsn or '').split(',')[0])}"
+        tag = _ds.disposition_label(stt, rsn)         # 대표 처분
+        full = f" (전체위반:{rsn})" if stt != "success" and rsn else ""
         src = "snapshot RGB" if r.get("png") else ".mat 벡터박스"
-        return f"{r['graph_id']} · {tag} · [{src}]"
+        return f"{r['graph_id']} · {tag}{full} · [{src}]"
 
     _inspect_3mode(recs[pg * PER:(pg + 1) * PER], mode, res, ncol,
                    lambda r, ov: _rpi.render(r, overlay=ov), _cap)
