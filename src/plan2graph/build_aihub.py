@@ -51,7 +51,7 @@ V2 = config.DATA_DIR / "releases" / "v2" / "graphs"
 def scan_sources() -> dict:
     """원천 zip 전체 1패스 → fp -> {types:set, pk:{label->keys}}. (fp 단위 고유 도면).
     중복은 '같은 라벨 안에서 키가 여러 개'일 때만(서로 다른 라벨=같은 도면의 다른 주석)."""
-    sig: dict = defaultdict(lambda: {"types": set(), "pk": defaultdict(set)})
+    sig: dict = defaultdict(lambda: {"types": set(), "pk": defaultdict(set), "house": None})
     zips = [z for z in discover_zips() if z["content"] == "원천"]
     for z, info in iter_zipinfos(zips):
         m = parse_name(Path(info.filename).stem)
@@ -61,6 +61,8 @@ def scan_sources() -> dict:
         d = sig[s]
         d["types"].add(m["drawing"])
         d["pk"][m["label"]].add(m["key"])
+        if d["house"] is None:
+            d["house"] = m.get("house")
     return sig
 
 
@@ -171,6 +173,7 @@ def main():
             all_keys = sorted({k for ks in d["pk"].values() for k in ks})
             disp, reason, corrected = _disposition(cat, became, at)
             rep = {"drawing_id": all_keys[0], "fingerprint": fp, "source": "aihub",
+                   "house": d.get("house"),
                    "disposition": disp, "reason": reason, "became_graph": became,
                    "graph_ids": gids, "corrected": corrected, "dup_of": None}
             fo.write(json.dumps(rep, ensure_ascii=False) + "\n")
@@ -180,6 +183,7 @@ def main():
             for lab, ks in d["pk"].items():
                 for k in sorted(ks)[1:]:
                     dup = {"drawing_id": f"{k}@{lab}", "fingerprint": fp, "source": "aihub",
+                           "house": d.get("house"),
                            "disposition": "excl", "reason": "duplicate", "became_graph": False,
                            "graph_ids": [], "corrected": None, "dup_of": fp}
                     fo.write(json.dumps(dup, ensure_ascii=False) + "\n")
