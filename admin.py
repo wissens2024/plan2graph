@@ -136,17 +136,41 @@ def _graph_review(source_id, recs, render_original, graph_id_of):
     st.caption(f"원장: `{led}` · 결정 {len(review.load_ledger_from(led)):,}건")
 
 
+def _status_cache_path(source_id):
+    from plan2graph import sources
+    return sources.graphs_dir(source_id).parent / "_status_cache.json"
+
+
 def _status_summary(source_id):
     """출처 검수 현황 데이터(총/정상/격리/사유/by_id)만 집계 — 렌더링 없음.
     개별 페이지의 격리사유 필터와 '검수 현황(종합)' 페이지가 함께 쓴다. 화면 점유를
-    없애기 위해 메트릭·차트는 그리지 않고, 종합 페이지에서만 시각화한다."""
+    없애기 위해 메트릭·차트는 그리지 않고, 종합 페이지에서만 시각화한다.
+
+    RPLAN은 그래프 8만 개라 scan_status(전수 파싱)가 콜드 디스크에서 수십 초 걸린다.
+    st.cache_data는 세션 캐시라 대시보드 재시작 때마다 날아가 매번 재스캔됐다 →
+    집계 결과를 디스크에 작은 JSON으로 영속 캐시(파일 수가 키). 재시작 후에도 그 한
+    파일만 읽어 즉시 뜬다. 파일 수 변동·재집계 버튼에서만 다시 스캔."""
     from plan2graph import dataset_status, sources
     gdir = sources.graphs_dir(source_id)
     nkey = len(list(gdir.glob("*.json"))) if gdir.is_dir() else 0  # 파일수 변동=자동 무효화
 
     @st.cache_data(show_spinner="검수 현황 집계(최초 1회)...")
     def _agg(sid, _n):
-        return dataset_status.scan_status(sources.graphs_dir(sid))
+        cp = _status_cache_path(sid)
+        if cp.exists():     # 디스크 영속 캐시 — 파일 수 일치 시 전수 파싱 생략
+            try:
+                c = json.loads(cp.read_text(encoding="utf-8"))
+                if c.get("n") == _n:
+                    return c["summary"]
+            except Exception:  # noqa: BLE001
+                pass
+        summary = dataset_status.scan_status(sources.graphs_dir(sid))
+        try:
+            cp.write_text(json.dumps({"n": _n, "summary": summary}, ensure_ascii=False),
+                          encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
+        return summary
 
     return _agg(source_id, nkey)
 
@@ -214,10 +238,15 @@ if which.startswith("🧮"):
     st.title("🧮 검수 현황(종합)")
     st.caption("AI-Hub · CubiCasa5k · RPLAN 세 출처의 그래프 변환 결과를 한눈에 — "
                "총/정상/격리(보정 대상)와 격리 사유 분포. 개별 검수는 각 도면검수 메뉴에서.")
-    if st.button("🔄 재집계(캐시 비움)", help="재변환·dedup 후 현황을 다시 집계"):
+    SRC = [("aihub", "🔍 AI-Hub"), ("cubicasa5k", "🌍 CubiCasa5k"), ("rplan", "🏙 RPLAN")]
+    if st.button("🔄 재집계(캐시 비움)", help="재변환·dedup 후 현황을 다시 집계(디스크 캐시도 삭제)"):
+        for sid, _ in SRC:     # 디스크 영속 캐시까지 지워야 내용변경(재변환)이 반영됨
+            try:
+                _status_cache_path(sid).unlink(missing_ok=True)
+            except Exception:  # noqa: BLE001
+                pass
         st.cache_data.clear(); st.rerun()
 
-    SRC = [("aihub", "🔍 AI-Hub"), ("cubicasa5k", "🌍 CubiCasa5k"), ("rplan", "🏙 RPLAN")]
     rows = [(name, _status_summary(sid)) for sid, name in SRC]
     tot = {k: sum(s[k] for _, s in rows) for k in ("total", "success", "quarantine")}
 
