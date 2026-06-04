@@ -38,10 +38,22 @@ CATEGORIES = {
 DRAWING_NAME = {"CS": "단면도", "EP": "입면도", "SD": "구조도", "FP": "평면도"}
 
 
-def build_index(split: str = "Training") -> dict:
-    """원천 SPA/STR zip 스캔 → fingerprint별 {label: {zip, entry, key, house}} (FP만)."""
+def _norm_splits(split) -> set:
+    """split 인자 정규화: 문자열이면 단일, 이터러블이면 복수 → set.
+    AI-Hub의 Training/Validation은 '벤더가 다운로드를 나눠 포장한 폴더 구분'일 뿐,
+    도면이 비-FP·중복·OBJ만인지는 이미지 자체 속성이라 포장과 무관하다. 우리 dataset의
+    train/val/test(release._bucket, 시드 해싱)와도 별개. 따라서 배제검수 GUI는 둘을
+    합친 한 풀로 보며, 같은 지문(sig)이 두 포장에 걸쳐 있어도 cross-split 중복까지
+    한 번에 묶인다. 단일 문자열을 넘기는 기존 스크립트와는 하위호환."""
+    return {split} if isinstance(split, str) else set(split)
+
+
+def build_index(split="Training") -> dict:
+    """원천 SPA/STR zip 스캔 → fingerprint별 {label: {zip, entry, key, house}} (FP만).
+    split: 문자열 단일 또는 ("Training","Validation") 복수(합쳐 한 풀)."""
+    sp = _norm_splits(split)
     zips = [z for z in discover_zips()
-            if z["content"] == "원천" and z["split"] == split]
+            if z["content"] == "원천" and z["split"] in sp]
     groups: dict = defaultdict(dict)
     for z, info in iter_zipinfos(zips):
         meta = parse_name(Path(info.filename).stem)
@@ -53,10 +65,11 @@ def build_index(split: str = "Training") -> dict:
     return dict(groups)
 
 
-def label_index(split: str = "Training") -> dict:
+def label_index(split="Training") -> dict:
     """라벨 zip(TL/VL_SPA·STR) → {label: {key: (zip, entry)}} (FP만). 오버레이용."""
+    sp = _norm_splits(split)
     zips = [z for z in discover_zips()
-            if z["content"] == "라벨" and z["split"] == split]
+            if z["content"] == "라벨" and z["split"] in sp]
     idx: dict = {"SPA": {}, "STR": {}}
     for z, info in iter_zipinfos(zips):
         meta = parse_name(Path(info.filename).stem)
@@ -86,10 +99,11 @@ def categorize(groups: dict) -> dict:
     return out
 
 
-def nonfp_records(split: str = "Training") -> list:
+def nonfp_records(split="Training") -> list:
     """비-FP(단면도CS·입면도EP·구조도SD) 고유 도면 — '완전 배제'(평면도 아님). 지문별 대표 PNG."""
+    sp = _norm_splits(split)
     zips = [z for z in discover_zips()
-            if z["content"] == "원천" and z["split"] == split]
+            if z["content"] == "원천" and z["split"] in sp]
     seen: dict = {}
     for z, info in iter_zipinfos(zips):
         m = parse_name(Path(info.filename).stem)
@@ -103,12 +117,14 @@ def nonfp_records(split: str = "Training") -> list:
     return sorted(seen.values(), key=lambda r: (r["drawing"], r["house"], r["key"]))
 
 
-def duplicate_records(split: str = "Training") -> list:
+def duplicate_records(split="Training") -> list:
     """같은 도면(지문)이 *한 라벨종류 안에서 여러 9자리 키*로 중복 — 각 '사본'을 개별 레코드로.
     중복이 N개면 N개 다 반환(원본 1 채택 + N-1 제외). 같은 그룹은 연속 배치(i/N).
-    → 갯수 정확(합=총 사본수)·'정말 중복'임을 눈으로. FP만, 전 라벨종류."""
+    → 갯수 정확(합=총 사본수)·'정말 중복'임을 눈으로. FP만, 전 라벨종류.
+    복수 split을 넘기면 두 포장에 걸친 byte-identical 중복도 한 그룹으로 잡힌다."""
+    sp = _norm_splits(split)
     zips = [z for z in discover_zips()
-            if z["content"] == "원천" and z["split"] == split]
+            if z["content"] == "원천" and z["split"] in sp]
     grp: dict = defaultdict(lambda: defaultdict(list))   # sig → label → [(key,zip,entry,house)]
     for z, info in iter_zipinfos(zips):
         m = parse_name(Path(info.filename).stem)
@@ -132,11 +148,12 @@ def duplicate_records(split: str = "Training") -> list:
     return recs
 
 
-def objocr_only_records(split: str = "Training") -> list:
+def objocr_only_records(split="Training") -> list:
     """OBJ/OCR 라벨만 있고 SPA·STR 둘 다 없는 FP 도면 — '완전배제'(방·구조 라벨 없어 그래프 불가).
     ※ OBJ/OCR 원천 zip이 업로드돼 있어야 보임(없으면 빈 리스트)."""
+    sp = _norm_splits(split)
     zips = [z for z in discover_zips()
-            if z["content"] == "원천" and z["split"] == split]
+            if z["content"] == "원천" and z["split"] in sp]
     grp: dict = defaultdict(dict)
     for z, info in iter_zipinfos(zips):
         m = parse_name(Path(info.filename).stem)

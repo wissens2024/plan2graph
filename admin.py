@@ -273,7 +273,11 @@ if which.startswith("🔍"):
             "*※ 이 zip은 미업로드(12.5GB)라 여기 표시 안 됨 — 보려면 OBJ/OCR 원천 업로드 필요.*\n\n"
             "**⚪ 참고**: dual(둘 다) = 이미 v0 그래프화. 품질게이트 격리는 좌측 '⚠ 격리' 메뉴에서 도면+그래프+사유로 검수.")
 
-    split = st.sidebar.selectbox("split", ["Training", "Validation"])
+    # AI-Hub의 Training/Validation은 벤더가 다운로드를 나눠준 '포장 폴더'일 뿐 —
+    # 도면이 비-FP·중복·OBJ만인지는 이미지 속성이라 포장과 무관하고, 우리 dataset의
+    # train/val/test(release._bucket, 시드 해싱)와도 별개다. 검수엔 분리 가치가 없어
+    # 둘을 합친 한 풀로 본다(합치면 두 포장에 걸친 중복까지 한 번에 잡힘).
+    split = ("Training", "Validation")
 
     @st.cache_data(show_spinner="원천 PNG 지문 스캔(최초 1회)...")
     def _excl_cats(sp):
