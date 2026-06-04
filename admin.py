@@ -252,8 +252,8 @@ def _record(**kw):
 
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
 st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
-which = st.sidebar.radio("메뉴", ["🧮 검수 현황(종합)", "🔍 AI-Hub 도면 검수",
-                                 "🌍 CubiCasa5k 도면검수", "🏙 RPLAN 도면검수",
+which = st.sidebar.radio("메뉴", ["🧮 검수 현황(종합)", "🏢 AI-Hub 도면 검수",
+                                 "🏠 CubiCasa5k 도면검수", "📐 RPLAN 도면검수",
                                  "📏 scale 검수/보정", "📜 법령 DB", "📊 결과 대시보드"],
                           index=0, label_visibility="collapsed")
 
@@ -266,7 +266,7 @@ if which.startswith("🧮"):
     st.title("🧮 검수 현황(종합)")
     st.caption("AI-Hub · CubiCasa5k · RPLAN — 처분(✅사용 / 🛠보정·복구필요 / 🚫제외)별, "
                "각 출처 합 = 다운로드 원본 수. 개별 검수는 각 도면검수 메뉴에서.")
-    SRC = [("aihub", "🔍 AI-Hub"), ("cubicasa5k", "🌍 CubiCasa5k"), ("rplan", "🏙 RPLAN")]
+    SRC = [("aihub", "🏢 AI-Hub"), ("cubicasa5k", "🏠 CubiCasa5k"), ("rplan", "📐 RPLAN")]
     if st.button("🔄 재집계(캐시 비움)", help="재변환·dedup 후 현황을 다시 집계(디스크 캐시도 삭제)"):
         for sid, _ in SRC:     # 디스크 영속 캐시까지 지워야 내용변경(재변환)이 반영됨
             try:
@@ -315,14 +315,14 @@ if which.startswith("🧮"):
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
-# 🔍 배제 도면 검수 — 그래프 대상에서 빠진 평면도를 실제 PNG로 육안 검증
+# 🏢 배제 도면 검수 — 그래프 대상에서 빠진 평면도를 실제 PNG로 육안 검증
 # ════════════════════════════════════════════════════════════════════════════
-if which.startswith("🔍"):
+if which.startswith("🏢"):
     import io as _io
     from PIL import Image as _PImage
     from plan2graph import inspect_excluded as _ix
 
-    st.title("🔍 AI-Hub 도면 검수")
+    st.title("🏢 AI-Hub 도면 검수")
     st.caption("AI-Hub 도면을 원본 PNG로 확인 — 채택분(dual)·제외분(부분/완전배제) 사유 육안 검증.")
     if not config.RAW_SOURCE_ROOT.is_dir():
         st.error(f"원본 RAW 없음: {config.RAW_SOURCE_ROOT}\n"
@@ -466,12 +466,12 @@ if which.startswith("🔍"):
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
-# 🌍 CubiCasa5k 도면검수 — 글로벌 데이터 정상분(변환)·제외분(사유) 육안 검증
+# 🏠 CubiCasa5k 도면검수 — 글로벌 데이터 정상분(변환)·제외분(사유) 육안 검증
 # ════════════════════════════════════════════════════════════════════════════
-if which.startswith("🌍"):
+if which.startswith("🏠"):
     from plan2graph import cubicasa_inspect as _cci
 
-    st.title("🌍 CubiCasa5k 도면검수")
+    st.title("🏠 CubiCasa5k 도면검수")
     st.caption("CubiCasa5k 케이스 전량을 원본+오버레이로 — 처분(사용/보정필요/제외)별, 합=다운로드.")
     if not _cci.CC_ROOT.is_dir():
         st.error(f"CubiCasa5k 데이터 없음: {_cci.CC_ROOT}")
@@ -543,13 +543,13 @@ if which.startswith("🌍"):
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
-# 🏙 RPLAN 도면검수 — 글로벌 데이터 정상분(변환)·제외분(사유) 육안 검증
+# 📐 RPLAN 도면검수 — 글로벌 데이터 정상분(변환)·제외분(사유) 육안 검증
 # ════════════════════════════════════════════════════════════════════════════
-if which.startswith("🏙"):
+if which.startswith("📐"):
     from plan2graph import rplan_inspect as _rpi
 
     from plan2graph import dataset_status as _ds
-    st.title("🏙 RPLAN 도면검수")
+    st.title("📐 RPLAN 도면검수")
     st.caption("RPLAN 변환 그래프 전량을 원본(snapshot RGB 또는 .mat 벡터)으로 검수 — "
                "콤보 숫자 = 종합 패널 '총 그래프' = 다운로드(.mat) 엔트리 수로 항상 일치.")
 
