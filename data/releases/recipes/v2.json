@@ -1,0 +1,10 @@
+{
+  "version": "v2",
+  "desc": "v0(AI-Hub 벤치마크) + CubiCasa5k 사전학습. test는 v0 동결 공유(비교 타당).",
+  "include": [
+    {"source": "aihub", "status": "success", "role": "benchmark"},
+    {"source": "cubicasa5k", "status": "success", "role": "pretrain"}
+  ],
+  "test_from": ["aihub"],
+  "clean_filter": "현관==1"
+}
