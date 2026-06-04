@@ -179,43 +179,52 @@ def _mat_data():
 
 
 def _render_boxes(idx, overlay: bool = True):
-    """data.mat[idx]의 gtBoxNew+rType → 방 박스 색칠(PIL).
-    어댑터와 동일 좌표 규약([x0,y0,x1,y1]=x:열·y:행, 방 타입 0~12만) → 그래프뷰·centroid와 일치."""
+    """data.mat[idx]의 rBoundary(실제 방 폴리곤)+rType → 방 '모양'대로 색칠(PIL).
+    rBoundary 없으면 gtBoxNew 박스로 폴백. 좌표 규약은 어댑터와 동일([x,y]=열·행, 방 0~12만)
+    → 그래프뷰·centroid와 일치. 박스보다 실제 도면에 가깝게 보임."""
     import numpy as np
-    from PIL import Image
+    from PIL import Image, ImageDraw
     data = _mat_data()
     if idx is None or not (0 <= idx < len(data)):
         return None
     e = data[idx]
+    types = getattr(e, "rType", None)
+    if types is None:
+        return None
+    types = np.atleast_1d(np.asarray(types)).ravel()
+    rb = getattr(e, "rBoundary", None)
     boxes = getattr(e, "gtBoxNew", None)
     if boxes is None:
         boxes = getattr(e, "gtBox", None)
-    types = getattr(e, "rType", None)
-    if boxes is None or types is None:
-        return None
-    boxes = np.atleast_2d(np.asarray(boxes))
-    types = np.atleast_1d(np.asarray(types)).ravel()
-    if boxes.ndim != 2 or boxes.shape[0] == 0:
-        return None
-    w = int(boxes[:, :4].max()) + 1
-    rgb = np.full((w, w, 3), 245, dtype="uint8")
-    n = min(len(types), len(boxes))
-    # 큰 방부터 칠해 작은 방이 위에 오게(겹침 시 가독성)
-    order = sorted(range(n), key=lambda i: -abs(int(boxes[i][2] - boxes[i][0]) *
-                                                int(boxes[i][3] - boxes[i][1])))
-    for i in order:
+    polys, maxc = [], 0
+    for i in range(len(types)):
         t = int(types[i])
         if t > 12:   # 방(0~12)만 — 어댑터 ROOM_CAT_MAX와 동일(13+ 외부·벽·문 제외)
             continue
-        x0, y0, x1, y1 = (int(boxes[i][0]), int(boxes[i][1]),
-                          int(boxes[i][2]), int(boxes[i][3]))
-        if x1 <= x0 or y1 <= y0:
+        pts = None
+        if rb is not None and i < len(rb):    # 실제 방 폴리곤 우선
+            poly = np.atleast_2d(np.asarray(rb[i]))
+            if poly.ndim == 2 and poly.shape[0] >= 3 and poly.shape[1] >= 2:
+                pts = [(int(x), int(y)) for x, y in poly[:, :2]]
+        if pts is None and boxes is not None and i < len(boxes):   # 박스 폴백
+            b = np.asarray(boxes[i]).ravel()
+            if len(b) >= 4:
+                x0, y0, x1, y1 = int(b[0]), int(b[1]), int(b[2]), int(b[3])
+                pts = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+        if not pts or len(pts) < 3:
             continue
-        rgb[y0:y1, x0:x1] = CAT_COLORS.get(t, (200, 200, 200))
-        if overlay:   # 방 외곽선
-            rgb[y0:y1, x0] = (40, 40, 40); rgb[y0:y1, x1 - 1] = (40, 40, 40)
-            rgb[y0, x0:x1] = (40, 40, 40); rgb[y1 - 1, x0:x1] = (40, 40, 40)
-    img = Image.fromarray(rgb, "RGB")
+        xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+        maxc = max(maxc, max(xs), max(ys))
+        area = (max(xs) - min(xs)) * (max(ys) - min(ys))
+        polys.append((area, t, pts))
+    if not polys:
+        return None
+    w = maxc + 1
+    img = Image.new("RGB", (w, w), (245, 245, 245))
+    dr = ImageDraw.Draw(img)
+    for _area, t, pts in sorted(polys, key=lambda z: -z[0]):   # 큰 방 먼저(작은 방이 위)
+        dr.polygon(pts, fill=CAT_COLORS.get(t, (200, 200, 200)),
+                   outline=((50, 50, 50) if overlay else None))
     s = max(1, 1024 // w)
     return img.resize((w * s, w * s), Image.NEAREST)
 
