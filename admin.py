@@ -587,8 +587,45 @@ if which.startswith("📊"):
     man = _manifest(ver, _mt(REL / ver / "manifest.json"))
     ev = _evalr(ver, _mt(REL / ver / "eval.json"))
 
-    # ── 1) 데이터셋 ──
-    st.header(f"1. 데이터셋 ({ver})")
+    # 실험 원장(시드 집계) — §1·§3·§5 공용 단일 소스(dataset-version-scheme).
+    @st.cache_data(show_spinner="실험 원장 집계...")
+    def _agg(_k):
+        from plan2graph import experiments
+        return experiments.agg_summary()
+
+    _idx = ROOT / "runs" / "index.jsonl"
+    summ = _agg(_mt(_idx)) if _idx.exists() else {"eval": [], "generalization": []}
+    _v0man = _manifest("v0", _mt(REL / "v0" / "manifest.json"))
+    _AIHUB = _v0man.get("n_graphs")
+    _ai = f"AI-Hub {_AIHUB:,}" if _AIHUB else "AI-Hub"
+
+    def _best_eval(dsv):   # 버전별 수렴본(신경망 최다시드, 규제루프 on)
+        cs = [r for r in summ["eval"] if r.get("ds_version") == dsv
+              and r["generator"] == "신경망" and r["loop"] == "on"]
+        return max(cs, key=lambda r: r["seeds"]) if cs else None
+
+    def _best_unseen(dsv):
+        cs = [r for r in summ["generalization"] if r.get("ds_version") == dsv
+              and r["generator"] == "신경망" and r["subset"] == "unseen"]
+        return max(cs, key=lambda r: r["seeds"]) if cs else None
+
+    def _pm(m, s):
+        return "—" if m is None else (f"{m:.3f}±{s:.3f}" if s else f"{m:.3f}")
+
+    # ── 1) 데이터셋 — 버전별 학습 데이터 구성 ──
+    st.header("1. 데이터셋 — 버전별 학습 데이터 구성")
+    st.caption("버전 = 학습에 넣은 데이터 조합(누적 아닌 조합 실험). "
+               "**test는 AI-Hub 동결분으로 전 버전 공유** → 비교 기준 고정. 재학습 시 최종값만 남김.")
+    st.table([
+        {"버전": "v0", "파인튜닝(한국형)": _ai, "사전학습(글로벌)": "—", "결과": "✅ 완료"},
+        {"버전": "v1", "파인튜닝(한국형)": "AI-Hub + 보정(확장)", "사전학습(글로벌)": "—",
+         "결과": "⏳ 보정 진행중"},
+        {"버전": "v2", "파인튜닝(한국형)": _ai, "사전학습(글로벌)": "CubiCasa 3,018 (1차통과)",
+         "결과": "✅ 완료"},
+        {"버전": "v3", "파인튜닝(한국형)": _ai, "사전학습(글로벌)": "+ RPLAN 80,371",
+         "결과": "⏳ 학습대기"},
+    ])
+    st.subheader(f"선택 버전 상세 — {ver} (파인튜닝/평가 데이터셋)")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("세대 그래프", f"{man.get('n_graphs','-'):,}" if man.get('n_graphs') else "-")
     c2.metric("시트(도면)", f"{man.get('n_sheets','-'):,}" if man.get('n_sheets') else "-")
@@ -600,25 +637,45 @@ if which.startswith("📊"):
     st.subheader("방 종류 분포 (노드 수)")
     st.bar_chart(_roomdist(ver, _mt(REL / ver / "manifest.json")))
 
-    # ── 2) 학습된 인접확률 (거실 허브) ──
-    st.header("2. 학습된 공간 인접확률")
-    st.caption("최소 생성모델이 데이터에서 학습한 P(방A~방B). 거실이 허브임을 자동 학습.")
+    # ── 2) 데이터의 실제 인접확률 (= 생성 목표) ──
+    st.header("2. 공간 인접확률 (생성 목표)")
+    st.caption("AI-Hub 데이터가 실제로 가진 P(방A~방B) = 생성모델이 맞춰야 할 목표 분포"
+               "(전 버전 공통 평가기준). 거실이 허브임을 보여줌.")
     if ev.get("top_adjacency"):
         st.bar_chart({d["pair"]: d["p"] for d in ev["top_adjacency"]})
 
-    # ── 3) 모델 평가 지표 ──
-    st.header("3. 최소 생성모델 평가 (test)")
-    st.caption("제약그래프(program)로 배치그래프 생성 → 규제AI 검증. "
-               "torch 없는 통계 baseline (신경망 격상 전).")
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("위상 무결성", f"{ev.get('integrity_valid_rate',0)*100:.0f}%")
-    m2.metric("법규(채광) 통과", f"{ev.get('legal_pass_rate',0)*100:.0f}%")
-    m3.metric("인접 사실성(L1)", f"{ev.get('adjacency_L1_distance','-')}", help="0=실제와 일치")
-    m4.metric("다양성", f"{ev.get('diversity',0)*100:.0f}%")
-    m5.metric("신규성", f"{ev.get('novelty',0)*100:.0f}%", help="train에 없는 새 구조")
+    # ── 3) 생성 성능 — 버전별 핵심 (v0 vs v2) ──
+    st.header("3. 생성 성능 — 버전별 핵심 (동결 test, 규제루프 on)")
+    st.caption("같은 동결 test에서 데이터버전별 신경망 성능 + v0 규칙기반(알고리즘) 기준선. "
+               "여러 시드 평균. 전체 매트릭스는 §5.")
+    rows3, base = [], next((r for r in summ["eval"] if r.get("ds_version") == "v0"
+                            and r["generator"] == "규칙기반" and r["loop"] == "on"), None)
+    base_u = next((r for r in summ["generalization"] if r.get("ds_version") == "v0"
+                   and r["generator"] == "규칙기반" and r["subset"] == "unseen"), None)
+    if base:
+        rows3.append({"버전": "v0", "생성기": "규칙기반(알고리즘)",
+                      "인접L1↓(전체)": _pm(base["adj_L1_mean"], base["adj_L1_std"]),
+                      "인접L1↓(unseen)": _pm(base_u["adj_L1_mean"], base_u["adj_L1_std"]) if base_u else "—",
+                      "무결성": f"{(base['integrity'] or 0)*100:.0f}%",
+                      "법규": f"{(base['legal'] or 0)*100:.0f}%"})
+    for dsv in ["v0", "v2", "v3"]:
+        e, u = _best_eval(dsv), _best_unseen(dsv)
+        if e:
+            rows3.append({"버전": dsv, "생성기": "신경망",
+                          "인접L1↓(전체)": _pm(e["adj_L1_mean"], e["adj_L1_std"]),
+                          "인접L1↓(unseen)": _pm(u["adj_L1_mean"], u["adj_L1_std"]) if u else "—",
+                          "무결성": f"{(e['integrity'] or 0)*100:.0f}%",
+                          "법규": f"{(e['legal'] or 0)*100:.0f}%"})
+    if rows3:
+        st.table(rows3)
+        st.caption("요약: 전체 test는 v0≈v2(사전학습 중립)이나 **unseen 일반화에서 v2 우위**"
+                   "(CubiCasa 사전학습 효과). 신경망은 알고리즘 기준선에 근접하나 넘지 못함. "
+                   "v3(+RPLAN)는 학습 후 같은 표에 행 추가.")
+    else:
+        st.info("성능 데이터 없음: `bash scripts/run_matrix.sh` 후 표시됩니다.")
 
-    # ── 4) 실제 vs 생성 예시 ──
-    st.header("4. 실제 도면 vs AI 생성 (같은 program)")
+    # ── 4) 실제 vs 생성 예시 (규칙기반 생성기) ──
+    st.header("4. 실제 도면 vs AI 생성 (같은 program · 규칙기반 예시)")
     if "ex_seed" not in st.session_state:
         st.session_state.ex_seed = 1
     if st.button("🎲 다른 예시"):
@@ -649,19 +706,8 @@ if which.startswith("📊"):
                "각 버전을 생성기(규칙기반 vs 신경망)·규제루프(on/off)로 같은 동결 test에서 비교. "
                "여러 시드는 평균±표준편차. 단일 소스 = runs/index.jsonl (`python -m plan2graph.experiments agg`).")
 
-    @st.cache_data(show_spinner="실험 원장 집계...")
-    def _agg(_k):
-        from plan2graph import experiments
-        return experiments.agg_summary()
-
-    _idx = ROOT / "runs" / "index.jsonl"
-    summ = _agg(_mt(_idx)) if _idx.exists() else {"eval": [], "generalization": []}
-
     def _gen_label(r):
         return f"{r['generator']}({r['arch']})" if r.get("arch") else r["generator"]
-
-    def _pm(m, s):
-        return "—" if m is None else (f"{m:.3f}±{s:.3f}" if s else f"{m:.3f}")
 
     def _sort_key(r):   # 데이터버전 → 생성기(규칙기반 먼저) → 루프
         return (r.get("ds_version", "z"), 0 if r["generator"] == "규칙기반" else 1,
