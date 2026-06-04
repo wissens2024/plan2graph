@@ -55,3 +55,5 @@ venv/
 .DS_Store
 .vscode/
 .idea/
+# Claude Code 도구 설정(로컬) — 공동저자 금지는 로컬/글로벌 git 설정에 의존
+/.claude/
