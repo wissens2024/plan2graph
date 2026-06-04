@@ -6,8 +6,6 @@
 # V2V YOLO 데이터셋·예측(이미지 다수) — 재생성
 /data/v2v/
 /data/processed_val/
-# (구) 로컬 AI-Hub raw — data/raw/aihub로 이관됨
-/건축 도면 데이터/
 # (은퇴) 옛 AI-Hub 작업본 — staging/aihub로 대체
 /data/processed/
 /data/releases/*/graphs/
