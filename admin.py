@@ -609,44 +609,11 @@ if which.startswith("📊"):
                       node_size=1500, font_size=11, layout="kamada"),
                       use_container_width=True)
 
-    # ── 5) 버전 비교 (A/B) ──
-    st.header("5. 버전 비교 (A/B)")
-    rows = []
-    for v in vers:
-        e = _evalr(v, _mt(REL / v / "eval.json"))
-        mf = _manifest(v, _mt(REL / v / "manifest.json"))
-        if e:
-            rows.append({"버전": v, "세대수": mf.get("n_graphs"),
-                         "무결성": f"{e.get('integrity_valid_rate',0)*100:.0f}%",
-                         "법규통과": f"{e.get('legal_pass_rate',0)*100:.0f}%",
-                         "인접L1": e.get("adjacency_L1_distance"),
-                         "다양성": e.get("diversity"), "신규성": e.get("novelty")})
-    if rows:
-        st.caption("데이터셋 버전별 baseline 요약")
-        st.table(rows)
-    if len(rows) < 2:
-        st.caption("v1/v2 동결 후 같은 표에서 v0와 비교됩니다.")
-
-    # eval_gen A/B 종합 행렬 (데이터버전 × 생성기 × 규제루프)
-    ab_path = REL / "eval_ab.json"
-    if ab_path.exists():
-        ab = _json.loads(ab_path.read_text(encoding="utf-8")).get("rows", [])
-        if ab:
-            st.subheader("A/B 종합 — 데이터 × 생성기 × 규제루프 (eval_gen)")
-            st.caption("규제루프 on이 법규통과를 끌어올리는지, 신경망>baseline인지, "
-                       "데이터 버전(양·질)이 사실성을 높이는지 한눈에.")
-            st.table([{"버전": r["version"], "생성기": r["generator"],
-                       "규제루프": r["reg_loop"], "무결성": r["integrity"],
-                       "법규통과": r["legal"], "인접L1↓": r["adj_L1"],
-                       "다양성": r["diversity"], "신규성": r["novelty"]} for r in ab])
-    else:
-        st.caption("A/B 종합 표: `python src/plan2graph/eval_gen.py` 실행 후 표시됩니다.")
-
-    # ── 6) 신경망 다중시드 매트릭스 — 글로벌 사전학습 효과 ──
-    st.header("6. 신경망 다중시드 매트릭스 (사전학습 효과)")
-    st.caption("동일 조건을 여러 시드로 학습해 평균±표준편차로 집계 — '차이가 시드 노이즈인가, "
-               "사전학습이 실제로 돕는가'를 판정. 원장: runs/index.jsonl "
-               "(`python -m plan2graph.experiments agg`).")
+    # ── 5) A/B 비교 — 데이터버전 × 생성기 × 규제루프 (한 화면, PROJECT_PLAN §4-4·§5) ──
+    st.header("5. A/B 비교 — 데이터버전 × 생성기 × 규제루프")
+    st.caption("핵심 비교를 한 화면에: 데이터 버전(v0…) · 생성기(규칙기반 vs 신경망) · 사전학습(없음/CubiCasa/RPLAN) · "
+               "규제루프(on/off)를 같은 동결 test에서 정량 비교. 여러 시드는 평균±표준편차로 접음. "
+               "단일 소스 = 실험 원장 runs/index.jsonl (`python -m plan2graph.experiments agg`).")
 
     @st.cache_data(show_spinner="실험 원장 집계...")
     def _agg(_k):
@@ -656,31 +623,46 @@ if which.startswith("📊"):
     _idx = ROOT / "runs" / "index.jsonl"
     summ = _agg(_mt(_idx)) if _idx.exists() else {"eval": [], "generalization": []}
 
-    def _short(cfg):  # run_id 접두 정리(보기 좋게)
-        return (cfg or "").replace("gen-v0-", "").replace("neural-set-transformer-", "")
+    def _gen_label(r):
+        return f"{r['generator']}({r['arch']})" if r.get("arch") else r["generator"]
 
-    def _pm(m, s):    # mean±std 표시
-        return "—" if m is None else f"{m:.3f}±{s:.3f}"
+    def _pm(m, s):
+        return "—" if m is None else (f"{m:.3f}±{s:.3f}" if s else f"{m:.3f}")
 
     if summ["eval"]:
-        st.subheader("전체 test (시드 집계)")
-        st.table([{"구성": _short(r["config"]), "규제루프": r["loop"], "시드수": r["seeds"],
-                   "인접L1↓(mean±std)": _pm(r["adj_L1_mean"], r["adj_L1_std"]),
+        st.subheader("전체 test")
+        st.table([{"데이터버전": r["version"], "생성기": _gen_label(r),
+                   "사전학습": r["pretrain"], "규제루프": r["loop"], "시드": r["seeds"],
+                   "인접L1↓": _pm(r["adj_L1_mean"], r["adj_L1_std"]),
                    "무결성": f"{(r['integrity'] or 0)*100:.0f}%",
                    "법규": f"{(r['legal'] or 0)*100:.0f}%",
                    "다양성": f"{(r['diversity'] or 0)*100:.0f}%",
                    "신규성": f"{(r['novelty'] or 0)*100:.0f}%"} for r in summ["eval"]])
+        st.caption("인접L1↓: 낮을수록 실제 배치에 가까움 · 무결성=위상 R1~R5 · "
+                   "법규=채광 등 통과(규제루프 on이 위반 자동보정).")
     if summ["generalization"]:
-        st.subheader("일반화 — seen / unseen program (시드 집계)")
-        st.table([{"구성": _short(r["config"]), "subset": r["subset"], "시드수": r["seeds"],
-                   "인접L1↓(mean±std)": _pm(r["adj_L1_mean"], r["adj_L1_std"])}
+        st.subheader("일반화 — seen / unseen program")
+        st.caption("처음 보는 방 구성(unseen)에서의 사실성 — 사전학습 효과가 가장 드러나는 축.")
+        st.table([{"데이터버전": r["version"], "생성기": _gen_label(r),
+                   "사전학습": r["pretrain"], "subset": r["subset"], "시드": r["seeds"],
+                   "인접L1↓": _pm(r["adj_L1_mean"], r["adj_L1_std"])}
                   for r in summ["generalization"]])
-    if not summ["eval"] and not summ["generalization"]:
-        st.caption("실험 원장 없음: `bash scripts/run_matrix.sh` 실행 후 표시됩니다.")
+    if not summ["eval"]:
+        ab_path = REL / "eval_ab.json"     # 원장 없을 때만 레거시 스냅샷 폴백
+        ab = _json.loads(ab_path.read_text(encoding="utf-8")).get("rows", []) \
+            if ab_path.exists() else []
+        if ab:
+            st.caption("실험 원장 없음 — eval_ab.json 스냅샷 표시")
+            st.table([{"버전": r["version"], "생성기": r["generator"], "규제루프": r["reg_loop"],
+                       "무결성": r["integrity"], "법규": r["legal"], "인접L1↓": r["adj_L1"],
+                       "다양성": r["diversity"], "신규성": r["novelty"]} for r in ab])
+        else:
+            st.info("비교 데이터 없음: `bash scripts/run_matrix.sh`"
+                    "(또는 `python -m plan2graph.eval_gen`) 실행 후 표시됩니다.")
     else:
-        st.caption("해석: 전체 test에서 preCubicasa≈noPretrain(중립)이나, 일반화(unseen)에서 "
-                   "사전학습이 소폭 우위·분산 감소. 상세 보고서 = EXPERIMENTS.md. "
-                   "RPLAN(80,371) 사전학습 재학습 결과는 후속 업데이트.")
+        st.caption("요약: 전체 test에선 사전학습 중립(신경망≈규칙기반 수준), 일반화(unseen)에선 사전학습이 "
+                   "소폭 우위·분산 감소. 상세 = EXPERIMENTS.md. "
+                   "RPLAN(80,371) 사전학습 결과는 후속 업데이트로 같은 표에 행이 추가됨.")
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════

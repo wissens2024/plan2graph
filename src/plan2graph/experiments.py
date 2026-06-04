@@ -187,6 +187,36 @@ def _mean_std(vals):
     return statistics.mean(xs), (statistics.stdev(xs) if len(xs) > 1 else 0.0), len(xs)
 
 
+def parse_config(cfg: str) -> dict:
+    """run_id(시드 제거) → A/B 비교 3축. 결과 대시보드가 '데이터버전×생성기×사전학습'으로
+    묶어 한 표에 보이게 한다(PROJECT_PLAN §4-4). 예:
+      gen-v0-baseline                              → v0 · 규칙기반 · 사전학습없음
+      gen-v0-neural-set-transformer-v2-noPretrain  → v0 · 신경망(set-transformer-v2) · 없음
+      gen-v0-neural-set-transformer-v2-pre_global_cubicasa → v0 · 〃 · CubiCasa
+    """
+    parts = re.sub(r"^gen-", "", cfg or "").split("-")
+    version = parts[0] if parts else "?"      # 데이터셋 버전(v0/v1/v2…)
+    rest = parts[1:]
+    if rest and rest[0] == "baseline":
+        return {"version": version, "generator": "규칙기반", "arch": "",
+                "pretrain": "없음"}
+    rest = rest[1:] if rest and rest[0] == "neural" else rest
+    pretrain, arch = "없음", []
+    for t in rest:
+        if t == "noPretrain":
+            pretrain = "없음"
+        elif t.startswith("pre_global_"):
+            pretrain = t.replace("pre_global_", "").capitalize()   # cubicasa→Cubicasa
+        elif t.startswith("pre_"):
+            pretrain = t[4:]
+        elif re.fullmatch(r"T[0-9.]+", t):
+            continue                                                # temperature 태그 무시
+        else:
+            arch.append(t)
+    return {"version": version, "generator": "신경망", "arch": "-".join(arch),
+            "pretrain": pretrain}
+
+
 def agg_summary() -> dict:
     """시드 집계를 구조화 dict로 반환(GUI·md 공용 단일 소스).
     반환: {"eval":[{config,loop,seeds,adj_L1_mean,adj_L1_std,integrity,legal,diversity,novelty}],
@@ -202,7 +232,7 @@ def agg_summary() -> dict:
     for (cfg, loop), rs in sorted(ev.items()):
         am, asd, n = _mean_std([r.get("adj_L1") for r in rs])
         out_ev.append({
-            "config": cfg, "loop": loop, "seeds": n,
+            "config": cfg, **parse_config(cfg), "loop": loop, "seeds": n,
             "adj_L1_mean": am, "adj_L1_std": asd,
             "integrity": _mean_std([r.get("integrity") for r in rs])[0],
             "legal": _mean_std([r.get("legal") for r in rs])[0],
@@ -211,7 +241,7 @@ def agg_summary() -> dict:
     out_gn = []
     for (cfg, sub), rs in sorted(gn.items(), key=lambda x: (x[0][0], x[0][1])):
         am, asd, n = _mean_std([r.get("adj_L1") for r in rs])
-        out_gn.append({"config": cfg, "subset": sub, "seeds": n,
+        out_gn.append({"config": cfg, **parse_config(cfg), "subset": sub, "seeds": n,
                        "adj_L1_mean": am, "adj_L1_std": asd})
     return {"eval": out_ev, "generalization": out_gn}
 
