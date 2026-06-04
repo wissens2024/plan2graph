@@ -195,11 +195,11 @@ def parse_config(cfg: str) -> dict:
       gen-v0-neural-set-transformer-v2-pre_global_cubicasa → v0 · 〃 · CubiCasa
     """
     parts = re.sub(r"^gen-", "", cfg or "").split("-")
-    version = parts[0] if parts else "?"      # 데이터셋 버전(v0/v1/v2…)
+    ft_version = parts[0] if parts else "?"   # finetune 데이터셋(현재 전부 v0=AI-Hub)
     rest = parts[1:]
     if rest and rest[0] == "baseline":
-        return {"version": version, "generator": "규칙기반", "arch": "",
-                "pretrain": "없음"}
+        return {"version": ft_version, "generator": "규칙기반", "arch": "",
+                "pretrain": "없음", "ds_version": _ds_version(ft_version, "없음")}
     rest = rest[1:] if rest and rest[0] == "neural" else rest
     pretrain, arch = "없음", []
     for t in rest:
@@ -213,8 +213,19 @@ def parse_config(cfg: str) -> dict:
             continue                                                # temperature 태그 무시
         else:
             arch.append(t)
-    return {"version": version, "generator": "신경망", "arch": "-".join(arch),
-            "pretrain": pretrain}
+    return {"version": ft_version, "generator": "신경망", "arch": "-".join(arch),
+            "pretrain": pretrain, "ds_version": _ds_version(ft_version, pretrain)}
+
+
+# 데이터셋 버전 = 사전학습 데이터 조합([[dataset-version-scheme]]): v0=AI-Hub, v2=+CubiCasa,
+# v3=+RPLAN. 보정(v1)은 finetune 데이터가 달라 ft_version으로 구분.
+_PRETRAIN_VER = {"없음": "v0", "Cubicasa": "v2", "Rplan": "v3"}
+
+
+def _ds_version(ft_version: str, pretrain: str) -> str:
+    if ft_version != "v0":          # 보정 등 다른 finetune셋 = 그 버전 그대로(v1…)
+        return ft_version
+    return _PRETRAIN_VER.get(pretrain, "v0")
 
 
 def agg_summary() -> dict:

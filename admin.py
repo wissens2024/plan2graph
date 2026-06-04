@@ -616,9 +616,9 @@ if which.startswith("📊"):
 
     # ── 5) A/B 비교 — 데이터버전 × 생성기 × 규제루프 (한 화면, PROJECT_PLAN §4-4·§5) ──
     st.header("5. A/B 비교 — 데이터버전 × 생성기 × 규제루프")
-    st.caption("핵심 비교를 한 화면에: 데이터 버전(v0…) · 생성기(규칙기반 vs 신경망) · 사전학습(없음/CubiCasa/RPLAN) · "
-               "규제루프(on/off)를 같은 동결 test에서 정량 비교. 여러 시드는 평균±표준편차로 접음. "
-               "단일 소스 = 실험 원장 runs/index.jsonl (`python -m plan2graph.experiments agg`).")
+    st.caption("데이터버전 = 학습 데이터 조합(**v0**=AI-Hub · **v2**=+CubiCasa 사전학습 · **v3**=+RPLAN). "
+               "각 버전을 생성기(규칙기반 vs 신경망)·규제루프(on/off)로 같은 동결 test에서 비교. "
+               "여러 시드는 평균±표준편차. 단일 소스 = runs/index.jsonl (`python -m plan2graph.experiments agg`).")
 
     @st.cache_data(show_spinner="실험 원장 집계...")
     def _agg(_k):
@@ -634,24 +634,29 @@ if which.startswith("📊"):
     def _pm(m, s):
         return "—" if m is None else (f"{m:.3f}±{s:.3f}" if s else f"{m:.3f}")
 
+    def _sort_key(r):   # 데이터버전 → 생성기(규칙기반 먼저) → 루프
+        return (r.get("ds_version", "z"), 0 if r["generator"] == "규칙기반" else 1,
+                r.get("arch", ""), str(r.get("loop", "")))
+
     if summ["eval"]:
         st.subheader("전체 test")
-        st.table([{"데이터버전": r["version"], "생성기": _gen_label(r),
-                   "사전학습": r["pretrain"], "규제루프": r["loop"], "시드": r["seeds"],
+        st.table([{"데이터버전": r["ds_version"], "생성기": _gen_label(r),
+                   "규제루프": r["loop"], "시드": r["seeds"],
                    "인접L1↓": _pm(r["adj_L1_mean"], r["adj_L1_std"]),
                    "무결성": f"{(r['integrity'] or 0)*100:.0f}%",
                    "법규": f"{(r['legal'] or 0)*100:.0f}%",
                    "다양성": f"{(r['diversity'] or 0)*100:.0f}%",
-                   "신규성": f"{(r['novelty'] or 0)*100:.0f}%"} for r in summ["eval"]])
+                   "신규성": f"{(r['novelty'] or 0)*100:.0f}%"}
+                  for r in sorted(summ["eval"], key=_sort_key)])
         st.caption("인접L1↓: 낮을수록 실제 배치에 가까움 · 무결성=위상 R1~R5 · "
-                   "법규=채광 등 통과(규제루프 on이 위반 자동보정).")
+                   "법규=채광 등 통과(규제루프 on이 위반 자동보정). 생성기 괄호=신경망 아키텍처 세대.")
     if summ["generalization"]:
         st.subheader("일반화 — seen / unseen program")
-        st.caption("처음 보는 방 구성(unseen)에서의 사실성 — 사전학습 효과가 가장 드러나는 축.")
-        st.table([{"데이터버전": r["version"], "생성기": _gen_label(r),
-                   "사전학습": r["pretrain"], "subset": r["subset"], "시드": r["seeds"],
+        st.caption("처음 보는 방 구성(unseen)에서의 사실성 — 사전학습(v2/v3) 효과가 가장 드러나는 축.")
+        st.table([{"데이터버전": r["ds_version"], "생성기": _gen_label(r),
+                   "subset": r["subset"], "시드": r["seeds"],
                    "인접L1↓": _pm(r["adj_L1_mean"], r["adj_L1_std"])}
-                  for r in summ["generalization"]])
+                  for r in sorted(summ["generalization"], key=_sort_key)])
     if not summ["eval"]:
         ab_path = REL / "eval_ab.json"     # 원장 없을 때만 레거시 스냅샷 폴백
         ab = _json.loads(ab_path.read_text(encoding="utf-8")).get("rows", []) \
