@@ -45,6 +45,29 @@ ORIGIN_NOTE = ("ℹ️ program·adjacency·위상은 **원본 라벨이 아니�
                "(원본엔 방 폴리곤·이름만 있음).")
 
 
+def _cc_set_scale(gid: str, scale):
+    """CubiCasa 그래프 1개 meta.scale 갱신(scale>0 적용 / None이면 격리=px2) + area_m2 재계산."""
+    from plan2graph import sources
+    p = sources.graphs_dir("cubicasa5k") / f"{gid}.json"
+    if not p.exists():
+        return
+    rec = json.loads(p.read_text(encoding="utf-8"))
+    m = rec["meta"]
+    if scale and scale > 0:
+        m["scale"] = round(float(scale), 5); m["area_unit"] = "m2"; m["scale_confidence"] = "manual"
+        tot = 0.0
+        for nd in rec["layout"]["nodes"]:
+            if nd.get("area_px2") is not None:
+                nd["area_m2"] = round(nd["area_px2"] * scale * scale, 2); tot += nd["area_m2"]
+        m["floor_area_m2"] = round(tot, 1)
+    else:
+        m["scale"] = None; m["area_unit"] = "px2"; m["scale_confidence"] = "quarantined"
+        m["floor_area_m2"] = None
+        for nd in rec["layout"]["nodes"]:
+            nd.pop("area_m2", None)
+    p.write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
+
+
 def _pager(skey: str, npages: int, loc: str) -> int:
     """본문 페이지 내비(⏮ ◀ X/N ▶ ⏭). 같은 skey로 상·하단 동기화. 반환=현재 0-base 페이지.
     하단 '다음 ▶'을 누르면 rerun으로 화면이 위에서부터 다시 그려진다(전수 조사용)."""
@@ -930,6 +953,68 @@ if which.startswith("📜"):
 # 📏 scale 검수/보정 — OCR 역산 결과 확인 + 사람 보정(치수 클릭) + 격리 유지
 # ════════════════════════════════════════════════════════════════════════════
 if which.startswith("📏"):
+    import glob as _glob
+    src = st.sidebar.radio("출처", ["🏢 AI-Hub", "🏠 CubiCasa5k"], horizontal=True,
+                           help="AI-Hub=도면 치수 OCR 역산 보정 · CubiCasa=SVG 치수 자동 ㎡(이상치 확인·격리)")
+
+    # ── CubiCasa: SVG 치수 자동추출 scale 검수(이상치 확인/격리) ──
+    if src.endswith("CubiCasa5k"):
+        from plan2graph import sources as _srcs
+        _gdir = _srcs.graphs_dir("cubicasa5k")
+
+        @st.cache_data(show_spinner="CubiCasa scale 로드...")
+        def _cc_scales(_n):
+            out = {}
+            for f in _glob.glob(str(_gdir / "*.json")):
+                m = json.loads(Path(f).read_text(encoding="utf-8")).get("meta", {})
+                out[Path(f).stem] = (str(m.get("scale_confidence")), m.get("scale"),
+                                     m.get("floor_area_m2"))
+            return out
+
+        scmap = _cc_scales(len(_glob.glob(str(_gdir / "*.json"))))
+        from collections import Counter as _Cc
+        dist = _Cc(v[0] for v in scmap.values())
+        st.caption(f"CubiCasa scale = SVG 치수 자동추출. 신뢰도 분포: {dict(dist)} "
+                   "(svg_dim=정상 · svg_dim_low=저신뢰 · None=치수없음 · manual/quarantined=사람결정)")
+        conf = st.sidebar.selectbox("신뢰도 필터",
+                                    ["svg_dim_low (의심)", "None (치수없음)", "svg_dim (정상)",
+                                     "manual", "quarantined", "(전체)"])
+        ck = conf.split()[0]
+        ids = sorted(i for i, v in scmap.items() if ck == "(전체)" or v[0] == ck)
+        st.sidebar.markdown(f"**대상: {len(ids):,}**")
+        if not ids:
+            st.info("해당 신뢰도의 도면이 없습니다."); st.stop()
+        st.session_state.setdefault("cci", 0)
+        st.session_state.cci = max(0, min(st.session_state.cci, len(ids) - 1))
+        p_, n_ = st.sidebar.columns(2)
+        if p_.button("◀ 이전", use_container_width=True):
+            st.session_state.cci -= 1; st.rerun()
+        if n_.button("다음 ▶", use_container_width=True):
+            st.session_state.cci += 1; st.rerun()
+        st.session_state.cci = max(0, min(st.session_state.cci, len(ids) - 1))
+        gid = ids[st.session_state.cci]
+        conf0, scale0, area0 = scmap[gid]
+        st.subheader(f"📏 {gid}  ({st.session_state.cci + 1}/{len(ids)})")
+        st.caption(f"자동 scale_confidence=`{conf0}` · scale=`{scale0}` m/px · 총면적≈`{area0}`㎡")
+        cid = gid[3:] if gid.startswith("CC_") else gid
+        png = _glob.glob(str(config.DATA_DIR / "external" / "cubicasa5k" / "*" / cid / "F1_scaled.png"))
+        if png:
+            st.image(png[0], use_container_width=True, caption=f"{cid} (F1_scaled.png)")
+        else:
+            st.info("원본 이미지(F1_scaled.png) 없음.")
+        man = st.number_input("수동 scale(m/px, 0이면 미적용)", min_value=0.0,
+                              value=float(scale0 or 0.0), step=0.0005, format="%.5f")
+        b1, b2 = st.columns(2)
+        if b1.button("✔ 수동 scale 적용", type="primary", disabled=man <= 0,
+                     use_container_width=True):
+            _cc_set_scale(gid, man); st.cache_data.clear()
+            st.session_state.cci += 1; st.rerun()
+        if b2.button("⏸ scale 제거(이상치·격리)", use_container_width=True):
+            _cc_set_scale(gid, None); st.cache_data.clear()
+            st.session_state.cci += 1; st.rerun()
+        st.stop()
+
+    # ── AI-Hub: OCR 역산 + 치수 클릭 보정 ──
     from streamlit_image_coordinates import streamlit_image_coordinates
     from PIL import Image
     import io as _io
