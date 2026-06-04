@@ -405,7 +405,9 @@ if which.startswith("🔍"):
     keymap.update(dict(disp))
     cat = st.sidebar.selectbox("분류", ["📋 전체"] + [lab for lab, _ in disp],
                                format_func=lambda k: f"{k} ({keymap[k]:,})")
-    house = st.sidebar.selectbox("거주형태", ["(전체)", "APT", "DEH", "ROW"])
+    _HOUSE_KO = {"APT": "APT(아파트)", "DEH": "DEH(단독주택)", "ROW": "ROW(연립주택)"}
+    house = st.sidebar.selectbox("거주형태", ["(전체)", "APT", "DEH", "ROW"],
+                                 format_func=lambda k: _HOUSE_KO.get(k, k))
     sel = [r for r in rows
            if (cat == "📋 전체" or _albl(r) == cat) and (house == "(전체)" or r.get("house") == house)]
     # 렌더 대상: manifest 행의 지문 → 렌더 인덱스(없으면 스킵). 카운트는 manifest(sel)가 권위.
