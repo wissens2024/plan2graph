@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=ju
 WorkingDirectory=/home/ju/plan2graph
-Environment=PLAN2GRAPH_RAW=/home/ju/plan2graph/aihub_raw/01-1.정식개방데이터
+Environment=PLAN2GRAPH_RAW=/home/ju/plan2graph/data/raw/aihub/01-1.정식개방데이터
 Environment=PYTHONPATH=src
 ExecStart=/home/ju/bin/micromamba run -n p2g streamlit run admin.py \
   --server.address 0.0.0.0 --server.port 8501 --server.headless true \

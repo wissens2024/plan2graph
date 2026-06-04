@@ -6,9 +6,9 @@
 #   환경변수는 export 로 전달(micromamba run 이 상속).
 #   재부팅·종료 시 이 스크립트만 다시 실행하면 됨. (systemd 대신 수동 배포)
 cd "$HOME/plan2graph" || exit 1
-export PLAN2GRAPH_RAW="$HOME/plan2graph/aihub_raw/01-1.정식개방데이터"
+export PLAN2GRAPH_RAW="$HOME/plan2graph/data/raw/aihub/01-1.정식개방데이터"
 # RPLAN: 받은 패키지는 snapshot_train(렌더 도면 67k)가 본체, Img는 외곽선 썸네일이라 본체만 검수
-export PLAN2GRAPH_RPLAN="$HOME/plan2graph/data/external/rplan/Interface/static/Data/snapshot_train"
+export PLAN2GRAPH_RPLAN="$HOME/plan2graph/data/raw/rplan/Interface/static/Data/snapshot_train"
 export PYTHONPATH=src
 fuser -k 8501/tcp 2>/dev/null; sleep 1
 mkdir -p logs

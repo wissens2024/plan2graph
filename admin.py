@@ -586,7 +586,7 @@ if which.startswith("📐"):
     if not s["all"]:
         st.warning("변환된 RPLAN 그래프가 없습니다(staging/rplan/graphs 비어 있음). "
                    "어댑터를 먼저 실행: "
-                   "`python src/plan2graph/adapters/rplan_vector.py --src data/external/rplan/Network/data.mat`")
+                   "`python src/plan2graph/adapters/rplan_vector.py --src data/raw/rplan/Network/data.mat`")
         st.stop()
     by = _rpsumm["by_id"]
     nrec, npng = _rpsumm["total"], len(s["with_png"])
@@ -997,7 +997,7 @@ if which.startswith("📏"):
         st.subheader(f"📏 {gid}  ({st.session_state.cci + 1}/{len(ids)})")
         st.caption(f"자동 scale_confidence=`{conf0}` · scale=`{scale0}` m/px · 총면적≈`{area0}`㎡")
         cid = gid[3:] if gid.startswith("CC_") else gid
-        png = _glob.glob(str(config.DATA_DIR / "external" / "cubicasa5k" / "*" / cid / "F1_scaled.png"))
+        png = _glob.glob(str(config.RAW_DIR / "cubicasa5k" / "*" / cid / "F1_scaled.png"))
         if png:
             st.image(png[0], use_container_width=True, caption=f"{cid} (F1_scaled.png)")
         else:

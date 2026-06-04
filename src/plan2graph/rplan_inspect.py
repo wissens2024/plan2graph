@@ -22,9 +22,9 @@ import config  # noqa: E402
 from plan2graph import sources  # noqa: E402
 from plan2graph.adapters import rplan as _rp  # noqa: E402
 
-# 데이터 위치: 기본 data/external/rplan. 다른 곳에 풀었으면 PLAN2GRAPH_RPLAN로 지정.
+# 데이터 위치: 기본 data/raw/rplan. 다른 곳에 풀었으면 PLAN2GRAPH_RPLAN로 지정.
 RP_ROOT = Path(os.environ.get("PLAN2GRAPH_RPLAN",
-                              str(config.DATA_DIR / "external" / "rplan")))
+                              str(config.RAW_DIR / "rplan")))
 GRAPHS = sources.graphs_dir("rplan")   # staging/rplan/graphs 우선·없으면 레거시
 
 # 카테고리(0~17) → 표시색(RGB). 0~12 방, 13 외부, 14·16 벽, 15·17 문.
@@ -165,10 +165,10 @@ def _mat_data():
     if _MAT_DATA is None:
         import scipy.io as sio
         cands = [RP_ROOT / "Network" / "data.mat",
-                 config.DATA_DIR / "external" / "rplan" / "Network" / "data.mat"]
+                 config.RAW_DIR / "rplan" / "Network" / "data.mat"]
         p = next((c for c in cands if c.exists()), None)
         if p is None:
-            found = list((config.DATA_DIR / "external" / "rplan").glob("**/data.mat"))
+            found = list((config.RAW_DIR / "rplan").glob("**/data.mat"))
             p = found[0] if found else None
         try:
             _MAT_DATA = (sio.loadmat(str(p), struct_as_record=False,

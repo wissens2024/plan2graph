@@ -34,14 +34,15 @@ def _envf(name: str, default: float) -> float:
 # ─────────────────────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent
 # 데이터 경로는 환경변수로 분리(노트북↔115서버 공용). 코드는 동일, 경로만 환경별.
-#   PLAN2GRAPH_DATA : data/ 위치(중간·산출물). 기본=프로젝트/data
-#   PLAN2GRAPH_RAW  : AI-Hub 원본 ZIP 루트. 기본=프로젝트/건축 도면 데이터/01-1.정식개방데이터
+#   PLAN2GRAPH_DATA : data/ 위치. 기본=프로젝트/data
+#   PLAN2GRAPH_RAW  : AI-Hub 원본 ZIP 루트. 기본=data/raw/aihub/01-1.정식개방데이터
+# 구조: data/raw/{aihub,cubicasa5k,rplan}(원본) → staging(작업) → releases(동결). 전부 gitignore.
 DATA_DIR = Path(os.environ.get("PLAN2GRAPH_DATA", str(PROJECT_ROOT / "data")))
+RAW_DIR = DATA_DIR / "raw"            # 원본 다운로드 한 지붕(출처별), gitignore
 RAW_SOURCE_ROOT = Path(os.environ.get(
-    "PLAN2GRAPH_RAW", str(PROJECT_ROOT / "건축 도면 데이터" / "01-1.정식개방데이터")))
-RAW_DIR = DATA_DIR / "raw"            # 해제된 PNG/JSON (gitignore)
+    "PLAN2GRAPH_RAW", str(RAW_DIR / "aihub" / "01-1.정식개방데이터")))
 INTERIM_DIR = DATA_DIR / "interim"   # inventory.csv 등 중간 산출물
-PROCESSED_DIR = DATA_DIR / "processed"  # 최종 그래프 데이터셋 (gitignore)
+PROCESSED_DIR = DATA_DIR / "processed"  # (레거시, 은퇴) — staging/aihub로 대체
 
 INVENTORY_CSV = INTERIM_DIR / "inventory.csv"
 
