@@ -954,7 +954,7 @@ if which.startswith("📜"):
 # ════════════════════════════════════════════════════════════════════════════
 if which.startswith("📏"):
     import glob as _glob
-    src = st.sidebar.radio("출처", ["🏢 AI-Hub", "🏠 CubiCasa5k"], horizontal=True,
+    src = st.sidebar.radio("출처", ["🏢 AI-Hub", "🏠 CubiCasa5k"], horizontal=True, key="scale_src",
                            help="AI-Hub=도면 치수 OCR 역산 보정 · CubiCasa=SVG 치수 자동 ㎡(이상치 확인·격리)")
 
     # ── CubiCasa: SVG 치수 자동추출 scale 검수(이상치 확인/격리) ──
@@ -978,7 +978,7 @@ if which.startswith("📏"):
                    "(svg_dim=정상 · svg_dim_low=저신뢰 · None=치수없음 · manual/quarantined=사람결정)")
         conf = st.sidebar.selectbox("신뢰도 필터",
                                     ["svg_dim_low (의심)", "None (치수없음)", "svg_dim (정상)",
-                                     "manual", "quarantined", "(전체)"])
+                                     "manual", "quarantined", "(전체)"], key="conf_cc")
         ck = conf.split()[0]
         ids = sorted(i for i, v in scmap.items() if ck == "(전체)" or v[0] == ck)
         st.sidebar.markdown(f"**대상: {len(ids):,}**")
@@ -987,9 +987,9 @@ if which.startswith("📏"):
         st.session_state.setdefault("cci", 0)
         st.session_state.cci = max(0, min(st.session_state.cci, len(ids) - 1))
         p_, n_ = st.sidebar.columns(2)
-        if p_.button("◀ 이전", use_container_width=True):
+        if p_.button("◀ 이전", use_container_width=True, key="cc_prev"):
             st.session_state.cci -= 1; st.rerun()
-        if n_.button("다음 ▶", use_container_width=True):
+        if n_.button("다음 ▶", use_container_width=True, key="cc_next"):
             st.session_state.cci += 1; st.rerun()
         st.session_state.cci = max(0, min(st.session_state.cci, len(ids) - 1))
         gid = ids[st.session_state.cci]
@@ -1024,7 +1024,7 @@ if which.startswith("📏"):
         st.info("scale.csv 없음. 먼저 `python src/plan2graph/scale_ocr.py pass` 실행.")
         st.stop()
     conf_f = st.sidebar.selectbox("신뢰도 필터",
-                                  ["none (미인식)", "low (의심)", "ok (정상)", "(전체)"])
+                                  ["none (미인식)", "low (의심)", "ok (정상)", "(전체)"], key="conf_ai")
     key = conf_f.split()[0]
     sids = [s for s, r in scale_map.items()
             if key == "(전체)" or r.get("confidence") == key]
@@ -1041,9 +1041,9 @@ if which.startswith("📏"):
         st.session_state.si = 0
     st.session_state.si = max(0, min(st.session_state.si, len(sids) - 1))
     pcol, ncol = st.sidebar.columns(2)
-    if pcol.button("◀ 이전", use_container_width=True):
+    if pcol.button("◀ 이전", use_container_width=True, key="ai_prev"):
         st.session_state.si -= 1; st.session_state.pts = []; st.rerun()
-    if ncol.button("다음 ▶", use_container_width=True):
+    if ncol.button("다음 ▶", use_container_width=True, key="ai_next"):
         st.session_state.si += 1; st.session_state.pts = []; st.rerun()
     st.session_state.si = max(0, min(st.session_state.si, len(sids) - 1))
     sid = sids[st.session_state.si]
