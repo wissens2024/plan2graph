@@ -105,13 +105,33 @@ def graph_index() -> tuple[dict, dict]:
     return idx, path
 
 
-def _disposition(cat: str, became: bool, at: str):
+def merged_crc8s(gpath: dict) -> set:
+    """중복라벨 병합으로 복구된 그래프의 CRC8 집합(provenance.origin=dedup_label_merge).
+    같은 지문의 SPA/STR(다른 키)을 합쳐 만든 dual — manifest에 별도 사유로 추적."""
+    out = set()
+    for gid, f in gpath.items():
+        try:
+            meta = json.loads(Path(f).read_text(encoding="utf-8")).get("meta", {})
+        except Exception:  # noqa: BLE001
+            continue
+        if meta.get("provenance", {}).get("origin") == "dedup_label_merge":
+            p = gid.split("_")
+            if len(p) >= 3:
+                out.add(p[2])
+    return out
+
+
+def _disposition(cat: str, became: bool, at: str, merged: bool = False):
     """(cat, 그래프존재) → (disposition, reason, corrected). 상호배타 단일배정."""
     if cat == "nonfp":
         return "excl", "nonfp", None
     if cat == "objocr":
         return "excl", "objocr", None
     if cat == "dual":
+        if became and merged:
+            return ("use", "dual_dedup_merge",
+                    {"from": "convert_failed", "method": "fingerprint_label_union(SPA+STR)",
+                     "at": at, "by": "recover_dedup_merge"})
         return ("use", "dual", None) if became else ("fix", "convert_failed", None)
     if cat == "spa_only":
         return (("use", "v2v_str_recovered",
@@ -145,7 +165,9 @@ def main():
     print("   raw 원천 PNG(=전체):", len(entries), "· 고유 도면(지문):", len(sig))
     print("2) v0∪v2 그래프 인덱스...", flush=True)
     gidx, gpath = graph_index()
-    print("   그래프 graph_id:", len(gpath), "· 그래프 보유 fp:", len(gidx))
+    merged = merged_crc8s(gpath)
+    print("   그래프 graph_id:", len(gpath), "· 그래프 보유 fp:", len(gidx),
+          "· 중복라벨복구 fp:", len(merged))
 
     # ── 그래프 병합(provenance 스탬프) ──
     if a.write_graphs:
@@ -179,8 +201,9 @@ def main():
             if s not in repped and s in sig:
                 repped.add(s)
                 cat = category_of(sig[s])
-                gids = gidx.get(s.split("_")[0], [])     # 그래프 지문 = CRC8
-                disp, reason, corrected = _disposition(cat, len(gids) > 0, at)
+                crc8 = s.split("_")[0]
+                gids = gidx.get(crc8, [])                 # 그래프 지문 = CRC8
+                disp, reason, corrected = _disposition(cat, len(gids) > 0, at, crc8 in merged)
                 row = {"drawing_id": key, "fingerprint": s, "source": "aihub", "house": house,
                        "disposition": disp, "reason": reason, "became_graph": len(gids) > 0,
                        "graph_ids": gids, "corrected": corrected, "dup_of": None}

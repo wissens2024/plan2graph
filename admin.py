@@ -398,6 +398,7 @@ if which.startswith("🏢"):
     rows = _aihub_manifest(_mpath.stat().st_size)
     AIHUB_LABEL = {
         ("use", "dual"): "✅ 사용 · dual(직접변환)",
+        ("use", "dual_dedup_merge"): "✅ 사용 · dual(중복라벨복구)",
         ("use", "v2v_str_recovered"): "✅ 사용 · 방만→V2V STR복구",
         ("use", "v2v_spa_recovered"): "✅ 사용 · 구조만→V2V SPA복구",
         ("fix", "convert_failed"): "🛠 보정필요 · 변환실패(dual)",
