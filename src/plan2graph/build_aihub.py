@@ -49,8 +49,9 @@ V2 = config.DATA_DIR / "releases" / "v2" / "graphs"
 
 
 def scan_sources() -> dict:
-    """원천 zip 전체 1패스 → fp -> {types:set, labels:set, keys:set}. (fp 단위 고유 도면)."""
-    sig: dict = defaultdict(lambda: {"types": set(), "labels": set(), "keys": set()})
+    """원천 zip 전체 1패스 → fp -> {types:set, pk:{label->keys}}. (fp 단위 고유 도면).
+    중복은 '같은 라벨 안에서 키가 여러 개'일 때만(서로 다른 라벨=같은 도면의 다른 주석)."""
+    sig: dict = defaultdict(lambda: {"types": set(), "pk": defaultdict(set)})
     zips = [z for z in discover_zips() if z["content"] == "원천"]
     for z, info in iter_zipinfos(zips):
         m = parse_name(Path(info.filename).stem)
@@ -59,15 +60,14 @@ def scan_sources() -> dict:
         s = "%08x_%d" % (info.CRC, info.file_size)
         d = sig[s]
         d["types"].add(m["drawing"])
-        d["labels"].add(m["label"])
-        d["keys"].add(m["key"])
+        d["pk"][m["label"]].add(m["key"])
     return sig
 
 
 def category_of(d: dict) -> str:
     if FP not in d["types"]:
         return "nonfp"
-    L = d["labels"]
+    L = set(d["pk"])
     if "SPA" in L and "STR" in L:
         return "dual"
     if "SPA" in L:
@@ -140,11 +140,11 @@ def main():
     # ── 그래프 병합(provenance 스탬프) ──
     if a.write_graphs:
         GRAPHS_OUT.mkdir(parents=True, exist_ok=True)
-        fp_cat = {fp: category_of(d) for fp, d in sig.items()}
+        cr_cat = {fp.split("_")[0]: category_of(d) for fp, d in sig.items()}  # CRC8 -> cat
         n = 0
         for gid, src_path in gpath.items():
-            fp = gid.split("_")[2] if len(gid.split("_")) >= 3 else None
-            cat = fp_cat.get(fp, "dual")
+            cr = gid.split("_")[2] if len(gid.split("_")) >= 3 else None
+            cat = cr_cat.get(cr, "dual")
             try:
                 rec = json.loads(Path(src_path).read_text(encoding="utf-8"))
             except Exception:  # noqa: BLE001
@@ -166,23 +166,25 @@ def main():
     with mpath.open("w", encoding="utf-8") as fo:
         for fp, d in sig.items():
             cat = category_of(d)
-            gids = gidx.get(fp, [])
+            gids = gidx.get(fp.split("_")[0], [])    # 그래프 지문 = CRC8
             became = len(gids) > 0
-            keys = sorted(d["keys"])
+            all_keys = sorted({k for ks in d["pk"].values() for k in ks})
             disp, reason, corrected = _disposition(cat, became, at)
-            rep = {"drawing_id": keys[0], "fingerprint": fp, "source": "aihub",
+            rep = {"drawing_id": all_keys[0], "fingerprint": fp, "source": "aihub",
                    "disposition": disp, "reason": reason, "became_graph": became,
                    "graph_ids": gids, "corrected": corrected, "dup_of": None}
             fo.write(json.dumps(rep, ensure_ascii=False) + "\n")
             bucket[(disp, reason)] += 1
             lines += 1
-            for k in keys[1:]:    # 같은 fp의 추가 키 = 중복 사본(완전 제거)
-                dup = {"drawing_id": k, "fingerprint": fp, "source": "aihub",
-                       "disposition": "excl", "reason": "duplicate", "became_graph": False,
-                       "graph_ids": [], "corrected": None, "dup_of": fp}
-                fo.write(json.dumps(dup, ensure_ascii=False) + "\n")
-                bucket[("excl", "duplicate")] += 1
-                lines += 1
+            # 중복 사본 = 같은 라벨 안에서 첫 키 외 추가 키(완전 제거)
+            for lab, ks in d["pk"].items():
+                for k in sorted(ks)[1:]:
+                    dup = {"drawing_id": f"{k}@{lab}", "fingerprint": fp, "source": "aihub",
+                           "disposition": "excl", "reason": "duplicate", "became_graph": False,
+                           "graph_ids": [], "corrected": None, "dup_of": fp}
+                    fo.write(json.dumps(dup, ensure_ascii=False) + "\n")
+                    bucket[("excl", "duplicate")] += 1
+                    lines += 1
     print(f"3) manifest 작성: {mpath} · {lines:,}줄")
 
     # ── 검증 ──
