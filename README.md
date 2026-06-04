@@ -8,11 +8,11 @@
 
 ## 0. 작업 원칙 (중요 — 먼저 읽을 것)
 
-1. **추측 금지·실데이터 우선.** 아래 데이터 스펙은 AI-Hub 공식 설명서 기준이다. 그러나 `attributes` 필드 세부, 좌표 단위, 폴리곤 방향 등은 **실제 JSON 1개를 먼저 파싱해 검증**한 뒤 확정하라. 가정과 실제가 다르면 가정을 고치고 그 사실을 `NOTES.md`에 기록하라.
+1. **추측 금지·실데이터 우선.** 아래 데이터 스펙은 AI-Hub 공식 설명서 기준이다. 그러나 `attributes` 필드 세부, 좌표 단위, 폴리곤 방향 등은 **실제 JSON 1개를 먼저 파싱해 검증**한 뒤 확정하라. 가정과 실제가 다르면 가정을 고치고 그 사실을 `docs/NOTES.md`에 기록하라.
 2. **평면도(FP) 우선.** 위상 그래프는 평면도에서만 의미가 있다. 단면도(CS)·입면도(EP)·구조도(SD)는 1차 범위에서 제외하고, 평면도 41,556장에 집중하라.
 3. **점진적 검증.** 전체 48,033장을 처음부터 돌리지 마라. (a) 1장 → (b) 손으로 검증할 수 있는 10장 → (c) 100장 → (d) 전체 순으로 확장하라. 각 단계에서 실패율을 측정·기록하라.
 4. **최대 난관을 알고 시작하라.** 이 프로젝트의 핵심 리스크는 **"문이 어느 두 방을 연결하는가"가 라벨에 없다**는 점이다(아래 Task 1-3 참조). 여기 정확도가 전체 데이터셋 품질을 좌우한다. 여기에 가장 공을 들여라.
-5. **결정은 코드가 아니라 사람에게.** 라이선스 판단, 규칙(법규) 해석 등 도메인 판단이 필요한 지점은 임의로 정하지 말고 `DECISIONS_NEEDED.md`에 질문으로 남겨라.
+5. **결정은 코드가 아니라 사람에게.** 라이선스 판단, 규칙(법규) 해석 등 도메인 판단이 필요한 지점은 임의로 정하지 말고 `docs/DECISIONS_NEEDED.md`에 질문으로 남겨라.
 
 ---
 
@@ -112,7 +112,7 @@
   - **노드** = 공간(SPA) 폴리곤
   - **엣지 추론(핵심)**: 각 출입문(STR-출입문) 폴리곤에 대해, 그 문에 **인접한 두 공간**을 기하로 찾는다.
     - 권장 접근: 문 폴리곤을 약간 buffer → 교차/근접하는 SPA 폴리곤 후보 추출 → 가장 가까운 2개를 연결. 문이 벽 개구부에 놓인 점을 이용(문 중심에서 법선 방향 양쪽 공간).
-    - 1:1로 안 떨어지는 경우(현관-복도-거실 개방형, 문 1개에 공간 3개 접함 등)의 처리 규칙을 정의하고 `NOTES.md`에 기록.
+    - 1:1로 안 떨어지는 경우(현관-복도-거실 개방형, 문 1개에 공간 3개 접함 등)의 처리 규칙을 정의하고 `docs/NOTES.md`에 기록.
   - **현관 식별**: SPA-현관 노드를 외부 진입점으로 표시. 외부 연결 엣지 추가.
   - **창호**: 채광 검증용으로 각 방의 창 개수/길이를 노드 속성에 저장(엣지는 아님).
   - `networkx.Graph` 생성. 노드 속성(클래스, 면적, 중심좌표, 창 보유), 엣지 속성(문 종류).
@@ -128,7 +128,7 @@
 - **완료 기준**: Task 1-3 그래프를 온톨로지 인스턴스로 적재 가능
 
 ### Task 1-5. 법규/무결성 규칙 엔진
-- **처리**: 강행규정 우선, 모듈형. 우선 구현할 규칙(예시 — 실제 수치는 `DECISIONS_NEEDED.md`로 확인):
+- **처리**: 강행규정 우선, 모듈형. 우선 구현할 규칙(예시 — 실제 수치는 `docs/DECISIONS_NEEDED.md`로 확인):
   - 무결성: 고립 공간 없음(그래프 연결성), 문 없는 방 없음(degree≥1), 현관에서 전 공간 도달 가능
   - 법규: 침실 최소면적, 거실·침실 채광(창 인접), 피난 동선
 - **구현**: 1차는 networkx 기반 순수 파이썬 규칙 함수. (SWRL/추론기는 온톨로지 안정화 후 선택 도입)
@@ -184,23 +184,25 @@
 ## 6. 권장 프로젝트 구조
 
 ```
-arch-floorplan-dataset/
-├── README.md                # 본 명세
-├── NOTES.md                 # 가정↔실제 차이, 추론 규칙 결정 로그
-├── DECISIONS_NEEDED.md      # 사람 확인 필요 항목(법규 수치, 라이선스 등)
-├── requirements.txt
-├── config.py                # 경로, 클래스 매핑, 임계값
-├── src/
-│   ├── unpack.py            # 1-1
-│   ├── parse_labels.py      # 1-2
-│   ├── topology.py          # 1-3 ★
-│   ├── ontology.py          # 1-4
-│   ├── rules.py             # 1-5
-│   ├── build_dataset.py     # 2-1,2-2
-│   └── adapters/{rplan,cubicasa}.py  # 2-3
-├── data/{raw,interim,processed}/      # raw·processed는 .gitignore
-├── tests/                   # 손검증셋·단위테스트
-└── notebooks/               # 시각 검증
+plan2graph/
+├── README.md                # 본 명세(진입점)
+├── config.py  admin.py  doctor.py  requirements*.txt
+├── docs/                     # 문서 전부
+│   ├── DATASET_DESIGN.md      데이터 모델·처분·manifest 설계
+│   ├── DATA_STATUS.md         라이브 현황(전체=raw, AI-Hub 43,219 등)
+│   ├── ROADMAP.md             계획·마스터플랜 (PROJECT_PLAN+ROADMAP)
+│   ├── OPERATIONS.md          115 배포·실행·디버그 (DEPLOY+RUNBOOK)
+│   ├── EXPERIMENTS.md         학습·평가·결과 (TRAINING+EXPERIMENTS)
+│   ├── NOTES.md               가정↔실제·결정 로그
+│   └── DECISIONS_NEEDED.md    사람 확인 필요 항목
+├── src/plan2graph/           # 패키지 (adapters/{rplan,cubicasa} 등)
+├── scripts/  tests/  notebooks/  legal/  ontology/  fonts/
+├── data/                     # 데이터 (대부분 .gitignore)
+│   ├── raw/{aihub,cubicasa5k,rplan}      # 원본 다운로드(서버 단일 보관)
+│   ├── staging/{aihub,cubicasa5k,rplan}  # 작업본 graphs+manifest+ledger
+│   ├── releases/v0           # 동결 벤치마크(평가 test 고정)
+│   └── interim/  v2v/
+└── runs/                     # 실험 원장(provenance·비교표)
 ```
 
 ## 7. 기술 스택
