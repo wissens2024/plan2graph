@@ -96,6 +96,7 @@
 - `data/releases/<ver>/` 스냅샷(graphs·splits·card·manifest·eval) + `_frozen_test.json`(test 고정·전버전 공유)
 - `models/<exp>/` 체크포인트 + config + eval
 - 대시보드(📊): 데이터셋·모델·법규·A/B 한 화면 → 캡처해 보고·PPT
+- **구조 규칙서(드리프트 방지)**: 데이터셋=DATASET_DESIGN.md · **학습/평가=[TRAINING.md](TRAINING.md)**(5축·파이프라인·결과 채택 규칙) · 결과보고=EXPERIMENTS.md. 단일 소스=`runs/index.jsonl`→`experiments.agg_summary`.
 
 ---
 
