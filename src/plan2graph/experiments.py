@@ -187,11 +187,16 @@ def _mean_std(vals):
     return statistics.mean(xs), (statistics.stdev(xs) if len(xs) > 1 else 0.0), len(xs)
 
 
+# 미배치(개발 부산물) 학습본 — 결과 채택에서 제외(30ep·1시드 미수렴, 배치본과 비교 불가).
+# git 이력/runs 원본엔 보존하되 agg_summary(결과 집계)에서만 거른다. 모델은 set-transformer 하나.
+RETIRED_ARCH = "set-transformer-v1"
+
+
 def parse_config(cfg: str) -> dict:
-    """run_id(시드 제거) → A/B 비교 3축. 결과 대시보드가 '데이터버전×생성기×사전학습'으로
-    묶어 한 표에 보이게 한다(PROJECT_PLAN §4-4). 예:
+    """run_id(시드 제거) → A/B 비교 축. 결과 대시보드가 '데이터버전×생성기'로 묶어 한 표에
+    보이게 한다(PROJECT_PLAN §4-4). 신경망은 set-transformer 하나(아키텍처 버전꼬리표 미표기). 예:
       gen-v0-baseline                              → v0 · 규칙기반 · 사전학습없음
-      gen-v0-neural-set-transformer-v2-noPretrain  → v0 · 신경망(set-transformer-v2) · 없음
+      gen-v0-neural-set-transformer-v2-noPretrain  → v0 · 신경망(set-transformer) · 없음
       gen-v0-neural-set-transformer-v2-pre_global_cubicasa → v0 · 〃 · CubiCasa
     """
     parts = re.sub(r"^gen-", "", cfg or "").split("-")
@@ -213,7 +218,8 @@ def parse_config(cfg: str) -> dict:
             continue                                                # temperature 태그 무시
         else:
             arch.append(t)
-    return {"version": ft_version, "generator": "신경망", "arch": "-".join(arch),
+    arch_disp = re.sub(r"-v\d+$", "", "-".join(arch))   # 아키텍처 버전꼬리표 제거(모델 하나)
+    return {"version": ft_version, "generator": "신경망", "arch": arch_disp,
             "pretrain": pretrain, "ds_version": _ds_version(ft_version, pretrain)}
 
 
@@ -235,6 +241,8 @@ def agg_summary() -> dict:
     rows = load_index()
     ev, gn = defaultdict(list), defaultdict(list)
     for r in rows:
+        if RETIRED_ARCH in (r.get("run_id") or ""):   # 미배치 개발본 = 결과 미채택
+            continue
         if r.get("kind") == "eval":
             ev[(_config_key(r["run_id"]), r.get("reg_loop"))].append(r)
         elif r.get("kind") == "generalization":
