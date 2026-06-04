@@ -637,6 +637,46 @@ if which.startswith("📊"):
                        "다양성": r["diversity"], "신규성": r["novelty"]} for r in ab])
     else:
         st.caption("A/B 종합 표: `python src/plan2graph/eval_gen.py` 실행 후 표시됩니다.")
+
+    # ── 6) 신경망 다중시드 매트릭스 — 글로벌 사전학습 효과 ──
+    st.header("6. 신경망 다중시드 매트릭스 (사전학습 효과)")
+    st.caption("동일 조건을 여러 시드로 학습해 평균±표준편차로 집계 — '차이가 시드 노이즈인가, "
+               "사전학습이 실제로 돕는가'를 판정. 원장: runs/index.jsonl "
+               "(`python -m plan2graph.experiments agg`).")
+
+    @st.cache_data(show_spinner="실험 원장 집계...")
+    def _agg(_k):
+        from plan2graph import experiments
+        return experiments.agg_summary()
+
+    _idx = ROOT / "runs" / "index.jsonl"
+    summ = _agg(_mt(_idx)) if _idx.exists() else {"eval": [], "generalization": []}
+
+    def _short(cfg):  # run_id 접두 정리(보기 좋게)
+        return (cfg or "").replace("gen-v0-", "").replace("neural-set-transformer-", "")
+
+    def _pm(m, s):    # mean±std 표시
+        return "—" if m is None else f"{m:.3f}±{s:.3f}"
+
+    if summ["eval"]:
+        st.subheader("전체 test (시드 집계)")
+        st.table([{"구성": _short(r["config"]), "규제루프": r["loop"], "시드수": r["seeds"],
+                   "인접L1↓(mean±std)": _pm(r["adj_L1_mean"], r["adj_L1_std"]),
+                   "무결성": f"{(r['integrity'] or 0)*100:.0f}%",
+                   "법규": f"{(r['legal'] or 0)*100:.0f}%",
+                   "다양성": f"{(r['diversity'] or 0)*100:.0f}%",
+                   "신규성": f"{(r['novelty'] or 0)*100:.0f}%"} for r in summ["eval"]])
+    if summ["generalization"]:
+        st.subheader("일반화 — seen / unseen program (시드 집계)")
+        st.table([{"구성": _short(r["config"]), "subset": r["subset"], "시드수": r["seeds"],
+                   "인접L1↓(mean±std)": _pm(r["adj_L1_mean"], r["adj_L1_std"])}
+                  for r in summ["generalization"]])
+    if not summ["eval"] and not summ["generalization"]:
+        st.caption("실험 원장 없음: `bash scripts/run_matrix.sh` 실행 후 표시됩니다.")
+    else:
+        st.caption("해석: 전체 test에서 preCubicasa≈noPretrain(중립)이나, 일반화(unseen)에서 "
+                   "사전학습이 소폭 우위·분산 감소. 상세 보고서 = EXPERIMENTS.md. "
+                   "RPLAN(80,371) 사전학습 재학습 결과는 후속 업데이트.")
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════

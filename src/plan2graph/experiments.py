@@ -179,6 +179,43 @@ def _ms(vals):
     return f"{m:.3f}±{s:.3f}", len(xs)
 
 
+def _mean_std(vals):
+    """(mean, std, n). n<2면 std=0. 숫자 아닌 값은 무시."""
+    xs = [v for v in vals if isinstance(v, (int, float))]
+    if not xs:
+        return None, 0.0, 0
+    return statistics.mean(xs), (statistics.stdev(xs) if len(xs) > 1 else 0.0), len(xs)
+
+
+def agg_summary() -> dict:
+    """시드 집계를 구조화 dict로 반환(GUI·md 공용 단일 소스).
+    반환: {"eval":[{config,loop,seeds,adj_L1_mean,adj_L1_std,integrity,legal,diversity,novelty}],
+           "generalization":[{config,subset,seeds,adj_L1_mean,adj_L1_std}]}."""
+    rows = load_index()
+    ev, gn = defaultdict(list), defaultdict(list)
+    for r in rows:
+        if r.get("kind") == "eval":
+            ev[(_config_key(r["run_id"]), r.get("reg_loop"))].append(r)
+        elif r.get("kind") == "generalization":
+            gn[(_config_key(r["run_id"]), r.get("subset"))].append(r)
+    out_ev = []
+    for (cfg, loop), rs in sorted(ev.items()):
+        am, asd, n = _mean_std([r.get("adj_L1") for r in rs])
+        out_ev.append({
+            "config": cfg, "loop": loop, "seeds": n,
+            "adj_L1_mean": am, "adj_L1_std": asd,
+            "integrity": _mean_std([r.get("integrity") for r in rs])[0],
+            "legal": _mean_std([r.get("legal") for r in rs])[0],
+            "diversity": _mean_std([r.get("diversity") for r in rs])[0],
+            "novelty": _mean_std([r.get("novelty") for r in rs])[0]})
+    out_gn = []
+    for (cfg, sub), rs in sorted(gn.items(), key=lambda x: (x[0][0], x[0][1])):
+        am, asd, n = _mean_std([r.get("adj_L1") for r in rs])
+        out_gn.append({"config": cfg, "subset": sub, "seeds": n,
+                       "adj_L1_mean": am, "adj_L1_std": asd})
+    return {"eval": out_ev, "generalization": out_gn}
+
+
 def print_agg():
     """시드 집계 — 동일 조건의 여러 시드를 평균±표준편차로. '차이가 노이즈인가' 판정."""
     rows = load_index()
