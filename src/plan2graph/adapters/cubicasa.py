@@ -20,6 +20,52 @@ for _p in (str(ROOT), str(ROOT / "src")):
 from plan2graph.adapters import common  # noqa: E402
 
 _NUM = re.compile(r"-?\d+\.?\d*")
+# CubiCasa SVG <text> 치수 라벨(피트-인치): 예 15'11" x 8'4"  → 방 실측 크기
+_DIM = re.compile(r"""(\d+)'(\d+)"?\s*[xX]\s*(\d+)'(\d+)"?""")
+_FT_M = 0.3048
+
+
+def _scale_from_svg(root, room_polys):
+    """SVG 치수 라벨(피트-인치) 총 bbox면적 vs 방 폴리곤 px bbox 총면적 → scale(px→m).
+    방↔라벨 개별 매칭 없이 합끼리 비교(robust). 라벨 없으면 (None, 0)."""
+    import math
+    real = 0.0
+    nlab = 0
+    for el in root.iter():
+        if el.tag.split("}")[-1] == "text":
+            m = _DIM.search(el.text or "")
+            if m:
+                a, b, c, d = (int(x) for x in m.groups())
+                wft = (a + b / 12.0) * _FT_M
+                hft = (c + d / 12.0) * _FT_M
+                real += wft * hft
+                nlab += 1
+    pxb = 0.0
+    for poly in room_polys:
+        xs = [p[0] for p in poly]; ys = [p[1] for p in poly]
+        pxb += (max(xs) - min(xs)) * (max(ys) - min(ys))
+    if real <= 0 or pxb <= 0 or nlab == 0:
+        return None, 0
+    return math.sqrt(real / pxb), nlab
+
+
+def _apply_scale(rec, root, room_polys):
+    """치수 라벨로 px→m scale 산출해 레코드에 ㎡ 부여(meta.scale/area_unit/floor_area_m2,
+    노드 area_m2). RPLAN과 달리 CubiCasa는 SVG 구조화 치수라 OCR보다 신뢰도 높음."""
+    sc, nlab = _scale_from_svg(root, room_polys)
+    if not sc:
+        return
+    m = rec["meta"]
+    m["scale"] = round(sc, 5)
+    m["area_unit"] = "m2"
+    m["scale_confidence"] = "svg_dim" if nlab >= max(1, len(room_polys) * 0.5) else "svg_dim_low"
+    tot = 0.0
+    for n in rec["layout"]["nodes"]:
+        ap = n.get("area_px2")
+        if ap is not None:
+            n["area_m2"] = round(ap * sc * sc, 2)
+            tot += n["area_m2"]
+    m["floor_area_m2"] = round(tot, 1)
 
 # CubiCasa 'Space …' 중 방이 아닌 클래스 — 노드에서 제외(치수라벨·가구·미정의·비실내).
 #   (실측: DimensionsLabel/FixedFurniture/Undefined 가 '기타'의 대부분을 차지해 분포를 오염)
@@ -112,7 +158,9 @@ def parse(svg_path: str) -> dict | None:
     ally = [y for poly in room_polys for _, y in poly]
     w = int(max(allx) + 10) if allx else 256
     h = int(max(ally) + 10) if ally else 256
-    return common.to_record(gid, "cubicasa5k", rooms, edges, w, h)
+    rec = common.to_record(gid, "cubicasa5k", rooms, edges, w, h)
+    _apply_scale(rec, root, room_polys)   # SVG 치수 라벨 → px→m scale·㎡
+    return rec
 
 
 def _self_test() -> bool:
