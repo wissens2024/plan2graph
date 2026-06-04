@@ -139,5 +139,5 @@ if __name__ == "__main__":
     image = sys.argv[1]
     docs = [load_coco(p) for p in sys.argv[2:]]
     dr = assemble_drawing(docs, image_path=image)
-    out = ROOT / "notebooks" / (Path(image).stem + "_overlay.png")
+    out = ROOT / "artifacts" / (Path(image).stem + "_overlay.png")
     overlay_drawing(dr, image, out)

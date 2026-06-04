@@ -196,7 +196,7 @@ plan2graph/
 │   ├── NOTES.md               가정↔실제·결정 로그
 │   └── DECISIONS_NEEDED.md    사람 확인 필요 항목
 ├── src/plan2graph/           # 패키지 (adapters/{rplan,cubicasa} 등)
-├── scripts/  tests/  notebooks/  legal/  ontology/  fonts/
+├── scripts/  tests/  artifacts/  legal/  ontology/  fonts/
 ├── data/                     # 데이터 (대부분 .gitignore)
 │   ├── raw/{aihub,cubicasa5k,rplan}      # 원본 다운로드(서버 단일 보관)
 │   ├── staging/{aihub,cubicasa5k,rplan}  # 작업본 graphs+manifest+ledger

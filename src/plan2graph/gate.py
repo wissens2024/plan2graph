@@ -21,7 +21,7 @@ for _p in (str(ROOT), str(ROOT / "src")):
         sys.path.insert(0, _p)
 import config  # noqa: E402
 
-GATE_DIR = ROOT / "notebooks" / "gate"
+GATE_DIR = ROOT / "artifacts" / "gate"
 CONNECT = ("door", "open", "balcony")
 
 

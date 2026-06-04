@@ -26,8 +26,8 @@
 *.owl
 
 # ── 시각화 산출 ──
-/notebooks/*.png
-/notebooks/gate/*.png
+/artifacts/*.png
+/artifacts/gate/*.png
 /ontology/*.png
 
 # ── 추적 대상(참고) ──

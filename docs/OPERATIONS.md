@@ -70,7 +70,7 @@ V2V/생성 튜닝(conf·imgsz·model·epochs·thresh)은 전부 **CLI 인자** �
 ```bash
 # 1) 학습셋 export 소량 + 좌표정렬 육안확인(노트북서 이미 검증한 방식)
 python src/plan2graph/v2v_export.py --label SPA --limit 50
-#    → notebooks 검증 렌더로 폴리곤 정렬 확인. RPLAN/STR 채널·클래스 점검.
+#    → artifacts 검증 렌더로 폴리곤 정렬 확인. RPLAN/STR 채널·클래스 점검.
 # 2) 짧은 학습(파이프라인 확인): epochs 5, 작은 모델
 yolo segment train data=.../data.yaml model=yolov8n-seg.pt epochs=5 imgsz=1024 device=0
 # 3) 검증: held-out 라벨로 mask AP. AP 낮으면 튜닝(아래)
@@ -149,7 +149,7 @@ AI-Hub ZIP(38GB)·글로벌셋을 서버에 전송해 `PLAN2GRAPH_RAW`에 둔다
 ### 정확도 게이트 ✅
 ```bash
 ✅ python src/plan2graph/gate.py build --n 20         # 검증 오버레이+채점표
-#   사람이 notebooks/gate/score_template.csv 채점 → 
+#   사람이 artifacts/gate/score_template.csv 채점 → 
 ✅ python src/plan2graph/gate.py score
 ```
 ### v1 (보정) — 콘솔 ✅ / 일괄 🔧
