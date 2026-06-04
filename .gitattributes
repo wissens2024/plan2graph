@@ -1,0 +1,19 @@
+# 줄바꿈 정책 — 서버(Linux)에서 실행되는 스크립트는 반드시 LF.
+# CRLF로 체크아웃되면 bash가 `mkdir -p logs\r` 처럼 인자에 \r을 붙여 깨진다.
+# (로컬 Windows의 core.autocrlf=true 가 .sh를 CRLF로 바꾸던 문제 차단)
+
+*               text=auto
+*.sh            text eol=lf
+*.bash          text eol=lf
+*.service       text eol=lf
+scripts/*       text eol=lf
+
+# 바이너리 — 줄바꿈/머지 변환 금지
+*.png           binary
+*.jpg           binary
+*.pt            binary
+*.pth           binary
+*.onnx          binary
+*.ttf           binary
+*.owl           binary
+*.mat           binary
