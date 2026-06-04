@@ -1,9 +1,15 @@
 # ── 대용량 데이터 (서버 단일 보관, git 제외) ──
-/data/raw/               # 원본 다운로드 전부: aihub·cubicasa5k·rplan·_archives
-/data/v2v/               # V2V YOLO 데이터셋·예측(이미지 다수) — 재생성
+# 주석은 반드시 패턴과 다른 줄에. 인라인(#) 주석은 패턴 일부로 취급돼 규칙이 죽는다.
+
+# 원본 다운로드 전부: aihub·cubicasa5k·rplan·_archives
+/data/raw/
+# V2V YOLO 데이터셋·예측(이미지 다수) — 재생성
+/data/v2v/
 /data/processed_val/
-/건축 도면 데이터/         # (구) 로컬 AI-Hub raw — data/raw/aihub로 이관, 삭제 예정
-/data/processed/graphs/
+# (구) 로컬 AI-Hub raw — data/raw/aihub로 이관됨
+/건축 도면 데이터/
+# (은퇴) 옛 AI-Hub 작업본 — staging/aihub로 대체
+/data/processed/
 /data/releases/*/graphs/
 /data/interim/law_cache/
 /data/interim/*.xml
@@ -24,12 +30,13 @@
 /notebooks/gate/*.png
 /ontology/*.png
 
-# ── 추적: 코드·문서·규칙DB·릴리스 메타(manifest/eval/splits/card)·요약 CSV ──
-#   (legal/*.json, *.md, data/releases/*/{manifest,eval,splits,dataset_card}, *.csv 요약은 추적)
+# ── 추적 대상(참고) ──
+# 코드·문서·규칙DB·릴리스 메타(manifest/eval/splits/card)·요약 CSV는 추적한다.
+# legal/*.json, *.md, data/releases/*/{manifest,eval,splits,dataset_card}, *.csv 요약.
 
-# ── 실험 원장(runs/): 프로비넌스·비교표는 추적, 체크포인트(*.pt)는 위 규칙으로 제외 ──
-#   runs/<run_id>/{meta.json,metrics.json,train.log} + runs/index.jsonl = git 추적(재현·비교)
-#   runs/<run_id>/checkpoint.pt = *.pt 규칙으로 제외(시드+코드로 재생성)
+# ── 실험 원장(runs/) ──
+# 프로비넌스·비교표(meta.json/metrics.json/train.log/index.jsonl)는 추적,
+# 체크포인트(*.pt)는 위 규칙으로 제외(시드+코드로 재생성).
 
 # 런타임 로그(서버 nohup 산출 — 추적 제외)
 /logs/
