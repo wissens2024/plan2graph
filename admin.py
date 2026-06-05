@@ -274,8 +274,7 @@ def _record(**kw):
 
 
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
-st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
-st.sidebar.caption("데이터셋 구축 ───── · 생성 AI ─────")
+st.sidebar.markdown("#### 🏗 Plan2Graph 관리자") 
 which = st.sidebar.radio("메뉴", ["🧮 종합 현황", "🏢 AI-Hub 검수",
                                  "🏠 CubiCasa 검수", "📐 RPLAN 검수",
                                  "📏 scale 보정", "📜 법령 DB",
@@ -663,15 +662,10 @@ if which.startswith("📊"):
         st.stop()
 
     st.title("📊 위상 모델 결과")
-    st.caption("위상 생성 AI 비교(데이터셋 v0/v2/v3/v4 · 생성기 · 구성요소, 동결 벤치마크). "
-               "**이 페이지 범위**: 자연어 →[제약그래프]→ 생성AI →**[배치그래프 = 위상]**→ 규제검증 ✅ "
-               "&nbsp; ┄ &nbsp; 무결 도면(기하 렌더)은 🏗 도면 생성 / 향후.")
-    st.markdown("**구현 현황** &nbsp; 단일세대 위상 ✅ &nbsp;·&nbsp; 단일세대 기하 🔜 &nbsp;·&nbsp; "
-                "다세대 floor-plate ⏳ (데이터갭)")
+    st.caption("위상 생성 AI 비교(데이터셋 · 생성기 · 구성요소, 동결 벤치마크). " )
+     
 
-    ver = st.sidebar.selectbox("버전", vers, index=len(vers) - 1)
-    if st.sidebar.button("🔄 새로고침(캐시 비움)"):
-        st.cache_data.clear(); st.cache_resource.clear(); st.rerun()
+    ver = vers[-1] if vers else None   # 기본(최신 릴리스) — 상세 예시용. 사이드바 버전선택·새로고침 제거.
 
     def _mt(p):  # 파일 수정시각(캐시 무효화 키)
         return p.stat().st_mtime if p.exists() else 0
@@ -726,8 +720,8 @@ if which.startswith("📊"):
     _LADDER = [("v0", "AI-Hub dual(클린)", "—", "✅ 릴리스"),
                ("v1", "AI-Hub dual + 보정·복구", "—", "⏳ 보정중"),
                ("v2", "AI-Hub dual+V2V", "CubiCasa", "✅ 릴리스"),
-               ("v3", "AI-Hub dual+V2V", "+ RPLAN", "🔄 학습"),
-               ("v4", "AI-Hub dual+V2V", "+ RPLAN+CubiCasa(결합)", "🔄 학습")]
+               ("v3", "AI-Hub dual+V2V", "+ RPLAN", "✅ 평가완료(무익)"),
+               ("v4", "AI-Hub dual+V2V", "+ RPLAN+CubiCasa(결합)", "✅ 평가완료(무익)")]
     rows1 = []
     for v, ft_lbl, pre_lbl, stat in _LADDER:
         m = _compose(v)
@@ -745,23 +739,38 @@ if which.startswith("📊"):
             rows1.append({"버전": v, "파인튜닝(한국형 AI-Hub)": ft_lbl,
                           "사전학습(글로벌)": pre_lbl, "세대 그래프": "—", "상태": stat})
     st.table(rows1)
-    st.subheader(f"선택 버전 상세 — {ver} (파인튜닝/평가 데이터셋)")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("도면(시트)", f"{man.get('n_sheets','-'):,}" if man.get('n_sheets') else "-")
-    c2.metric("세대 그래프", f"{man.get('n_graphs','-'):,}" if man.get('n_graphs') else "-")
-    sp = man.get("splits", {})
-    c3.metric("train/val/test", f"{sp.get('train','-')}/{sp.get('val','-')}/{sp.get('test','-')}")
-    c4.metric("㎡ 확보", f"{man.get('n_scaled_m2','-'):,}" if man.get('n_scaled_m2') else "-")
-    st.caption(f"정상 필터: {man.get('clean_filter','-')} · 제외 {man.get('excluded',{})} · "
-               f"test 동결: {man.get('test_frozen_by','-')}")
-    st.subheader("방 종류 분포 (노드 수)")
-    st.bar_chart(_roomdist(ver, _mt(REL / ver / "manifest.json")))
+    st.subheader("버전별 상세 — 파인튜닝/평가 데이터셋")
+    detail = []
+    for v, ft_lbl, pre_lbl, stat in _LADDER:   # §1과 동일 사다리(전 버전)
+        m = _compose(v)
+        if m:   # 동결 릴리스 = 라이브
+            sp = m.get("splits", {})
+            detail.append({"버전": v, "도면(시트)": f"{m.get('n_sheets',0):,}",
+                           "세대 그래프": f"{m.get('n_graphs',0):,}",
+                           "train": f"{sp.get('train','-'):,}" if isinstance(sp.get('train'), int) else sp.get('train', '-'),
+                           "val": f"{sp.get('val','-'):,}" if isinstance(sp.get('val'), int) else sp.get('val', '-'),
+                           "test": f"{sp.get('test','-'):,}" if isinstance(sp.get('test'), int) else sp.get('test', '-'),
+                           "test 동결": m.get("test_frozen_by", "-"), "상태": stat})
+        else:   # 릴리스 전/변형 = N/A
+            detail.append({"버전": v, "도면(시트)": "—", "세대 그래프": "—",
+                           "train": "—", "val": "—", "test": "—", "test 동결": "—", "상태": stat})
+    st.table(detail)
+
+    st.subheader("방 종류 분포 (노드 수) — 버전별")
+    import pandas as _pd
+    _rd = {v: _roomdist(v, _mt(REL / v / "manifest.json")) for v in vers}   # 그래프 보유 릴리스
+    if any(_rd.values()):
+        _types = sorted({t for d in _rd.values() for t in d})
+        _df = _pd.DataFrame({v: [_rd[v].get(t, 0) for t in _types] for v in _rd}, index=_types)
+        st.bar_chart(_df)
+    else:
+        st.caption("표시할 그래프 데이터 없음")
 
     # ── 2) 핵심 결과 — 균형 소버린 벤치마크 ──
     st.header("2. 핵심 결과 — 균형 소버린 벤치마크 (동결 test 300시트, loop off)")
     _b1, _b2, _b3 = st.columns(3)
     _b1.success("🔄 **반전** — 신경망 > 규칙기반\n\n(균형 매크로)")
-    _b2.success("🌍 **RPLAN 사전학습 최선**\n\n(v3, 예비 n=1)")
+    _b2.success("🎯 **type조건 최대 레버**\n\n(매크로 0.123, 사전학습 무익)")
     _b3.success("⚖️ **규제루프** — 법규 → 100%")
     st.caption("주거형태(APT/DEH/ROW) 균형 test. **매크로 평균**(유형 동등가중)이 소버린 헤드라인 — "
                "원시분포(APT 94%)가 가리던 약형 유형을 드러냄. 여러 시드 평균.")
@@ -788,7 +797,29 @@ if which.startswith("📊"):
                           "비고": "🏆 현재 최선" if r is _best else ""})
         st.table(rowsA)
         st.caption("**반전**: 균형 매크로에선 신경망 < 규칙기반 — 규칙기반은 APT만 잘하고 DEH/ROW에서 무너짐. "
-                   "소버린(전 유형)엔 신경망 우위. **🏆 = 현재 최선 구성.**")
+                   "소버린(전 유형)엔 신경망 우위. 사전학습(RPLAN v3·결합 v4)은 무익. "
+                   "**🏆 = 사전학습/코퍼스 매트릭스 내 최선 (전체 최선은 ↓ type조건 0.123).**")
+
+    # 3-A′) type조건 효과 (typed plugin) — 별도 산출물(typed_effect.json), 단일 최대 레버
+    _te_path = REL / "typed_effect.json"
+    if _te_path.exists():
+        _te = _json.loads(_te_path.read_text(encoding="utf-8"))
+        st.subheader("type조건 효과 — 주거형태 조건화 (단일 최대 레버)")
+        rows_te = []
+        for h in _te["houses"]:
+            on_m, off_m = _te["on"][h], _te["off"][h]
+            rows_te.append({"주거형태": h,
+                            "조건 ON adj_L1↓": f"{on_m[0]:.3f}±{on_m[1]:.3f}",
+                            "조건 OFF adj_L1↓": f"{off_m[0]:.3f}±{off_m[1]:.3f}",
+                            "Δ개선": f"{off_m[0] - on_m[0]:+.3f}"})
+        _mo, _mf = _te["macro_on"], _te["macro_off"]
+        rows_te.append({"주거형태": "🏆 매크로", "조건 ON adj_L1↓": f"{_mo[0]:.3f}±{_mo[1]:.3f}",
+                        "조건 OFF adj_L1↓": f"{_mf[0]:.3f}±{_mf[1]:.3f}",
+                        "Δ개선": f"{_mf[0] - _mo[0]:+.3f}"})
+        st.table(rows_te)
+        st.caption("같은 체크포인트·시드에서 **house_type 조건만 ON/OFF**(typed plugin, ADR-0001). "
+                   "소수형태(ROW·DEH)에서 큰 이득·다수 APT 무변 → 과소대표 유형 격차를 메움. "
+                   "매크로 0.123은 전 사전학습/코퍼스 조합(최선 0.186)을 큰 폭 상회 — **전체 최선·단일 최대 레버.**")
 
     # 3-B) 전체(마이크로) · 일반화(unseen) · 법규
     evd = {(r["version"], r["generator"], r.get("pretrain"), r["loop"]): r for r in summ["eval"]}
@@ -815,7 +846,7 @@ if which.startswith("📊"):
         st.subheader("전체 test(마이크로) · 일반화(unseen) · 법규")
         st.table(rowsB)
         st.caption("V2V 확장(v2)은 충실도·법규 악화(법규 off v0~0.9→v2~0.4; 규제루프 on→100%). "
-                   "CubiCasa 사전학습 ≈ 중립. 신경망 전체 adj_L1도 규칙기반 하회(반전). v3(+RPLAN)는 학습 후 행 추가.")
+                   "사전학습(CubiCasa·RPLAN v3·결합 v4) ≈ 중립~소폭 악화(무익). 신경망 전체 adj_L1도 규칙기반 하회(반전).")
     else:
         st.info("성능 데이터 없음: `bash scripts/run_matrix.sh` 후 표시됩니다.")
 
@@ -876,7 +907,7 @@ if which.startswith("📊"):
         if len(ladder) > 1:
             st.table(ladder)
             st.caption("Neuro(신경망)=충실도(매크로↓), Symbolic(자기교정)=법규준수(off→on). "
-                       "사전학습·데이터는 §2 축. v3/v4(RPLAN/결합) 학습되면 자동 반영.")
+                       "사전학습·데이터는 §2 축(RPLAN v3·결합 v4 = 무익). type조건이 최대 레버(§2).")
         else:
             st.info("ablation 데이터 부족: 매트릭스 실행 후 표시.")
 
@@ -959,13 +990,16 @@ if which.startswith("🏗"):
     st.title("🏗 도면 생성 (시연)")
     st.caption("자연어 요구 → 제약(program) → 신경망 생성 → Symbolic 자기교정 → 위상 도면. "
                "**패널2**: 자기교정 OFF∥ON 대비 · **패널3**: 위반·수정 근거. (CPU 추론)")
-    _runs = sorted(p.parent.name for p in (_ROOT / "runs").glob("gen-v0-neural*/checkpoint.pt"))
+    _runs = sorted(p.parent.name for p in (_ROOT / "runs").glob("gen-v0-neural*/checkpoint.pt")
+                   if "set-transformer-v1-" not in p.parent.name)   # 은퇴 arch(미배치 개발본) 제외
     if not _runs:
         st.info("학습된 신경망 체크포인트 없음: `bash scripts/run_matrix.sh` 후 표시.")
     else:
         gtext = st.text_input("자연어 요구", "신혼부부 아파트 침실2 욕실1 거실 주방", key="ns_text")
         gc1, gc2, gc3 = st.columns([3, 1, 1])
-        _def = next((r for r in _runs if "noPretrain-seed42" in r), _runs[0])
+        # 기본=typed(주거형태 조건 시연 즉시 가능) → 없으면 noPretrain-seed42
+        _def = next((r for r in _runs if "typed" in r and "seed42" in r),
+                    next((r for r in _runs if "noPretrain-seed42" in r), _runs[0]))
         gck = gc1.selectbox("생성기(체크포인트)", _runs, index=_runs.index(_def), key="ns_ck")
         gseed = gc2.number_input("시드", 0, 9999, 1, key="ns_seed")
         ght = gc3.selectbox("주거형태", ["자동", "APT", "DEH", "ROW"], key="ns_house",

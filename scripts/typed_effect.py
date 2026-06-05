@@ -73,6 +73,17 @@ def run(version: str = "v0", seeds=(42, 1, 2, 3, 4)):
     cm, cs = ms(cmac); um, us = ms(umac)
     print(f"{'MACRO':6} {cm:>7.3f}±{cs:<5.3f} {um:>7.3f}±{us:<5.3f} {um - cm:>+9.3f}")
 
+    # GUI 라이브 산출물(eval_ab.json 패턴) — 대시보드 §2가 읽음. [mean, std].
+    import json
+    out = config.DATA_DIR / "releases" / "typed_effect.json"
+    payload = {"version": version, "arch": "set-transformer-typed", "seeds": list(seeds),
+               "houses": list(HOUSES),
+               "on": {h: list(ms(cond[h])) for h in HOUSES},
+               "off": {h: list(ms(unc[h])) for h in HOUSES},
+               "macro_on": list(ms(cmac)), "macro_off": list(ms(umac))}
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"\n저장(GUI): {out}")
+
 
 if __name__ == "__main__":
     try:
