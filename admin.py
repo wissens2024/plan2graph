@@ -275,9 +275,11 @@ def _record(**kw):
 
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
 st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
-which = st.sidebar.radio("메뉴", ["🧮 검수 현황(종합)", "🏢 AI-Hub 도면 검수",
-                                 "🏠 CubiCasa5k 도면검수", "📐 RPLAN 도면검수",
-                                 "📏 scale 검수/보정", "📜 법령 DB", "📊 결과 대시보드"],
+st.sidebar.caption("데이터셋 구축 ─────────")
+which = st.sidebar.radio("메뉴", ["🧮 종합 현황", "🏢 AI-Hub 검수",
+                                 "🏠 CubiCasa 검수", "📐 RPLAN 검수",
+                                 "📏 scale 보정", "📜 법령 DB",
+                                 "📊 생성 AI 결과 ━━━━"],
                           index=0, label_visibility="collapsed")
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -660,9 +662,10 @@ if which.startswith("📊"):
         st.info("동결된 버전이 없습니다. `python src/plan2graph/release.py v0` 먼저 실행.")
         st.stop()
 
-    st.title("📊 Plan2Graph 결과 대시보드")
-    st.caption("자연어 요구 → [제약그래프] → 생성AI → [배치그래프] → 규제AI 검증 → 무결 도면. "
-               "본 데이터셋·최소모델·규제검증 결과.")
+    st.title("📊 생성 AI 결과")
+    st.caption("파이프라인: 자연어 →[제약그래프]→ 생성AI →[배치그래프]→ 규제AI 검증 → 무결 도면")
+    st.markdown("**구현 현황** &nbsp; 단일세대 위상 ✅ &nbsp;·&nbsp; 단일세대 기하 🔜 &nbsp;·&nbsp; "
+                "다세대 floor-plate ⏳ (데이터갭)")
 
     ver = st.sidebar.selectbox("버전", vers, index=len(vers) - 1)
     if st.sidebar.button("🔄 새로고침(캐시 비움)"):
@@ -748,15 +751,12 @@ if which.startswith("📊"):
     st.subheader("방 종류 분포 (노드 수)")
     st.bar_chart(_roomdist(ver, _mt(REL / ver / "manifest.json")))
 
-    # ── 2) 데이터의 실제 인접확률 (= 생성 목표) ──
-    st.header("2. 공간 인접확률 (생성 목표)")
-    st.caption("AI-Hub 데이터가 실제로 가진 P(방A~방B) = 생성모델이 맞춰야 할 목표 분포"
-               "(전 버전 공통 평가기준). 거실이 허브임을 보여줌.")
-    if ev.get("top_adjacency"):
-        st.bar_chart({d["pair"]: d["p"] for d in ev["top_adjacency"]})
-
-    # ── 3) 생성 성능 — 균형 소버린 벤치마크 ──
-    st.header("3. 생성 성능 — 균형 소버린 벤치마크 (동결 test 300시트, loop off)")
+    # ── 2) 핵심 결과 — 균형 소버린 벤치마크 ──
+    st.header("2. 핵심 결과 — 균형 소버린 벤치마크 (동결 test 300시트, loop off)")
+    _b1, _b2, _b3 = st.columns(3)
+    _b1.success("🔄 **반전** — 신경망 > 규칙기반\n\n(균형 매크로)")
+    _b2.success("🌍 **RPLAN 사전학습 최선**\n\n(v3, 예비 n=1)")
+    _b3.success("⚖️ **규제루프** — 법규 → 100%")
     st.caption("주거형태(APT/DEH/ROW) 균형 test. **매크로 평균**(유형 동등가중)이 소버린 헤드라인 — "
                "원시분포(APT 94%)가 가리던 약형 유형을 드러냄. 여러 시드 평균.")
 
@@ -811,7 +811,7 @@ if which.startswith("📊"):
         st.info("성능 데이터 없음: `bash scripts/run_matrix.sh` 후 표시됩니다.")
 
     # ── 3.5) Neuro-Symbolic 구성 기여 (ablation 사다리) ──
-    st.header("3.5 Neuro-Symbolic 구성 기여 (ablation 사다리)")
+    st.header("3. 구성요소 기여 — Neuro-Symbolic ablation 사다리")
     st.caption("생성 파이프라인을 구성요소별로 누적하며 균형 매크로 기여를 본다 — "
                "각 단계의 delta = 그 요소(Neuro/Symbolic)의 기여(논문 ablation).")
     _dwl = summ.get("dwelling", [])
@@ -897,11 +897,11 @@ if which.startswith("📊"):
                       node_size=1500, font_size=11, layout="kamada"),
                       use_container_width=True)
 
-    # ── 5) A/B 비교 — 데이터버전 × 생성기 × 규제루프 (한 화면, PROJECT_PLAN §4-4·§5) ──
-    st.header("5. A/B 비교 — 데이터버전 × 생성기 × 규제루프")
-    st.caption("데이터버전 = 학습 데이터 조합(**v0**=AI-Hub · **v2**=+CubiCasa 사전학습 · **v3**=+RPLAN). "
-               "각 버전을 생성기(규칙기반 vs 신경망)·규제루프(on/off)로 같은 동결 test에서 비교. "
-               "여러 시드는 평균±표준편차. 단일 소스 = runs/index.jsonl (`python -m plan2graph.experiments agg`).")
+    # ── 5) (상세) 전체 매트릭스 — 시드·loop 전수 ──
+    st.header("5. 상세 — 전체 매트릭스 (시드·loop 전수)")
+    st.caption("핵심 요약은 §2. 여기는 **전수 원천**(데이터버전 × 생성기 × 규제루프 × 시드, loop on/off·다양성·신규성 포함). "
+               "단일 소스 = runs/index.jsonl (`python -m plan2graph.experiments agg`). "
+               "⚠️ '데이터버전'은 사전학습축 라벨(ds_version) — 코퍼스(v0 dual / v2 +V2V) 정확 구분은 §2.")
 
     def _gen_label(r):
         return f"{r['generator']}({r['arch']})" if r.get("arch") else r["generator"]
@@ -947,7 +947,7 @@ if which.startswith("📊"):
                    "RPLAN(v3)·결합(v4) 사전학습 결과는 학습 후 같은 표에 자동 추가.")
 
     # ── 6) Neuro-Symbolic 생성 시연 — 자연어→위상 + 자기교정 근거 (패널2·3) ──
-    st.header("6. Neuro-Symbolic 생성 시연 (자연어 → 위상 + 근거)")
+    st.header("6. 시연 — 자연어 → 위상 도면 + 근거 (Neuro-Symbolic)")
     st.caption("자연어 → 제약(program) → 신경망 생성 → Symbolic 자기교정. "
                "**패널2**: 자기교정 OFF∥ON 같은 입력 대비 · **패널3**: 위반·수정 근거. (CPU 추론)")
     _runs = sorted(p.parent.name for p in (ROOT / "runs").glob("gen-v0-neural*/checkpoint.pt"))
