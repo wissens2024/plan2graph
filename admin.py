@@ -716,45 +716,64 @@ if which.startswith("📊"):
     st.header("1. 데이터셋 — 동결 릴리스")
     st.caption("동결된 코퍼스 릴리스. **test는 AI-Hub 균형분으로 전 버전 공유** → 비교 기준 고정. "
                "사전학습 변형(RPLAN·결합)과 생성기·구성요소 비교는 **§2·§3**에서.")
-    # 버전 사다리(전부 표시). v0·v2=동결 릴리스(라이브 manifest), v1·v3·v4=조합 정의.
-    _LADDER = [("v0", "AI-Hub dual(클린)", "—", "✅ 릴리스"),
-               ("v1", "AI-Hub dual + 보정·복구", "—", "⏳ 보정중"),
-               ("v2", "AI-Hub dual+V2V", "CubiCasa", "✅ 릴리스"),
-               ("v3", "AI-Hub dual+V2V", "+ RPLAN", "✅ 평가완료(무익)"),
-               ("v4", "AI-Hub dual+V2V", "+ RPLAN+CubiCasa(결합)", "✅ 평가완료(무익)")]
+    # 버전 사다리(전부 표시·실데이터). (버전, 파인튜닝릴리스, 사전학습릴리스, 상태)
+    #   v3/v4는 코퍼스가 아니라 v0 파인튜닝 + 글로벌 사전학습 변형 → 파인튜닝=v0 라이브, 사전학습=global_* 라이브.
+    _LADDER = [("v0", "v0", None, "✅ 릴리스"),
+               ("v1", None, None, "⏳ 보정중"),
+               ("v2", "v2", None, "✅ 릴리스"),
+               ("v3", "v0", "global_rplan", "✅ 평가완료"),
+               ("v4", "v0", "global_all", "✅ 평가완료")]
+
+    def _fmt(x):
+        return f"{x:,}" if isinstance(x, int) else (x or "-")
+
+    def _ladder_data(ftv, prev):
+        """파인튜닝 manifest(fm) + 사전학습 소스 dict(pps) + 사전학습 그래프수(pre_n)."""
+        fm = _compose(ftv) or {}
+        fps = fm.get("per_source", {})
+        if prev:                                   # v3/v4 = 전용 글로벌 릴리스
+            pm = _compose(prev) or {}
+            pps, pre_n = pm.get("per_source", {}), pm.get("n_graphs", 0)
+        else:                                      # v2 = 자체 per_source에 사전학습 내장
+            pps = {k: fps[k] for k in ("rplan", "cubicasa5k") if k in fps}
+            pre_n = sum(pps.values())
+        return fm, fps, pps, pre_n
+
+    def _pre_label(pps):
+        return " + ".join([s for s in (f"RPLAN {pps['rplan']:,}" if pps.get("rplan") else None,
+                                       f"CubiCasa {pps['cubicasa5k']:,}" if pps.get("cubicasa5k") else None)
+                           if s]) or "—"
+
     rows1 = []
-    for v, ft_lbl, pre_lbl, stat in _LADDER:
-        m = _compose(v)
-        if m:   # 동결 릴리스 = 라이브 manifest
-            ps, psh = m.get("per_source", {}), m.get("per_source_sheets", {})
-            ai, ai_s = ps.get("aihub"), psh.get("aihub")
-            cubi, rpl = ps.get("cubicasa5k"), ps.get("rplan")
-            ft = (f"AI-Hub {ai_s:,} 도면 ({ai:,} 세대)" if ai and ai_s
-                  else (f"AI-Hub {ai:,}" if ai else ft_lbl))
-            pre = " + ".join([s for s in (f"CubiCasa {cubi:,}" if cubi else None,
-                                          f"RPLAN {rpl:,}" if rpl else None) if s]) or "—"
-            rows1.append({"버전": v, "파인튜닝(한국형 AI-Hub)": ft, "사전학습(글로벌)": pre,
-                          "세대 그래프": f"{m.get('n_graphs', 0):,}", "상태": stat})
-        else:   # 릴리스 전/변형 = 정의 라벨
-            rows1.append({"버전": v, "파인튜닝(한국형 AI-Hub)": ft_lbl,
-                          "사전학습(글로벌)": pre_lbl, "세대 그래프": "—", "상태": stat})
+    for v, ftv, prev, stat in _LADDER:
+        if ftv is None:   # v1 — 정의만(릴리스 전)
+            rows1.append({"버전": v, "파인튜닝(한국형 AI-Hub)": "AI-Hub dual + 보정·복구",
+                          "사전학습(글로벌)": "—", "세대 그래프": "—", "상태": stat}); continue
+        fm, fps, pps, _ = _ladder_data(ftv, prev)
+        ai, ai_s = fps.get("aihub"), fm.get("per_source_sheets", {}).get("aihub")
+        ft = (f"AI-Hub {ai_s:,} 도면 ({ai:,} 세대)" if ai and ai_s
+              else (f"AI-Hub {ai:,}" if ai else "—"))
+        rows1.append({"버전": v, "파인튜닝(한국형 AI-Hub)": ft, "사전학습(글로벌)": _pre_label(pps),
+                      "세대 그래프": f"{fm.get('n_graphs', 0):,}", "상태": stat})
     st.table(rows1)
-    st.subheader("버전별 상세 — 파인튜닝/평가 데이터셋")
+
+    st.subheader("버전별 상세 — 파인튜닝/사전학습/평가 데이터셋")
     detail = []
-    for v, ft_lbl, pre_lbl, stat in _LADDER:   # §1과 동일 사다리(전 버전)
-        m = _compose(v)
-        if m:   # 동결 릴리스 = 라이브
-            sp = m.get("splits", {})
-            detail.append({"버전": v, "도면(시트)": f"{m.get('n_sheets',0):,}",
-                           "세대 그래프": f"{m.get('n_graphs',0):,}",
-                           "train": f"{sp.get('train','-'):,}" if isinstance(sp.get('train'), int) else sp.get('train', '-'),
-                           "val": f"{sp.get('val','-'):,}" if isinstance(sp.get('val'), int) else sp.get('val', '-'),
-                           "test": f"{sp.get('test','-'):,}" if isinstance(sp.get('test'), int) else sp.get('test', '-'),
-                           "test 동결": m.get("test_frozen_by", "-"), "상태": stat})
-        else:   # 릴리스 전/변형 = N/A
-            detail.append({"버전": v, "도면(시트)": "—", "세대 그래프": "—",
-                           "train": "—", "val": "—", "test": "—", "test 동결": "—", "상태": stat})
+    for v, ftv, prev, stat in _LADDER:
+        if ftv is None:
+            detail.append({"버전": v, "도면(시트)": "—", "파인튜닝 세대": "—", "사전학습 그래프": "—",
+                           "train": "—", "val": "—", "test": "—", "test 동결": "—", "상태": stat}); continue
+        fm, _, _, pre_n = _ladder_data(ftv, prev)
+        sp = fm.get("splits", {})
+        detail.append({"버전": v, "도면(시트)": _fmt(fm.get("n_sheets", 0)),
+                       "파인튜닝 세대": _fmt(fm.get("n_graphs", 0)),
+                       "사전학습 그래프": _fmt(pre_n) if pre_n else "—",
+                       "train": _fmt(sp.get("train")), "val": _fmt(sp.get("val")),
+                       "test": _fmt(sp.get("test")), "test 동결": fm.get("test_frozen_by", "-"),
+                       "상태": stat})
     st.table(detail)
+    st.caption("v3·v4는 별도 코퍼스가 아니라 **v0 파인튜닝 + 글로벌 사전학습**(RPLAN/결합) 변형 — "
+               "파인튜닝·평가 split은 v0와 공유, 사전학습 그래프만 추가. 성능 판정(사전학습 무익)은 §2.")
 
     st.subheader("방 종류 분포 (노드 수) — 버전별")
     import pandas as _pd
