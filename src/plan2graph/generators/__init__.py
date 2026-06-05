@@ -48,4 +48,4 @@ def load(path) -> Generator:
 
 
 # 내장 생성기 등록(@register 발동) — 맨 끝(register 정의 후) import.
-from plan2graph.generators import baseline, set_transformer  # noqa: E402,F401
+from plan2graph.generators import baseline, set_transformer, typed  # noqa: E402,F401
