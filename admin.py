@@ -662,8 +662,10 @@ if which.startswith("📊"):
         st.info("동결된 버전이 없습니다. `python src/plan2graph/release.py v0` 먼저 실행.")
         st.stop()
 
-    st.title("📊 생성 AI 결과")
-    st.caption("파이프라인: 자연어 →[제약그래프]→ 생성AI →[배치그래프]→ 규제AI 검증 → 무결 도면")
+    st.title("📊 위상 모델 결과")
+    st.caption("위상 생성 AI 비교(데이터셋 v0/v2/v3/v4 · 생성기 · 구성요소, 동결 벤치마크). "
+               "**이 페이지 범위**: 자연어 →[제약그래프]→ 생성AI →**[배치그래프 = 위상]**→ 규제검증 ✅ "
+               "&nbsp; ┄ &nbsp; 무결 도면(기하 렌더)은 🏗 도면 생성 / 향후.")
     st.markdown("**구현 현황** &nbsp; 단일세대 위상 ✅ &nbsp;·&nbsp; 단일세대 기하 🔜 &nbsp;·&nbsp; "
                 "다세대 floor-plate ⏳ (데이터갭)")
 
@@ -716,28 +718,22 @@ if which.startswith("📊"):
     def _pm(m, s):
         return "—" if m is None else (f"{m:.3f}±{s:.3f}" if s else f"{m:.3f}")
 
-    # ── 1) 데이터셋 — 버전별 학습 데이터 구성 ──
-    st.header("1. 데이터셋 — 버전별 학습 데이터 구성")
-    st.caption("버전 = 학습에 넣은 데이터 조합(누적 아닌 조합 실험). "
-               "**test는 AI-Hub 동결분으로 전 버전 공유** → 비교 기준 고정. 재학습 시 최종값만 남김.")
-    _PLAN = {"v1": {"ft": "AI-Hub + 보정(확장)", "pre": "—", "res": "⏳ 보정 진행중"},
-             "v3": {"ft": "AI-Hub(dual+V2V)", "pre": "+ RPLAN 80,371", "res": "⏳ 학습대기"}}
+    # ── 1) 데이터셋 — 동결 릴리스(코퍼스) ──
+    st.header("1. 데이터셋 — 동결 릴리스")
+    st.caption("동결된 코퍼스 릴리스. **test는 AI-Hub 균형분으로 전 버전 공유** → 비교 기준 고정. "
+               "사전학습 변형(RPLAN·결합)과 생성기·구성요소 비교는 **§2·§3**에서.")
     rows1 = []
-    for v in ("v0", "v1", "v2", "v3"):
-        m = _compose(v)
-        if m:    # 동결된 버전 = 실제 manifest(라이브)
-            ps, psh = m.get("per_source", {}), m.get("per_source_sheets", {})
-            ai, ai_s = ps.get("aihub"), psh.get("aihub")
-            cubi, rpl = ps.get("cubicasa5k"), ps.get("rplan")
-            ft = (f"AI-Hub {ai_s:,} 도면 ({ai:,} 세대)" if ai and ai_s
-                  else (f"AI-Hub {ai:,}" if ai else "—"))
-            pre = " + ".join([s for s in (f"CubiCasa {cubi:,}" if cubi else None,
-                                          f"RPLAN {rpl:,}" if rpl else None) if s]) or "—"
-            rows1.append({"버전": v, "파인튜닝(한국형)": ft, "사전학습(글로벌)": pre, "결과": "✅ 완료"})
-        else:    # 미동결 버전 = 계획 표기
-            pl = _PLAN.get(v, {})
-            rows1.append({"버전": v, "파인튜닝(한국형)": pl.get("ft", "—"),
-                          "사전학습(글로벌)": pl.get("pre", "—"), "결과": pl.get("res", "⏳")})
+    for v in vers:   # 실제 동결 릴리스만(라이브). v3/v4=사전학습 변형은 §2 성능표.
+        m = _manifest(v, _mt(REL / v / "manifest.json"))
+        ps, psh = m.get("per_source", {}), m.get("per_source_sheets", {})
+        ai, ai_s = ps.get("aihub"), psh.get("aihub")
+        cubi, rpl = ps.get("cubicasa5k"), ps.get("rplan")
+        ft = (f"AI-Hub {ai_s:,} 도면 ({ai:,} 세대)" if ai and ai_s
+              else (f"AI-Hub {ai:,}" if ai else "—"))
+        pre = " + ".join([s for s in (f"CubiCasa {cubi:,}" if cubi else None,
+                                      f"RPLAN {rpl:,}" if rpl else None) if s]) or "—"
+        rows1.append({"버전": v, "파인튜닝(한국형 AI-Hub)": ft, "사전학습(글로벌)": pre,
+                      "세대 그래프": f"{m.get('n_graphs', 0):,}"})
     st.table(rows1)
     st.subheader(f"선택 버전 상세 — {ver} (파인튜닝/평가 데이터셋)")
     c1, c2, c3, c4 = st.columns(4)
@@ -781,8 +777,8 @@ if which.startswith("📊"):
                           "ROW": _f3(r.get("ROW")), "매크로 adj_L1↓": _f3(r.get("macro")),
                           "비고": "🏆 현재 최선" if r is _best else ""})
         st.table(rowsA)
-        st.caption("**반전**: 균형 매크로에선 신경망 < 규칙기반(예: v0 0.188 vs 0.205) — "
-                   "규칙기반은 APT만 잘하고 DEH/ROW에서 무너짐. 소버린(전 유형)엔 신경망 우위.")
+        st.caption("**반전**: 균형 매크로에선 신경망 < 규칙기반 — 규칙기반은 APT만 잘하고 DEH/ROW에서 무너짐. "
+                   "소버린(전 유형)엔 신경망 우위. **🏆 = 현재 최선 구성.**")
 
     # 3-B) 전체(마이크로) · 일반화(unseen) · 법규
     evd = {(r["version"], r["generator"], r.get("pretrain"), r["loop"]): r for r in summ["eval"]}
@@ -870,7 +866,7 @@ if which.startswith("📊"):
         if len(ladder) > 1:
             st.table(ladder)
             st.caption("Neuro(신경망)=충실도(매크로↓), Symbolic(자기교정)=법규준수(off→on). "
-                       "사전학습은 별개 축(§3). v3/v4(RPLAN/결합) 학습되면 사다리에 자동 반영.")
+                       "사전학습·데이터는 §2 축. v3/v4(RPLAN/결합) 학습되면 자동 반영.")
         else:
             st.info("ablation 데이터 부족: 매트릭스 실행 후 표시.")
 
