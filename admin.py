@@ -712,17 +712,17 @@ if which.startswith("📊"):
     def _pm(m, s):
         return "—" if m is None else (f"{m:.3f}±{s:.3f}" if s else f"{m:.3f}")
 
-    # ── 1) 데이터셋 — 동결 릴리스(코퍼스) ──
-    st.header("1. 데이터셋 — 동결 릴리스")
-    st.caption("동결된 코퍼스 릴리스. **test는 AI-Hub 균형분으로 전 버전 공유** → 비교 기준 고정. "
-               "사전학습 변형(RPLAN·결합)과 생성기·구성요소 비교는 **§2·§3**에서.")
+    # ── 1) 데이터셋 — 버전 사다리(동결 릴리스 + 사전학습 변형) ──
+    st.header("1. 데이터셋 — 버전 사다리")
+    st.caption("**동결 릴리스**(v0·v2: 레시피로 재현되는 코퍼스) + **사전학습 변형**(v3·v4: v0 위에 글로벌 사전학습만 얹음). "
+               "test는 AI-Hub 균형분으로 전 버전 공유 → 비교 기준 고정. 성능 비교는 **§2·§3**.")
     # 버전 사다리(전부 표시·실데이터). (버전, 파인튜닝릴리스, 사전학습릴리스, 상태)
     #   v3/v4는 코퍼스가 아니라 v0 파인튜닝 + 글로벌 사전학습 변형 → 파인튜닝=v0 라이브, 사전학습=global_* 라이브.
-    _LADDER = [("v0", "v0", None, "✅ 릴리스"),
-               ("v1", None, None, "⏳ 보정중"),
-               ("v2", "v2", None, "✅ 릴리스"),
-               ("v3", "v0", "global_rplan", "✅ 평가완료"),
-               ("v4", "v0", "global_all", "✅ 평가완료")]
+    _LADDER = [("v0", "v0", None, "동결 릴리스"),
+               ("v1", None, None, "보정중"),
+               ("v2", "v2", None, "동결 릴리스"),
+               ("v3", "v0", "global_rplan", "사전학습 변형"),
+               ("v4", "v0", "global_all", "사전학습 변형")]
 
     def _fmt(x):
         return f"{x:,}" if isinstance(x, int) else (x or "-")
@@ -748,13 +748,15 @@ if which.startswith("📊"):
     for v, ftv, prev, stat in _LADDER:
         if ftv is None:   # v1 — 정의만(릴리스 전)
             rows1.append({"버전": v, "파인튜닝(한국형 AI-Hub)": "AI-Hub dual + 보정·복구",
-                          "사전학습(글로벌)": "—", "세대 그래프": "—", "상태": stat}); continue
-        fm, fps, pps, _ = _ladder_data(ftv, prev)
+                          "사전학습(글로벌)": "—", "총 세대 그래프": "—", "상태": stat}); continue
+        fm, fps, pps, pre_n = _ladder_data(ftv, prev)
         ai, ai_s = fps.get("aihub"), fm.get("per_source_sheets", {}).get("aihub")
         ft = (f"AI-Hub {ai_s:,} 도면 ({ai:,} 세대)" if ai and ai_s
               else (f"AI-Hub {ai:,}" if ai else "—"))
+        # 총 세대 = 파인튜닝 + 사전학습. v2는 n_graphs에 사전학습 내장(prev=None)이라 중복합산 방지.
+        total = fm.get("n_graphs", 0) + (pre_n if prev else 0)
         rows1.append({"버전": v, "파인튜닝(한국형 AI-Hub)": ft, "사전학습(글로벌)": _pre_label(pps),
-                      "세대 그래프": f"{fm.get('n_graphs', 0):,}", "상태": stat})
+                      "총 세대 그래프": f"{total:,}", "상태": stat})
     st.table(rows1)
 
     st.subheader("버전별 상세 — 파인튜닝/사전학습/평가 데이터셋")
