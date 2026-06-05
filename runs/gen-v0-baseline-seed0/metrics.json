@@ -5,10 +5,10 @@
       "generator": "baseline",
       "reg_loop": "off",
       "integrity": 1.0,
-      "legal": 0.94,
-      "adj_L1": 0.069,
+      "legal": 0.895,
+      "adj_L1": 0.138,
       "diversity": 1.0,
-      "novelty": 1.0
+      "novelty": 0.998
     },
     {
       "version": "v0",
@@ -16,9 +16,9 @@
       "reg_loop": "on",
       "integrity": 1.0,
       "legal": 1.0,
-      "adj_L1": 0.069,
+      "adj_L1": 0.138,
       "diversity": 1.0,
-      "novelty": 1.0
+      "novelty": 0.998
     }
   ]
 }

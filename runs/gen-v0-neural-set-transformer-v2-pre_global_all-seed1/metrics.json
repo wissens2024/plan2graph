@@ -1,0 +1,24 @@
+{
+  "rows": [
+    {
+      "version": "v0",
+      "generator": "neural",
+      "reg_loop": "off",
+      "integrity": 1.0,
+      "legal": 0.895,
+      "adj_L1": 0.102,
+      "diversity": 0.998,
+      "novelty": 0.989
+    },
+    {
+      "version": "v0",
+      "generator": "neural",
+      "reg_loop": "on",
+      "integrity": 1.0,
+      "legal": 1.0,
+      "adj_L1": 0.102,
+      "diversity": 0.998,
+      "novelty": 0.989
+    }
+  ]
+}

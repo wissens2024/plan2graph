@@ -5,10 +5,10 @@
       "generator": "neural",
       "reg_loop": "off",
       "integrity": 1.0,
-      "legal": 0.94,
-      "adj_L1": 0.063,
-      "diversity": 0.988,
-      "novelty": 0.977
+      "legal": 0.895,
+      "adj_L1": 0.087,
+      "diversity": 0.998,
+      "novelty": 0.966
     },
     {
       "version": "v0",
@@ -16,9 +16,9 @@
       "reg_loop": "on",
       "integrity": 1.0,
       "legal": 1.0,
-      "adj_L1": 0.063,
-      "diversity": 0.988,
-      "novelty": 0.977
+      "adj_L1": 0.087,
+      "diversity": 0.998,
+      "novelty": 0.966
     }
   ]
 }

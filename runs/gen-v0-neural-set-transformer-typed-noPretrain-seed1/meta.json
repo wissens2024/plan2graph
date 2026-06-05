@@ -1,0 +1,133 @@
+{
+  "created": "2026-06-05T18:32:17",
+  "git_commit": "107ef372ba7c2a2b78906e9306a9c531e806cd3f",
+  "env": {
+    "python": "3.11.15",
+    "platform": "linux",
+    "host": "ju-System-Product-Name",
+    "torch": "2.5.1+cu121",
+    "cuda": true,
+    "gpu": "NVIDIA GeForce RTX 3080"
+  },
+  "run_id": "gen-v0-neural-set-transformer-typed-noPretrain-seed1",
+  "kind": "train",
+  "condition": {
+    "task": "generator",
+    "generator": "neural",
+    "arch": "set-transformer-typed",
+    "data_version": "v0",
+    "pretrain": null,
+    "finetune": "v0",
+    "epochs": 100,
+    "pretrain_epochs": null,
+    "lr": 0.001,
+    "seed": 1,
+    "batch_size": 64,
+    "house_drop": 0.3,
+    "houses": [
+      "APT",
+      "DEH",
+      "ROW",
+      "ANY"
+    ]
+  },
+  "loss_curve": {
+    "finetune": [
+      [
+        0,
+        1.1127
+      ],
+      [
+        5,
+        0.9464
+      ],
+      [
+        10,
+        0.8986
+      ],
+      [
+        15,
+        0.8569
+      ],
+      [
+        20,
+        0.8348
+      ],
+      [
+        25,
+        0.8189
+      ],
+      [
+        30,
+        0.8073
+      ],
+      [
+        35,
+        0.793
+      ],
+      [
+        40,
+        0.8009
+      ],
+      [
+        45,
+        0.779
+      ],
+      [
+        50,
+        0.7757
+      ],
+      [
+        55,
+        0.771
+      ],
+      [
+        60,
+        0.7691
+      ],
+      [
+        65,
+        0.7591
+      ],
+      [
+        70,
+        0.7575
+      ],
+      [
+        75,
+        0.7622
+      ],
+      [
+        80,
+        0.755
+      ],
+      [
+        85,
+        0.75
+      ],
+      [
+        90,
+        0.7451
+      ],
+      [
+        95,
+        0.7438
+      ],
+      [
+        99,
+        0.7379
+      ]
+    ]
+  },
+  "data": {
+    "version": "v0",
+    "manifest_sha": "f4a90fa4c7aa8755",
+    "n_train": 5947,
+    "sha_train": "3f9b056f5f05",
+    "n_val": 689,
+    "sha_val": "941659976f3d",
+    "n_test": 465,
+    "sha_test": "9bfdb4d6195b"
+  },
+  "checkpoint": "checkpoint.pt"
+}

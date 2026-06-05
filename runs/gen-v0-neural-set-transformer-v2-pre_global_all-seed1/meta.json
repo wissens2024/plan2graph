@@ -1,0 +1,172 @@
+{
+  "created": "2026-06-05T19:45:58",
+  "git_commit": "107ef372ba7c2a2b78906e9306a9c531e806cd3f",
+  "env": {
+    "python": "3.11.15",
+    "platform": "linux",
+    "host": "ju-System-Product-Name",
+    "torch": "2.5.1+cu121",
+    "cuda": true,
+    "gpu": "NVIDIA GeForce RTX 3080"
+  },
+  "run_id": "gen-v0-neural-set-transformer-v2-pre_global_all-seed1",
+  "kind": "train",
+  "condition": {
+    "task": "generator",
+    "generator": "neural",
+    "arch": "set-transformer-v2",
+    "data_version": "v0",
+    "pretrain": "global_all",
+    "finetune": "v0",
+    "epochs": 100,
+    "pretrain_epochs": 50,
+    "lr": 0.001,
+    "seed": 1,
+    "batch_size": 64
+  },
+  "loss_curve": {
+    "pretrain": [
+      [
+        0,
+        0.5104
+      ],
+      [
+        5,
+        0.4822
+      ],
+      [
+        10,
+        0.4908
+      ],
+      [
+        15,
+        0.4799
+      ],
+      [
+        20,
+        0.4799
+      ],
+      [
+        25,
+        0.4792
+      ],
+      [
+        30,
+        0.4796
+      ],
+      [
+        35,
+        0.4782
+      ],
+      [
+        40,
+        0.4788
+      ],
+      [
+        45,
+        0.4784
+      ],
+      [
+        49,
+        0.4782
+      ]
+    ],
+    "finetune": [
+      [
+        0,
+        2.0083
+      ],
+      [
+        5,
+        1.3009
+      ],
+      [
+        10,
+        1.1399
+      ],
+      [
+        15,
+        1.0505
+      ],
+      [
+        20,
+        0.9839
+      ],
+      [
+        25,
+        0.9125
+      ],
+      [
+        30,
+        0.8879
+      ],
+      [
+        35,
+        0.8663
+      ],
+      [
+        40,
+        0.8442
+      ],
+      [
+        45,
+        0.8335
+      ],
+      [
+        50,
+        0.8254
+      ],
+      [
+        55,
+        0.818
+      ],
+      [
+        60,
+        0.8061
+      ],
+      [
+        65,
+        0.7991
+      ],
+      [
+        70,
+        0.7946
+      ],
+      [
+        75,
+        0.7935
+      ],
+      [
+        80,
+        0.7888
+      ],
+      [
+        85,
+        0.7807
+      ],
+      [
+        90,
+        0.776
+      ],
+      [
+        95,
+        0.7742
+      ],
+      [
+        99,
+        0.7716
+      ]
+    ]
+  },
+  "data": {
+    "version": "v0",
+    "manifest_sha": "f4a90fa4c7aa8755",
+    "n_train": 5947,
+    "sha_train": "3f9b056f5f05",
+    "n_val": 689,
+    "sha_val": "941659976f3d",
+    "n_test": 465,
+    "sha_test": "9bfdb4d6195b"
+  },
+  "checkpoint": "checkpoint.pt"
+}
