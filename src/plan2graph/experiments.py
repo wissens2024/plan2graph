@@ -239,7 +239,7 @@ def agg_summary() -> dict:
     반환: {"eval":[{config,loop,seeds,adj_L1_mean,adj_L1_std,integrity,legal,diversity,novelty}],
            "generalization":[{config,subset,seeds,adj_L1_mean,adj_L1_std}]}."""
     rows = load_index()
-    ev, gn = defaultdict(list), defaultdict(list)
+    ev, gn, dw = defaultdict(list), defaultdict(list), defaultdict(lambda: defaultdict(list))
     for r in rows:
         if RETIRED_ARCH in (r.get("run_id") or ""):   # 미배치 개발본 = 결과 미채택
             continue
@@ -247,6 +247,8 @@ def agg_summary() -> dict:
             ev[(_config_key(r["run_id"]), r.get("reg_loop"))].append(r)
         elif r.get("kind") == "generalization":
             gn[(_config_key(r["run_id"]), r.get("subset"))].append(r)
+        elif r.get("kind") == "dwelling":
+            dw[_config_key(r["run_id"])][r.get("house_type")].append(r.get("adj_L1"))
     out_ev = []
     for (cfg, loop), rs in sorted(ev.items()):
         am, asd, n = _mean_std([r.get("adj_L1") for r in rs])
@@ -262,18 +264,30 @@ def agg_summary() -> dict:
         am, asd, n = _mean_std([r.get("adj_L1") for r in rs])
         out_gn.append({"config": cfg, **parse_config(cfg), "subset": sub, "seeds": n,
                        "adj_L1_mean": am, "adj_L1_std": asd})
-    return {"eval": out_ev, "generalization": out_gn}
+    # dwelling: 주거형태(APT/DEH/ROW)별 + 매크로 평균(동등가중) — 소버린 헤드라인.
+    out_dw = []
+    for cfg, houses in sorted(dw.items()):
+        per = {h: _mean_std(houses.get(h, []))[0] for h in ("APT", "DEH", "ROW")}
+        vals = [per[h] for h in ("APT", "DEH", "ROW") if per[h] is not None]
+        macro = statistics.mean(vals) if vals else None
+        out_dw.append({"config": cfg, **parse_config(cfg),
+                       "APT": per["APT"], "DEH": per["DEH"], "ROW": per["ROW"],
+                       "macro": macro,
+                       "seeds": max((len(v) for v in houses.values()), default=0)})
+    return {"eval": out_ev, "generalization": out_gn, "dwelling": out_dw}
 
 
 def print_agg():
     """시드 집계 — 동일 조건의 여러 시드를 평균±표준편차로. '차이가 노이즈인가' 판정."""
     rows = load_index()
-    ev, gn = defaultdict(list), defaultdict(list)
+    ev, gn, dw = defaultdict(list), defaultdict(list), defaultdict(lambda: defaultdict(list))
     for r in rows:
         if r.get("kind") == "eval":
             ev[(_config_key(r["run_id"]), r.get("reg_loop"))].append(r)
         elif r.get("kind") == "generalization":
             gn[(_config_key(r["run_id"]), r.get("subset"))].append(r)
+        elif r.get("kind") == "dwelling":
+            dw[_config_key(r["run_id"])][r.get("house_type")].append(r.get("adj_L1"))
     print("=== [eval] 전체 test (시드 집계) ===")
     print(f"{'config':50} {'loop':4} {'seeds':>5} {'adj_L1(mean±std)':>18} {'legal':>6} {'div':>6}")
     for (cfg, loop), rs in sorted(ev.items()):
@@ -286,6 +300,15 @@ def print_agg():
     for (cfg, sub), rs in sorted(gn.items(), key=lambda x: (x[0][0], x[0][1])):
         a, n = _ms([r.get("adj_L1") for r in rs])
         print(f"{cfg[:50]:50} {str(sub):7} {n:>5} {a:>18}")
+    print("\n=== [dwelling] 주거형태별 adj_L1 + 매크로(동등가중) — 소버린 헤드라인 ===")
+    print(f"{'config':50} {'APT':>7} {'DEH':>7} {'ROW':>7} {'MACRO':>8}")
+    for cfg, houses in sorted(dw.items()):
+        per = {h: _mean_std(houses.get(h, []))[0] for h in ("APT", "DEH", "ROW")}
+        vals = [per[h] for h in ("APT", "DEH", "ROW") if per[h] is not None]
+        macro = statistics.mean(vals) if vals else None
+        cells = [(f"{per[h]:.3f}" if per[h] is not None else "—") for h in ("APT", "DEH", "ROW")]
+        print(f"{cfg[:50]:50} {cells[0]:>7} {cells[1]:>7} {cells[2]:>7} "
+              f"{(f'{macro:.3f}' if macro is not None else '—'):>8}")
 
 
 if __name__ == "__main__":

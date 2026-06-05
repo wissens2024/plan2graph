@@ -110,6 +110,34 @@ def ledger_path(source_id: str) -> Path:
     return _LEGACY_QUEUE_ROOT.get(source_id, sroot) / "ledger.csv"
 
 
+def manifest_path(source_id: str) -> Path:
+    """원천 처분 manifest(JSONL). staging/<id>/manifest.jsonl."""
+    return staging_root(source_id) / "manifest.jsonl"
+
+
+def provenance_map(source_id: str) -> dict[str, str]:
+    """graph_id → 라벨 출처·품질(manifest.reason). 버전 레시피의 provenance 필터용.
+
+    DATASET_DESIGN §5: recipe의 status/role만으론 v0(dual)·v2(+V2V)를 구분 못 한다
+    (staging success가 V2V 복구분을 포함하므로). manifest.reason을 조인해 선언적 구분.
+    manifest 없는 출처(cubicasa/rplan)는 빈 dict → provenance 필터는 no-op.
+    """
+    import json
+    p = manifest_path(source_id)
+    out: dict[str, str] = {}
+    if p.is_file():
+        with p.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                d = json.loads(line)
+                r = d.get("reason")
+                for g in (d.get("graph_ids") or []):
+                    out[g] = r
+    return out
+
+
 if __name__ == "__main__":
     try:
         sys.stdout.reconfigure(encoding="utf-8")

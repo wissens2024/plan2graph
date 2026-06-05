@@ -60,13 +60,15 @@
 | 경로 | 역할 | 내용 |
 |---|---|---|
 | `staging/aihub/graphs` | AI-Hub **통합 작업본** | 23,679 그래프(=고유도면 10,921 다세대분할). provenance: direct 7,192 / v2v 16,214 / 중복라벨복구 273. graphs_dir("aihub")가 이걸 가리킴 |
-| `staging/aihub/manifest.jsonl` | AI-Hub **원본 회계** | 25,278줄(§4) |
+| `staging/aihub/manifest.jsonl` | AI-Hub **원본 회계** | 43,219줄(§4) |
 | `staging/cubicasa5k/graphs` | CubiCasa 작업본 | 5,000 |
 | `staging/rplan/graphs` | RPLAN 작업본 | 80,788 |
-| `releases/v0` | **동결 벤치마크(평가)** | dual 5,648 + **고정 test split**(모델 비교 기준, 불변). 보존 필수 |
+| `releases/v0` | **동결 벤치마크(클린 dual)** | 7,101 그래프(dual+dedup, V2V 제외). split **train 5,947 / val 689 / test 465**. recipe=`recipes/v0.json` |
+| `releases/v2` | **동결(dual+V2V + CubiCasa 사전학습)** | 23,856 그래프(aihub 20,828 + cubicasa 3,028 pretrain). split **train 21,075 / val 2,316 / test 465**. recipe=`recipes/v2.json` |
 
+- **동결 test = 균형 소버린 벤치마크(2026-06-05 재정의)**: AI-Hub dual 한정(RPLAN/CubiCasa=사전학습전용·test 미포함). **APT/DEH/ROW 각 100시트 = 300시트(465그래프: APT 230·DEH 108·ROW 127)**. 매크로 평균 헤드라인 — 원시분포(APT 94%)가 가리던 DEH/ROW 약점을 드러냄. 옛 APT편중(489/14/15, 240시트)을 교체. v0·v2 공유(비교 타당), 누수 0. 재현: [define_frozen_test.py](scripts/define_frozen_test.py).
+- **v0·v2 재freeze(2026-06-05)**: 옛 동결이 현재 staging보다 stale·v0/v2 미구분이라, manifest provenance 필터(`recipes/*.json`)로 현재 staging에서 재동결. v0=dual만, v2=dual+V2V. [[dataset-version-scheme]].
 - **`processed/` 은퇴(제거)**: ⚠격리/✅채택 검수는 AI-Hub 검수의 **🔗 그래프검수**(staging/aihub + ledger)로 흡수, scale_ocr·scale 메뉴는 `staging/aihub`를 읽게 전환. 백업: `/tmp/processed_retired_*`.
-- **`releases/v2` 삭제됨**(미완 스모크 빌드. V2V 그래프는 staging/aihub에 100% 보존 확인 후 제거).
 - **보존 절대**: 원본(`external/`·`aihub_raw/`)·V2V 산출물(`data/v2v`). data/ = external·interim·releases·staging·v2v.
 - **scale**: AI-Hub=OCR(📏에서 보정, staging 적용), CubiCasa=SVG 치수 자동(95%, ㎡), RPLAN=없음. RPLAN 렌더는 rBoundary(실제 방 폴리곤).
 

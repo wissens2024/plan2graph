@@ -27,6 +27,19 @@ SPACE_CLASSES = list(config.SPACE_CLASSES)
 STRUCT_CLASSES = list(config.STRUCTURE_CLASSES)
 
 
+def _weight_fingerprint(path: str) -> dict:
+    """가중치 파일 핀: 절대경로 + sha256[:16] + 크기 + mtime. 예측물↔가중치 연결용."""
+    import hashlib
+    p = Path(path)
+    info = {"path": str(p.resolve()) if p.exists() else str(path), "exists": p.exists()}
+    if p.exists():
+        b = p.read_bytes()
+        info.update(sha256=hashlib.sha256(b).hexdigest()[:16], bytes=len(b),
+                    mtime=__import__("datetime").datetime.fromtimestamp(
+                        p.stat().st_mtime).isoformat(timespec="seconds"))
+    return info
+
+
 # ── 좌표 역변환 (export의 크롭+리사이즈를 되돌림) — 단위검증 대상 ──
 def reverse_poly(xy, cx0: float, cy0: float, cw: float, nw: float,
                  ch: float, nh: float):
@@ -109,7 +122,7 @@ def run(spa_weights: str, str_weights: str, split: str = "Training",
     import io
     from ultralytics import YOLO
     from PIL import Image
-    from plan2graph import review, unpack
+    from plan2graph import review, unpack, experiments as exp
     from plan2graph.coco import load_coco_bytes
 
     models = {"SPA": YOLO(spa_weights), "STR": YOLO(str_weights)}
@@ -117,6 +130,11 @@ def run(spa_weights: str, str_weights: str, split: str = "Training",
     idx = review.build_indices((split,))
     fmap = unpack.fingerprint_label_map(split=split)
     PRED_DIR.mkdir(parents=True, exist_ok=True)
+    # ── provenance: 어느 가중치·conf·git으로 예측했나(예측물↔모델 연결, runs ledger 등재) ──
+    wfp = {"SPA": _weight_fingerprint(spa_weights), "STR": _weight_fingerprint(str_weights)}
+    git = exp.git_commit()
+    stamp = {"spa": Path(spa_weights).name, "str": Path(str_weights).name,
+             "conf": conf, "imgsz": imgsz, "git": git[:8]}
     n = 0
     stat = {"SPA->STR": 0, "STR->SPA": 0}
     for fp, labels in fmap.items():
@@ -140,6 +158,7 @@ def run(spa_weights: str, str_weights: str, split: str = "Training",
         if not preds:
             continue
         coco = to_coco(preds, img.size[0], img.size[1], labels[have], miss)
+        coco["_v2v"] = {**stamp, "weights": stamp[miss.lower()], "direction": f"{have}->{miss}"}
         (PRED_DIR / f"{miss}_{labels[have]}.json").write_text(
             json.dumps(coco, ensure_ascii=False), encoding="utf-8")
         stat[f"{have}->{miss}"] += 1
@@ -148,7 +167,20 @@ def run(spa_weights: str, str_weights: str, split: str = "Training",
             break
         if n % 200 == 0:
             print(f"  ...{n} 예측")
-    return {"predicted": n, "detail": stat, "out": str(PRED_DIR)}
+    # ── 디렉터리 provenance + runs 원장 등재(생성모델과 동일 ledger) ──
+    prov = {"kind": "v2v_infer", "created": exp._now(), "git_commit": git,
+            "env": exp.env_provenance(), "split": split, "imgsz": imgsz, "conf": conf,
+            "device": device, "only": only, "limit": limit,
+            "weights": wfp, "predicted": n, "detail": stat}
+    (PRED_DIR / "_provenance.json").write_text(
+        json.dumps(prov, ensure_ascii=False, indent=2), encoding="utf-8")
+    exp.append_index({"kind": "v2v_infer", "git_commit": git, "split": split,
+                      "conf": conf, "imgsz": imgsz, "only": only,
+                      "spa_weights": wfp["SPA"].get("sha256"),
+                      "str_weights": wfp["STR"].get("sha256"),
+                      "predicted": n, **stat})
+    return {"predicted": n, "detail": stat, "out": str(PRED_DIR),
+            "provenance": str(PRED_DIR / "_provenance.json")}
 
 
 def _self_test():

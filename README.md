@@ -44,7 +44,7 @@ plan2graph/
 ├─ data/                       # 데이터 (대부분 .gitignore, 서버 보관)
 │   ├─ raw/{aihub,cubicasa5k,rplan}      # 원본 다운로드
 │   ├─ staging/{aihub,cubicasa5k,rplan}  # 작업본: graphs + manifest + ledger
-│   ├─ releases/{v0,v2}        # 동결 릴리스(v0=벤치마크, v2=+CubiCasa 사전학습; test v0 공유)
+│   ├─ releases/{v0,v2}        # 동결 릴리스(v0=클린 dual, v2=dual+V2V+CubiCasa사전학습; 균형 test 공유)
 │   └─ interim/  v2v/
 └─ runs/                       # 실험 원장(provenance·비교표)
 ```
@@ -70,7 +70,7 @@ bash scripts/start_dashboard.sh        # → https://plan2graph.aines.kr/  (로�
 
 | 스크립트 | 하는 일 |
 |---|---|
-| **`run_matrix.sh`** | 신뢰성 매트릭스: `noPretrain×5시드` + `preCubicasa×5시드`. 각 학습 직후 eval+일반화 진단을 `runs/index.jsonl`에 누적. `CUDA_VISIBLE_DEVICES=1` 고정. 끝나면 `python -m plan2graph.experiments agg`로 평균±표준편차 → **'시드 노이즈' 판정**. |
+| **`run_matrix.sh [버전]`** | 신뢰성 매트릭스: `noPretrain×5시드` + `preCubicasa×5시드`(버전 인자, 기본 v0). 각 학습 직후 eval+일반화+거주형태(dwelling) 진단을 `runs/index.jsonl`에 누적. 시드별 체크포인트(`gen_<v>_seed<s>.pt`)로 평가. `CUDA_VISIBLE_DEVICES=1` 고정. 끝나면 `python -m plan2graph.experiments agg` → 평균±표준편차 **'시드 노이즈' 판정**. |
 
 ### 데이터 업로드·배치 (노트북 → 서버, scp 재시도+크기검증)
 
@@ -86,6 +86,7 @@ bash scripts/start_dashboard.sh        # → https://plan2graph.aines.kr/  (로�
 | 스크립트 | 하는 일 |
 |---|---|
 | `verify_dedup.py` | CRC32+크기 지문 기반 **'고유 도면' dedup 정확성** 검증(충돌 0 증명). |
+| `define_frozen_test.py` | **균형 소버린 frozen test** 정의(AI-Hub dual, APT/DEH/ROW 각 K=100시트). 결정적 재현 → `releases/_frozen_test.json`. |
 | `_render_test.py` | 카테고리별 오버레이 썸네일 1장씩 PNG 저장(육안 확인). |
 | `_inject_pwindow.py` | 기존 `gen_<ver>.pt` 체크포인트에 `p_window`(타입별 창 보유 확률)만 주입. |
 

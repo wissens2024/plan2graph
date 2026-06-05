@@ -29,6 +29,17 @@ from plan2graph.topology import EXTERIOR  # noqa: E402
 CONNECT = mb.CONNECT_VIAS
 
 
+def _ckpt_path(version: str, seed: int | None = None) -> Path:
+    """모델 체크포인트 경로. seed 지정 시 시드별 아티팩트(gen_<v>_seed<s>.pt),
+    없거나 미존재면 'latest' 포인터(gen_<v>.pt)로 폴백. (시드 표기 — train_gen 참조)"""
+    d = ROOT / "models"
+    if seed is not None:
+        p = d / f"gen_{version}_seed{seed}.pt"
+        if p.exists():
+            return p
+    return d / f"gen_{version}.pt"
+
+
 def _metrics(gen_fn, test: list[dict], train_sigs: set, use_loop: bool,
              adj_score=None) -> dict:
     n_valid = n_legal = 0
@@ -75,7 +86,8 @@ def _record(run_id: str, version: str, generator: str, pretrain, rows: list):
                           "git_commit": sha, **r})
 
 
-def evaluate_version(version: str, n_test: int | None = None) -> list[dict]:
+def evaluate_version(version: str, n_test: int | None = None,
+                     seed: int | None = None) -> list[dict]:
     train = mb._load_split(version, "train")
     test = mb._load_split(version, "test")
     if n_test:
@@ -95,7 +107,7 @@ def evaluate_version(version: str, n_test: int | None = None) -> list[dict]:
         rows.append(row); brows.append(row)
     _record(exp.make_run_id("baseline", version, None, 0), version, "baseline", None, brows)
     # 신경망(체크포인트 있으면) — 프로비넌스(run_id·pretrain)는 체크포인트에서 읽음
-    ckpt = ROOT / "models" / f"gen_{version}.pt"
+    ckpt = _ckpt_path(version, seed)
     if ckpt.exists():
         try:
             from plan2graph.train_gen import NeuralGenerator
@@ -119,7 +131,8 @@ def _neural_gen(ng, temperature: float):
     return lambda program, rng: ng.generate(program, rng, temperature=temperature)
 
 
-def sweep_temperature(version: str, temps: list, select_split: str = "val") -> None:
+def sweep_temperature(version: str, temps: list, select_split: str = "val",
+                      seed: int | None = None) -> None:
     """재학습 없이 생성 온도 T 스윕 — val에서 선택 → test 1회 측정(누수 방지).
     val 스윕은 runs/<base>/temp_sweep_val.json 보존, test 최종은 원장에 -T 태그로 기록."""
     from plan2graph.train_gen import NeuralGenerator
@@ -129,7 +142,7 @@ def sweep_temperature(version: str, temps: list, select_split: str = "val") -> N
     if not train or not sel or not test:
         print(f"  [데이터 없음] {version}"); return
     tsigs = mb.fit(train).get("train_sigs", set())
-    ckpt = ROOT / "models" / f"gen_{version}.pt"
+    ckpt = _ckpt_path(version, seed)
     if not ckpt.exists():
         print(f"  [체크포인트 없음] {ckpt}"); return
     ng = NeuralGenerator(str(ckpt))
@@ -174,7 +187,8 @@ def _prog_sig(rec: dict) -> str:
     return ",".join(f"{k}{v}" for k, v in sorted(c.items()))
 
 
-def generalization_diag(version: str, temperature: float = 0.85) -> None:
+def generalization_diag(version: str, temperature: float = 0.85,
+                        seed: int | None = None) -> None:
     """일반화 진단: test를 '학습에 본 program' vs '못 본 program'으로 분할해
     baseline(쌍빈도) vs neural(program 조건화) 비교. 신경망의 진짜 헤드룸 확인.
     가설: 못 본 program에서 baseline의 marginal 우위가 약해지고 neural이 따라잡/이김."""
@@ -193,7 +207,7 @@ def generalization_diag(version: str, temperature: float = 0.85) -> None:
     model = mb.fit(train)
     gen_b, adj = gen_loop.baseline_gen_fn(model)
     tsigs = model.get("train_sigs", set())
-    ckpt = ROOT / "models" / f"gen_{version}.pt"
+    ckpt = _ckpt_path(version, seed)
     ng = NeuralGenerator(str(ckpt)) if ckpt.exists() else None
     base = ng.run_id if ng else exp.make_run_id("neural", version, None, 42)
     gens = [("baseline", gen_b, exp.make_run_id("baseline", version, None, 0))]
@@ -212,7 +226,8 @@ def generalization_diag(version: str, temperature: float = 0.85) -> None:
                               "git_commit": exp.git_commit(), **m})
 
 
-def dwelling_diag(version: str, temperature: float = 0.85) -> None:
+def dwelling_diag(version: str, temperature: float = 0.85,
+                  seed: int | None = None) -> None:
     """거주형태(APT/DEH/ROW) 강건성 점검 — 좋은 평균이 소수 거주형태 실패를 가리는지.
     학습 없이 평가만. test를 meta.house_type로 분할해 baseline vs neural 비교."""
     from plan2graph.train_gen import NeuralGenerator
@@ -223,7 +238,7 @@ def dwelling_diag(version: str, temperature: float = 0.85) -> None:
     model = mb.fit(train)
     gen_b, _ = gen_loop.baseline_gen_fn(model)
     tsigs = model.get("train_sigs", set())
-    ckpt = ROOT / "models" / f"gen_{version}.pt"
+    ckpt = _ckpt_path(version, seed)
     ng = NeuralGenerator(str(ckpt)) if ckpt.exists() else None
     base = ng.run_id if ng else "neural"
 
@@ -249,14 +264,15 @@ def dwelling_diag(version: str, temperature: float = 0.85) -> None:
                               "version": version, "git_commit": exp.git_commit(), **m})
 
 
-def run(versions: list[str], n_test: int | None = None) -> Path:
+def run(versions: list[str], n_test: int | None = None,
+        seed: int | None = None) -> Path:
     rows = []
     for v in versions:
         if not (config.DATA_DIR / "releases" / v).exists():
             print(f"  [없음] {v}")
             continue
         print(f"평가: {v}")
-        rows += evaluate_version(v, n_test)
+        rows += evaluate_version(v, n_test, seed)
     out = config.DATA_DIR / "releases" / "eval_ab.json"
     out.write_text(json.dumps({"rows": rows}, ensure_ascii=False, indent=2),
                    encoding="utf-8")
@@ -287,12 +303,15 @@ if __name__ == "__main__":
                     help="일반화 진단(본 program vs 못 본 program)")
     ap.add_argument("--dwelling", action="store_true",
                     help="거주형태(APT/DEH/ROW) 강건성 점검")
+    ap.add_argument("--seed", type=int, default=None,
+                    help="평가할 시드별 체크포인트(gen_<v>_seed<s>.pt). 없으면 latest 포인터")
     a = ap.parse_args()
     if a.dwelling:
-        dwelling_diag(a.version)
+        dwelling_diag(a.version, seed=a.seed)
     elif a.generalization:
-        generalization_diag(a.version)
+        generalization_diag(a.version, seed=a.seed)
     elif a.sweep_temp:
-        sweep_temperature(a.version, [float(x) for x in a.sweep_temp.split(",") if x.strip()])
+        sweep_temperature(a.version, [float(x) for x in a.sweep_temp.split(",") if x.strip()],
+                          seed=a.seed)
     else:
-        run([v.strip() for v in a.versions.split(",") if v.strip()], a.n_test)
+        run([v.strip() for v in a.versions.split(",") if v.strip()], a.n_test, a.seed)

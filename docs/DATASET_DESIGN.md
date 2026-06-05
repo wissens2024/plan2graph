@@ -103,7 +103,19 @@ data/
 
 ## 5. 버전 = 선언적 레시피 (D2)
 
-`releases/<version>/recipe.json`:
+**정본(입력)** = `releases/recipes/<version>.json` — 손으로 작성·편집하는 단일 진실원천.
+`freeze(version)`이 이것을 읽는다(`release.load_recipe`). `rmtree(releases/<version>)` 재freeze에서
+살아남도록 버전 디렉터리 *밖*에 둔다. ⚠️ 이 파일을 지우면 freeze가 기본 레시피로 추락(예: cubicasa pretrain 유실).
+
+**생성(출력)** = `releases/<version>/recipe.json` — freeze가 동결 시점에 박아두는 사본(provenance).
+손으로 편집 금지(다음 freeze가 덮어씀). 정본과 충돌하면 정본(`recipes/`)이 이긴다.
+
+⚠️ **버전 구분 가능성(distinguishability)**: recipe의 `status`/`role`만으로는 v0(dual)과 v2(+V2V)를
+구분할 수 없다 — staging "success"가 V2V 복구분을 포함하게 된 뒤로 두 버전이 같은 필터가 됨.
+버전을 *선언적으로* 재현하려면 레코드에 **출처 품질(provenance: dual / v2v_pred …)** 이 박혀 있고
+freeze가 그것으로 필터해야 한다(현재 미구현 — graph_id→manifest.reason 조인 필요).
+
+정본 예 `releases/recipes/<version>.json`:
 
 ```jsonc
 {

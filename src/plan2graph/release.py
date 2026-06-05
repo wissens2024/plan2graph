@@ -73,15 +73,23 @@ def load_recipe(version: str, recipe: dict | None = None) -> dict:
     return _default_recipe(version)
 
 
-def _collect(source_id: str, status: str | None) -> list[tuple[Path, dict]]:
-    """staging/<source>/graphs(없으면 레거시)에서 status 일치 레코드 수집."""
+def _collect(source_id: str, status: str | None,
+             provenance: set[str] | None = None) -> list[tuple[Path, dict]]:
+    """staging/<source>/graphs(없으면 레거시)에서 status 일치 레코드 수집.
+
+    provenance: 지정 시 manifest.reason 이 이 집합에 든 그래프만(버전 선언적 구분, §5).
+                예: v0 = {dual, dual_dedup_merge}(V2V 제외). None이면 필터 없음.
+    """
     from plan2graph import sources
     gdir = sources.graphs_dir(source_id)
+    prov = sources.provenance_map(source_id) if provenance else {}
     out = []
     if gdir.is_dir():
         for f in sorted(gdir.glob("*.json")):
             rec = json.loads(f.read_text(encoding="utf-8"))
             if status and rec.get("meta", {}).get("status", "success") != status:
+                continue
+            if provenance is not None and prov.get(rec["graph_id"]) not in provenance:
                 continue
             out.append((f, rec))
     return out
@@ -106,15 +114,18 @@ def freeze(version: str, recipe: dict | None = None) -> dict:
 
     splits = {"train": [], "val": [], "test": []}
     new_test, excluded, per_source = set(), Counter(), {}
+    per_source_sheets = {}   # 출처별 도면(시트) 수 — 세대그래프(per_source)와 구분(단위 혼동 방지)
 
     for entry in recipe["include"]:
         sid = entry["source"]
         status = entry.get("status", "success")
+        provenance = set(entry["provenance"]) if entry.get("provenance") else None
         src = sources.resolve(sid)
         role = entry.get("role") or (src.role if src else "pretrain")
         is_bench = (sid in test_from) or (role == "benchmark")
         cnt = 0
-        for f, rec in _collect(sid, status):
+        sheets = set()
+        for f, rec in _collect(sid, status, provenance):
             if is_bench:                              # 단일세대 필터(현관==1)
                 ok, reason = _is_clean(rec)
                 if not ok:
@@ -133,7 +144,9 @@ def freeze(version: str, recipe: dict | None = None) -> dict:
             splits[s].append(rec["graph_id"])
             shutil.copy2(f, out / "graphs" / f.name)
             cnt += 1
+            sheets.add(sk)
         per_source[sid] = cnt
+        per_source_sheets[sid] = len(sheets)
 
     if test_sheets is None and new_test:              # v0: test 동결 저장
         FROZEN_TEST.parent.mkdir(parents=True, exist_ok=True)
@@ -149,11 +162,14 @@ def freeze(version: str, recipe: dict | None = None) -> dict:
     (out / "recipe.json").write_text(json.dumps(recipe, ensure_ascii=False, indent=2),
                                      encoding="utf-8")
     n_graphs = sum(per_source.values())
+    n_sheets = sum(per_source_sheets.values())
     manifest = {
         "version": version,
         "frozen_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "n_graphs": n_graphs,
+        "n_sheets": n_sheets,
         "per_source": per_source,
+        "per_source_sheets": per_source_sheets,
         "splits": {s: len(v) for s, v in splits.items()},
         "test_frozen_by": (frozen or {}).get("defined_by", version),
         "test_from": sorted(test_from),

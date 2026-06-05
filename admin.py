@@ -706,19 +706,9 @@ if which.startswith("📊"):
 
     _idx = ROOT / "runs" / "index.jsonl"
     summ = _agg(_mt(_idx)) if _idx.exists() else {"eval": [], "generalization": []}
-    _v0man = _manifest("v0", _mt(REL / "v0" / "manifest.json"))
-    _AIHUB = _v0man.get("n_graphs")
-    _ai = f"AI-Hub {_AIHUB:,}" if _AIHUB else "AI-Hub"
-
-    def _best_eval(dsv):   # 버전별 수렴본(신경망 최다시드, 규제루프 on)
-        cs = [r for r in summ["eval"] if r.get("ds_version") == dsv
-              and r["generator"] == "신경망" and r["loop"] == "on"]
-        return max(cs, key=lambda r: r["seeds"]) if cs else None
-
-    def _best_unseen(dsv):
-        cs = [r for r in summ["generalization"] if r.get("ds_version") == dsv
-              and r["generator"] == "신경망" and r["subset"] == "unseen"]
-        return max(cs, key=lambda r: r["seeds"]) if cs else None
+    def _compose(v):   # 각 버전 manifest 라이브(하드코딩 금지 — doc/code/GUI 일치)
+        p = REL / v / "manifest.json"
+        return _manifest(v, _mt(p)) if p.exists() else None
 
     def _pm(m, s):
         return "—" if m is None else (f"{m:.3f}±{s:.3f}" if s else f"{m:.3f}")
@@ -727,19 +717,29 @@ if which.startswith("📊"):
     st.header("1. 데이터셋 — 버전별 학습 데이터 구성")
     st.caption("버전 = 학습에 넣은 데이터 조합(누적 아닌 조합 실험). "
                "**test는 AI-Hub 동결분으로 전 버전 공유** → 비교 기준 고정. 재학습 시 최종값만 남김.")
-    st.table([
-        {"버전": "v0", "파인튜닝(한국형)": _ai, "사전학습(글로벌)": "—", "결과": "✅ 완료"},
-        {"버전": "v1", "파인튜닝(한국형)": "AI-Hub + 보정(확장)", "사전학습(글로벌)": "—",
-         "결과": "⏳ 보정 진행중"},
-        {"버전": "v2", "파인튜닝(한국형)": _ai, "사전학습(글로벌)": "CubiCasa 3,018 (1차통과)",
-         "결과": "✅ 완료"},
-        {"버전": "v3", "파인튜닝(한국형)": _ai, "사전학습(글로벌)": "+ RPLAN 80,371",
-         "결과": "⏳ 학습대기"},
-    ])
+    _PLAN = {"v1": {"ft": "AI-Hub + 보정(확장)", "pre": "—", "res": "⏳ 보정 진행중"},
+             "v3": {"ft": "AI-Hub(dual+V2V)", "pre": "+ RPLAN 80,371", "res": "⏳ 학습대기"}}
+    rows1 = []
+    for v in ("v0", "v1", "v2", "v3"):
+        m = _compose(v)
+        if m:    # 동결된 버전 = 실제 manifest(라이브)
+            ps, psh = m.get("per_source", {}), m.get("per_source_sheets", {})
+            ai, ai_s = ps.get("aihub"), psh.get("aihub")
+            cubi, rpl = ps.get("cubicasa5k"), ps.get("rplan")
+            ft = (f"AI-Hub {ai_s:,} 도면 ({ai:,} 세대)" if ai and ai_s
+                  else (f"AI-Hub {ai:,}" if ai else "—"))
+            pre = " + ".join([s for s in (f"CubiCasa {cubi:,}" if cubi else None,
+                                          f"RPLAN {rpl:,}" if rpl else None) if s]) or "—"
+            rows1.append({"버전": v, "파인튜닝(한국형)": ft, "사전학습(글로벌)": pre, "결과": "✅ 완료"})
+        else:    # 미동결 버전 = 계획 표기
+            pl = _PLAN.get(v, {})
+            rows1.append({"버전": v, "파인튜닝(한국형)": pl.get("ft", "—"),
+                          "사전학습(글로벌)": pl.get("pre", "—"), "결과": pl.get("res", "⏳")})
+    st.table(rows1)
     st.subheader(f"선택 버전 상세 — {ver} (파인튜닝/평가 데이터셋)")
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("세대 그래프", f"{man.get('n_graphs','-'):,}" if man.get('n_graphs') else "-")
-    c2.metric("시트(도면)", f"{man.get('n_sheets','-'):,}" if man.get('n_sheets') else "-")
+    c1.metric("도면(시트)", f"{man.get('n_sheets','-'):,}" if man.get('n_sheets') else "-")
+    c2.metric("세대 그래프", f"{man.get('n_graphs','-'):,}" if man.get('n_graphs') else "-")
     sp = man.get("splits", {})
     c3.metric("train/val/test", f"{sp.get('train','-')}/{sp.get('val','-')}/{sp.get('test','-')}")
     c4.metric("㎡ 확보", f"{man.get('n_scaled_m2','-'):,}" if man.get('n_scaled_m2') else "-")
@@ -755,33 +755,58 @@ if which.startswith("📊"):
     if ev.get("top_adjacency"):
         st.bar_chart({d["pair"]: d["p"] for d in ev["top_adjacency"]})
 
-    # ── 3) 생성 성능 — 버전별 핵심 (v0 vs v2) ──
-    st.header("3. 생성 성능 — 버전별 핵심 (동결 test, 규제루프 on)")
-    st.caption("같은 동결 test에서 데이터버전별 신경망 성능 + v0 규칙기반(알고리즘) 기준선. "
-               "여러 시드 평균. 전체 매트릭스는 §5.")
-    rows3, base = [], next((r for r in summ["eval"] if r.get("ds_version") == "v0"
-                            and r["generator"] == "규칙기반" and r["loop"] == "on"), None)
-    base_u = next((r for r in summ["generalization"] if r.get("ds_version") == "v0"
-                   and r["generator"] == "규칙기반" and r["subset"] == "unseen"), None)
-    if base:
-        rows3.append({"버전": "v0", "생성기": "규칙기반(알고리즘)",
-                      "인접L1↓(전체)": _pm(base["adj_L1_mean"], base["adj_L1_std"]),
-                      "인접L1↓(unseen)": _pm(base_u["adj_L1_mean"], base_u["adj_L1_std"]) if base_u else "—",
-                      "무결성": f"{(base['integrity'] or 0)*100:.0f}%",
-                      "법규": f"{(base['legal'] or 0)*100:.0f}%"})
-    for dsv in ["v0", "v2", "v3"]:
-        e, u = _best_eval(dsv), _best_unseen(dsv)
-        if e:
-            rows3.append({"버전": dsv, "생성기": "신경망",
-                          "인접L1↓(전체)": _pm(e["adj_L1_mean"], e["adj_L1_std"]),
-                          "인접L1↓(unseen)": _pm(u["adj_L1_mean"], u["adj_L1_std"]) if u else "—",
-                          "무결성": f"{(e['integrity'] or 0)*100:.0f}%",
-                          "법규": f"{(e['legal'] or 0)*100:.0f}%"})
-    if rows3:
-        st.table(rows3)
-        st.caption("요약: 전체 test는 v0≈v2(사전학습 중립)이나 **unseen 일반화에서 v2 우위**"
-                   "(CubiCasa 사전학습 효과). 신경망은 알고리즘 기준선에 근접하나 넘지 못함. "
-                   "v3(+RPLAN)는 학습 후 같은 표에 행 추가.")
+    # ── 3) 생성 성능 — 균형 소버린 벤치마크 ──
+    st.header("3. 생성 성능 — 균형 소버린 벤치마크 (동결 test 300시트, loop off)")
+    st.caption("주거형태(APT/DEH/ROW) 균형 test. **매크로 평균**(유형 동등가중)이 소버린 헤드라인 — "
+               "원시분포(APT 94%)가 가리던 약형 유형을 드러냄. 여러 시드 평균.")
+
+    def _cfglabel(version, generator, pretrain):
+        g = "규칙기반" if generator == "규칙기반" else "신경망"
+        return version, g, ("—" if pretrain in (None, "없음") else f"+{pretrain}")
+
+    def _f3(x):
+        return f"{x:.3f}" if isinstance(x, (int, float)) else "—"
+
+    # 3-A) dwelling 매크로 (소버린 헤드라인)
+    dwl = sorted(summ.get("dwelling", []),
+                 key=lambda r: (r["version"], r["generator"], str(r.get("pretrain"))))
+    if dwl:
+        rowsA = []
+        for r in dwl:
+            v, g, pre = _cfglabel(r["version"], r["generator"], r.get("pretrain"))
+            rowsA.append({"코퍼스": v, "생성기": g, "사전학습": pre,
+                          "APT": _f3(r.get("APT")), "DEH": _f3(r.get("DEH")),
+                          "ROW": _f3(r.get("ROW")), "매크로 adj_L1↓": _f3(r.get("macro"))})
+        st.table(rowsA)
+        st.caption("**반전**: 균형 매크로에선 신경망 < 규칙기반(예: v0 0.188 vs 0.205) — "
+                   "규칙기반은 APT만 잘하고 DEH/ROW에서 무너짐. 소버린(전 유형)엔 신경망 우위.")
+
+    # 3-B) 전체(마이크로) · 일반화(unseen) · 법규
+    evd = {(r["version"], r["generator"], r.get("pretrain"), r["loop"]): r for r in summ["eval"]}
+    und = {(r["version"], r["generator"], r.get("pretrain")): r
+           for r in summ["generalization"] if r["subset"] == "unseen"}
+    cfgs = []
+    for r in summ["eval"]:
+        k = (r["version"], r["generator"], r.get("pretrain"))
+        if k not in cfgs:
+            cfgs.append(k)
+    rowsB = []
+    for k in sorted(cfgs):
+        off, on, u = evd.get((*k, "off")), evd.get((*k, "on")), und.get(k)
+        if not off:
+            continue
+        v, g, pre = _cfglabel(*k)
+        legal = (f"{(off['legal'] or 0)*100:.0f}→{(on['legal'] or 0)*100:.0f}%"
+                 if on else f"{(off['legal'] or 0)*100:.0f}%")
+        rowsB.append({"코퍼스": v, "생성기": g, "사전학습": pre,
+                      "전체 adj_L1↓": _pm(off["adj_L1_mean"], off["adj_L1_std"]),
+                      "unseen adj_L1↓": _pm(u["adj_L1_mean"], u["adj_L1_std"]) if u else "—",
+                      "무결성": f"{(off['integrity'] or 0)*100:.0f}%", "법규(off→on)": legal})
+    if rowsB:
+        st.subheader("전체 test(마이크로) · 일반화(unseen) · 법규")
+        st.table(rowsB)
+        st.caption("V2V 확장(v2)은 충실도·법규 악화(법규 off v0~0.9→v2~0.4; 규제루프 on→100%). "
+                   "CubiCasa 사전학습 ≈ 중립. 신경망 전체 adj_L1도 규칙기반 하회(반전). v3(+RPLAN)는 학습 후 행 추가.")
     else:
         st.info("성능 데이터 없음: `bash scripts/run_matrix.sh` 후 표시됩니다.")
 

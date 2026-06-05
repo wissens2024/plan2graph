@@ -254,12 +254,15 @@ def train(pretrain: str | None, finetune: str, epochs: int = 30, lr: float = 1e-
     (run_dir / "train.log").write_text(
         "\n".join(f"[{s}] " + " ".join(f"ep{e}={l}" for e, l in c)
                   for s, c in loss_curve.items()) + "\n", encoding="utf-8")
-    # 'latest' 편의 포인터(eval_gen 기본 조회 경로) — 덮어쓰되 보존본은 run_dir에 있음
-    out = out or (MODELS_DIR / f"gen_{finetune}.pt")
-    out.parent.mkdir(parents=True, exist_ok=True)
+    # 시드별 영구 아티팩트(시드 표기 — 다중시드 매트릭스에서 덮어쓰기 방지) +
+    # 'latest' 편의 포인터(eval_gen 기본 조회 경로). 보존본은 run_dir에도 있음.
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    seeded = MODELS_DIR / f"gen_{finetune}_seed{seed}.pt"
+    torch.save(payload, seeded)
+    out = out or (MODELS_DIR / f"gen_{finetune}.pt")   # 최신 선택본 포인터(seed=payload.condition)
     torch.save(payload, out)
-    print(f"저장: {out}\n실험보존: {run_dir}  (run_id={run_id})")
-    return out
+    print(f"저장(시드): {seeded}\n저장(포인터): {out}\n실험보존: {run_dir}  (run_id={run_id})")
+    return seeded
 
 
 class NeuralGenerator:
