@@ -942,9 +942,67 @@ if which.startswith("📊"):
             st.info("비교 데이터 없음: `bash scripts/run_matrix.sh`"
                     "(또는 `python -m plan2graph.eval_gen`) 실행 후 표시됩니다.")
     else:
-        st.caption("요약: 전체 test에선 사전학습 중립(신경망≈규칙기반 수준), 일반화(unseen)에선 사전학습이 "
-                   "소폭 우위·분산 감소. 상세 = EXPERIMENTS.md. "
-                   "RPLAN(80,371) 사전학습 결과는 후속 업데이트로 같은 표에 행이 추가됨.")
+        st.caption("요약: **균형 매크로에선 신경망>규칙기반(반전)** — 규칙기반은 APT 과적합·DEH/ROW 실패. "
+                   "사전학습(CubiCasa)은 중립. V2V 확장은 법규 악화(규제루프로 복구). 상세=EXPERIMENTS.md. "
+                   "RPLAN(v3)·결합(v4) 사전학습 결과는 학습 후 같은 표에 자동 추가.")
+
+    # ── 6) Neuro-Symbolic 생성 시연 — 자연어→위상 + 자기교정 근거 (패널2·3) ──
+    st.header("6. Neuro-Symbolic 생성 시연 (자연어 → 위상 + 근거)")
+    st.caption("자연어 → 제약(program) → 신경망 생성 → Symbolic 자기교정. "
+               "**패널2**: 자기교정 OFF∥ON 같은 입력 대비 · **패널3**: 위반·수정 근거. (CPU 추론)")
+    _runs = sorted(p.parent.name for p in (ROOT / "runs").glob("gen-v0-neural*/checkpoint.pt"))
+    if not _runs:
+        st.info("학습된 신경망 체크포인트 없음: `bash scripts/run_matrix.sh` 후 표시.")
+    else:
+        gtext = st.text_input("자연어 요구", "신혼부부 아파트 침실2 욕실1 거실 주방", key="ns_text")
+        gc1, gc2 = st.columns([3, 1])
+        _def = next((r for r in _runs if "noPretrain-seed42" in r), _runs[0])
+        gck = gc1.selectbox("생성기(체크포인트)", _runs, index=_runs.index(_def), key="ns_ck")
+        gseed = gc2.number_input("시드(다른 표본)", 0, 9999, 1, key="ns_seed",
+                                 help="loop-off가 위반을 내는 시드를 찾으면 자기교정 효과가 드러남")
+        if st.button("🏗 생성 (Neuro-Symbolic)"):
+            from plan2graph import text2graph as _t2g, gen_loop as _gl
+
+            @st.cache_resource(show_spinner="신경망 로드(CPU)...")
+            def _load_ng(_path):
+                from plan2graph.train_gen import NeuralGenerator
+                return NeuralGenerator(_path)
+
+            try:
+                prog = _t2g.parse(gtext)["program"]
+                st.caption(f"제약 program: {prog}")
+                ng = _load_ng(str(ROOT / "runs" / gck / "checkpoint.pt"))
+                gfn = lambda p, r: ng.generate(p, r)   # noqa: E731
+                _sd = int(gseed)
+                G_off, _ = _gl.generate_compliant(gfn, prog, max_tries=1, repair=False, seed=_sd)
+                v_off = _gl.verify(G_off)
+                G_on, hist = _gl.generate_compliant(gfn, prog, max_tries=5, repair=True, seed=_sd)
+                v_on = _gl.verify(G_on)
+                st.markdown("**패널2 — 파이프라인 토글 (자기교정 OFF ∥ ON, 같은 입력)**")
+                p1, p2 = st.columns(2)
+                with p1:
+                    st.markdown(f"자기교정 **OFF** — 위반 {v_off['n']} "
+                                f"{'✅' if v_off['passed'] else '❌'}")
+                    st.pyplot(_rv.render_graph_fig(G_off, title="loop off", node_size=1500,
+                              font_size=11, layout="kamada"), use_container_width=True)
+                with p2:
+                    st.markdown(f"자기교정 **ON** — 위반 {v_on['n']} "
+                                f"{'✅통과' if v_on['passed'] else '❌'}")
+                    st.pyplot(_rv.render_graph_fig(G_on, title="loop on", node_size=1500,
+                              font_size=11, layout="kamada"), use_container_width=True)
+                st.markdown("**패널3 — Symbolic 근거 (자기교정 로그)**")
+                st.table([{"시도": h["attempt"], "위반(전)": h["violations_before"],
+                           "수정": ", ".join(h["fixes"]) or "—",
+                           "위반(후)": h["violations_after"],
+                           "통과": "✅" if h["passed"] else ""} for h in hist])
+                if v_on["violations"]:
+                    st.write("잔여 위반(규칙 근거):",
+                             [{"종류": x["kind"], "근거": x.get("rule") or x.get("reason") or str(x)}
+                              for x in v_on["violations"]])
+                else:
+                    st.success("최종 위상 무결 — 무결성·법규 통과.")
+            except Exception as e:  # noqa: BLE001
+                st.error(f"생성 실패: {e}")
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
