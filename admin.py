@@ -771,12 +771,15 @@ if which.startswith("📊"):
     dwl = sorted(summ.get("dwelling", []),
                  key=lambda r: (r["version"], r["generator"], str(r.get("pretrain"))))
     if dwl:
+        _best = min((r for r in dwl if isinstance(r.get("macro"), (int, float))),
+                    key=lambda r: r["macro"], default=None)
         rowsA = []
         for r in dwl:
             v, g, pre = _cfglabel(r["version"], r["generator"], r.get("pretrain"))
             rowsA.append({"코퍼스": v, "생성기": g, "사전학습": pre,
                           "APT": _f3(r.get("APT")), "DEH": _f3(r.get("DEH")),
-                          "ROW": _f3(r.get("ROW")), "매크로 adj_L1↓": _f3(r.get("macro"))})
+                          "ROW": _f3(r.get("ROW")), "매크로 adj_L1↓": _f3(r.get("macro")),
+                          "비고": "🏆 현재 최선" if r is _best else ""})
         st.table(rowsA)
         st.caption("**반전**: 균형 매크로에선 신경망 < 규칙기반(예: v0 0.188 vs 0.205) — "
                    "규칙기반은 APT만 잘하고 DEH/ROW에서 무너짐. 소버린(전 유형)엔 신경망 우위.")
