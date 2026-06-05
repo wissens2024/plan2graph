@@ -275,11 +275,11 @@ def _record(**kw):
 
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
 st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
-st.sidebar.caption("데이터셋 구축 ─────────")
+st.sidebar.caption("데이터셋 구축 ───── · 생성 AI ─────")
 which = st.sidebar.radio("메뉴", ["🧮 종합 현황", "🏢 AI-Hub 검수",
                                  "🏠 CubiCasa 검수", "📐 RPLAN 검수",
                                  "📏 scale 보정", "📜 법령 DB",
-                                 "📊 생성 AI 결과 ━━━━"],
+                                 "📊 위상 모델 결과", "🏗 도면 생성(시연)"],
                           index=0, label_visibility="collapsed")
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -946,33 +946,48 @@ if which.startswith("📊"):
                    "사전학습(CubiCasa)은 중립. V2V 확장은 법규 악화(규제루프로 복구). 상세=EXPERIMENTS.md. "
                    "RPLAN(v3)·결합(v4) 사전학습 결과는 학습 후 같은 표에 자동 추가.")
 
-    # ── 6) Neuro-Symbolic 생성 시연 — 자연어→위상 + 자기교정 근거 (패널2·3) ──
-    st.header("6. 시연 — 자연어 → 위상 도면 + 근거 (Neuro-Symbolic)")
-    st.caption("자연어 → 제약(program) → 신경망 생성 → Symbolic 자기교정. "
-               "**패널2**: 자기교정 OFF∥ON 같은 입력 대비 · **패널3**: 위반·수정 근거. (CPU 추론)")
-    _runs = sorted(p.parent.name for p in (ROOT / "runs").glob("gen-v0-neural*/checkpoint.pt"))
+    st.stop()
+
+# ════════════════════════════════════════════════════════════════════════════
+# 🏗 도면 생성 (시연) — 자연어 → 위상 도면 + 자기교정 근거
+# ════════════════════════════════════════════════════════════════════════════
+if which.startswith("🏗"):
+    from pathlib import Path as _Path
+    from plan2graph import review as _rv
+    _ROOT = _Path(__file__).resolve().parent
+    st.title("🏗 도면 생성 (시연)")
+    st.caption("자연어 요구 → 제약(program) → 신경망 생성 → Symbolic 자기교정 → 위상 도면. "
+               "**패널2**: 자기교정 OFF∥ON 대비 · **패널3**: 위반·수정 근거. (CPU 추론)")
+    _runs = sorted(p.parent.name for p in (_ROOT / "runs").glob("gen-v0-neural*/checkpoint.pt"))
     if not _runs:
         st.info("학습된 신경망 체크포인트 없음: `bash scripts/run_matrix.sh` 후 표시.")
     else:
         gtext = st.text_input("자연어 요구", "신혼부부 아파트 침실2 욕실1 거실 주방", key="ns_text")
-        gc1, gc2 = st.columns([3, 1])
+        gc1, gc2, gc3 = st.columns([3, 1, 1])
         _def = next((r for r in _runs if "noPretrain-seed42" in r), _runs[0])
         gck = gc1.selectbox("생성기(체크포인트)", _runs, index=_runs.index(_def), key="ns_ck")
-        gseed = gc2.number_input("시드(다른 표본)", 0, 9999, 1, key="ns_seed",
-                                 help="loop-off가 위반을 내는 시드를 찾으면 자기교정 효과가 드러남")
+        gseed = gc2.number_input("시드", 0, 9999, 1, key="ns_seed")
+        ght = gc3.selectbox("주거형태", ["자동", "APT", "DEH", "ROW"], key="ns_house",
+                            help="type조건 모델(typed)일 때만 적용 — 아파트/단독/연립 구분")
         if st.button("🏗 생성 (Neuro-Symbolic)"):
             from plan2graph import text2graph as _t2g, gen_loop as _gl
 
-            @st.cache_resource(show_spinner="신경망 로드(CPU)...")
+            @st.cache_resource(show_spinner="생성기 로드(CPU)...")
             def _load_ng(_path):
-                from plan2graph.train_gen import NeuralGenerator
-                return NeuralGenerator(_path)
+                from plan2graph import generators as _G
+                return _G.load(_path)   # arch 디스패치(set-transformer-v2 / typed …)
 
             try:
                 prog = _t2g.parse(gtext)["program"]
                 st.caption(f"제약 program: {prog}")
-                ng = _load_ng(str(ROOT / "runs" / gck / "checkpoint.pt"))
-                gfn = lambda p, r: ng.generate(p, r)   # noqa: E731
+                ng = _load_ng(str(_ROOT / "runs" / gck / "checkpoint.pt"))
+                _typed = getattr(ng, "arch", "") == "set-transformer-typed"
+                st.caption(f"생성기: {gck}  ·  주거형태조건: "
+                           f"{ght if (_typed and ght != '자동') else '미적용(비-typed 또는 자동)'}")
+
+                def gfn(p, r):
+                    return (ng.generate(p, r, house_type=ght)
+                            if (_typed and ght != "자동") else ng.generate(p, r))
                 _sd = int(gseed)
                 G_off, _ = _gl.generate_compliant(gfn, prog, max_tries=1, repair=False, seed=_sd)
                 v_off = _gl.verify(G_off)
@@ -1004,6 +1019,7 @@ if which.startswith("📊"):
             except Exception as e:  # noqa: BLE001
                 st.error(f"생성 실패: {e}")
     st.stop()
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # 📜 법령 DB — 최신화(관리자 클릭) + 법령/규정 조회
