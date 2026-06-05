@@ -12,11 +12,11 @@
 
 ---
 
-## 0. 현재 위치 (2026-06-02)
-- **P1 건축지식 구조화**: 온톨로지(OWL)·Topology 추론·법규엔진(SWRL+HermiT, 국가법령 API) ✓ / V2V·면적법규 잔여
-- **P2 한국형 데이터셋**: v0 동결(정상 단일세대 5,993, 시트 2,655, test 557 고정). 라벨 천장 ~3,896 시트
-- **P3 생성**: 통계 baseline + 평가 하네스(무결성·법규·인접·다양성·신규성) ✓ — 신경망·Text-to-Graph 미착수
-- 한계: 정답 대조 검증(20장) 없음 / 규제 루프 미시연 / 글로벌 미합류 / 규모 소박(원천 ~2,700장)
+## 0. 현재 위치 (2026-06-05)
+- **P1 건축지식 구조화**: 온톨로지(OWL)·Topology 추론·법규엔진(SWRL+HermiT, 국가법령 API) ✓ / 면적법규·V2V STR 잔여
+- **P2 한국형 데이터셋**: provenance 버전관리 확립 — v0(dual 7,101그래프/3,324도면) · v2(dual+V2V, aihub 20,828 + CubiCasa pretrain). **균형 소버린 test 동결**(APT/DEH/ROW 100/100/100 = 300시트/465그래프). 글로벌(RPLAN 80,371+CubiCasa) pretrain 변환 완료.
+- **P3 생성**: 통계 baseline + **신경망(Set-Transformer, Relation-Aware)** + **자기교정 루프**(verify→repair) + 평가 하네스(+dwelling 매크로) ✓. **균형 매트릭스 완료 — 반전(신경망>규칙기반)**. 잔여: Constrained RL·Space Syntax·LLM Text-to-Graph·기하 생성.
+- 한계: **N세대 floor-plate 데이터갭**(복도 미라벨) / 기하 도면 미구축 / 면적법규 전문가확정 대기 / 20장 정확도 게이트.
 
 ---
 
@@ -75,26 +75,46 @@
 
 ---
 
-## 4. Phase 3 — 온톨로지 기반 공간배치 생성 AI (서버, GPU)
+## 4. Phase 3 — 온톨로지 기반 공간배치 생성 AI (서버, GPU) [2026-06-05 상세화]
 
-### 4-1. Text-to-Graph (자연어 → 제약그래프)
-- ① Domain-Adaptive: "4인가족 84㎡" → {거실1,침실3,화장실2,LDK} 노드·엣지 매핑
-- ② Constraint Extraction: hard(법규·필수) vs soft(선호) 분리 → 목적함수 입력
-- 1차: 규칙·템플릿 기반 → 이후 LLM 파인튜닝
+### 4-0. 스코프 — 3 트랙 (데이터로 확정, [[balanced-benchmark-neural-beats-baseline]])
+| 트랙 | 상태 | 근거 |
+|---|---|---|
+| **단일세대 위상**(program→방-문-방 그래프) | ✅ 작동(생성+자기교정+평가) | 데이터 충분(세대별 도면) |
+| **단일세대 기하**(위상→좌표·벽·렌더) | 🔜 다음 | 스파이크 입증(규칙기반 인접 95%·면적오차5%). 직사각형화·학습형 |
+| **N세대 floor-plate**(다세대 한 층) | ⏳ 향후 | **데이터갭**: 복도 미라벨·유닛 미연결(감사 0% 통합). 복도추론/신규데이터 선결 |
 
-### 4-2. 생성 모델 (배치그래프 생성)
-- **baseline(통계, 완료)** → **신경망**: Relation-aware GNN / graph-diffusion(GSDiff류)
-- **글로벌 사전학습 → 한국형 파인튜닝** (전이학습)
-- 출력: 위상그래프 → (확장) 기하 좌표 배치 → 도면 렌더
+> 최종 목표 "도면"은 기하(좌표/벽). 위상은 그 입력. N세대는 데이터 한계로 보류.
 
-### 4-3. Neuro-Symbolic (규제 AI 감독)
-- **방식 A 사후검증**: 생성 → `rules_swrl.check_legal_swrl` → 위반시 재생성/국소수정 (Self-Correction 루프)
-- **방식 B Constrained RL**: SWRL 위반=강페널티 보상 + Space Syntax 지표 → 규제 준수 학습
-- 동일 법규엔진(rules_swrl)을 두 시점에서 호출
+### 4-1. 생성 = Neuro-Symbolic, ablation으로 누적 (각 단계 delta = 논문 기여)
+누적 순서, 각 단계 **균형 dwelling 매크로**로 측정(차이가 곧 기여):
+1. 규칙기반(통계) — baseline ✅
+2. **+ 신경망 Relation-Aware GNN(Set-Transformer)** ✅ — Neuro 기여(반전: 매크로 0.205→0.188)
+3. + 위계(public/private/service) 명시 입력·제약 — 강화
+4. **+ Symbolic Self-Correction 루프**(SWRL/온톨로지 검증→국소수정→근거 출력) ✅(loop) — Symbolic 기여(법규 off→on, v2 42→100%)
+5. + **Constrained RL**(SWRL 위반 페널티 + Space Syntax 보상) — 신규(지표부터)
+- **Text-to-Graph(§4 입구)**: 규칙기반(`text2graph`, 작동) → **LLM 파인튜닝**(hard/soft 분리). LLM은 후순위.
+- **선택적 house_type 조건**(LLM이 타입 줄 수도/안 줄 수도 → 조건 dropout). 섞기+조건, 간섭 시 타입헤드.
+
+### 4-2. 사전학습 축 — 버전 사다리 (전이학습 효과)
+| 버전 | 사전학습 | 상태 | 검증 질문 |
+|---|---|---|---|
+| (v0) | none | ✅ | baseline |
+| **v2** | CubiCasa(3,028) | ✅ 완료 | 중립(작아서) |
+| **v3** | RPLAN(80,371, 27배) | 🔜 대기 | 대규모 글로벌이 **unseen·빈곤타입(DEH/ROW) 구제**하나? |
+| **v4** | RPLAN+CubiCasa 결합 | 🔜 | 사전학습 축 완성(kitchen sink) |
+
+> 코퍼스 축(v0 dual / v2 dual+V2V)과 **별개 축**. provenance 필터로 구분([[dataset-version-scheme]]).
+
+### 4-3. GUI 구조 = ablation/figure 생성기 (단일 소스 = runs ledger `experiments.agg_summary`)
+- **패널1 Ablation 사다리**: 구성요소(규칙기반→+신경망→+자기교정→+RL)별 균형 매크로 + delta. 버전 토글. = **논문 표**.
+- **패널2 파이프라인 토글**: text→T2G→GNN→Symbolic검증·교정→위상도면. 단계 on/off로 같은 입력서 효과 대비(자기교정 끄면 문없는방 발생). = **architecture figure**.
+- **패널3 단일샘플 근거**: reasoner가 잡은 위반(문없는방·고립·동선)+수정+규칙근거. = **qualitative figure**.
+- 원칙: 하드코딩 0, 데이터셋·실험 바뀌면 자동 갱신(§1·§3 라이브화와 동일).
 
 ### 4-4. 평가
-- 공용 하네스(고정 test): 위상무결성·**법규통과율**·인접사실성·다양성·신규성 + (신경망) FID류·program충실도
-- **A/B**: v0 vs v1 vs v2 데이터 / baseline vs 신경망 / 규제루프 on·off
+- **균형 소버린**: dwelling 매크로(APT/DEH/ROW 동등) + unseen + 법규(off→on) + 무결성·다양성·신규성 + program 충실도 + **Space Syntax(신규)**.
+- A/B 축: 코퍼스(v0/v2) × 사전학습(none/CubiCasa/RPLAN/결합) × 생성기(규칙/신경망) × 루프(off/on).
 
 ---
 

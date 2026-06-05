@@ -810,6 +810,67 @@ if which.startswith("📊"):
     else:
         st.info("성능 데이터 없음: `bash scripts/run_matrix.sh` 후 표시됩니다.")
 
+    # ── 3.5) Neuro-Symbolic 구성 기여 (ablation 사다리) ──
+    st.header("3.5 Neuro-Symbolic 구성 기여 (ablation 사다리)")
+    st.caption("생성 파이프라인을 구성요소별로 누적하며 균형 매크로 기여를 본다 — "
+               "각 단계의 delta = 그 요소(Neuro/Symbolic)의 기여(논문 ablation).")
+    _dwl = summ.get("dwelling", [])
+    if not _dwl:
+        st.info("ablation 데이터 없음: `bash scripts/run_matrix.sh` 후 표시됩니다.")
+    else:
+        avs = sorted({r["version"] for r in _dwl})
+        abl_v = st.selectbox("코퍼스", avs, key="abl_v")
+        aps = sorted({r.get("pretrain") for r in _dwl
+                      if r["version"] == abl_v and r["generator"] == "신경망"})
+        abl_p = st.selectbox("사전학습(신경망)", aps or ["없음"], key="abl_p")
+
+        def _dw(gen, pre=None):
+            return next((r for r in _dwl if r["version"] == abl_v and r["generator"] == gen
+                         and (pre is None or r.get("pretrain") == pre)), None)
+
+        def _evr(gen, loop, pre=None):
+            return next((r for r in summ["eval"] if r["version"] == abl_v
+                         and r["generator"] == gen and r["loop"] == loop
+                         and (pre is None or r.get("pretrain") == pre)), None)
+
+        def _f3(x):
+            return f"{x:.3f}" if isinstance(x, (int, float)) else "—"
+
+        def _pct(x):
+            return f"{x*100:.0f}%" if isinstance(x, (int, float)) else "—"
+
+        b_dw, b_ev = _dw("규칙기반"), _evr("규칙기반", "off")
+        n_dw, n_off, n_on = _dw("신경망", abl_p), _evr("신경망", "off", abl_p), _evr("신경망", "on", abl_p)
+        ladder = []
+        if b_dw and b_ev:
+            ladder.append({"구성": "규칙기반(통계)", "매크로 adj_L1↓": _f3(b_dw.get("macro")),
+                           "법규": _pct(b_ev.get("legal")), "무결성": _pct(b_ev.get("integrity")),
+                           "다양성": _f3(b_ev.get("diversity")), "기여(Δ)": "기준선"})
+        if n_dw and n_off:
+            d = (b_dw.get("macro") - n_dw.get("macro")) if (b_dw and isinstance(b_dw.get("macro"), (int, float))
+                                                            and isinstance(n_dw.get("macro"), (int, float))) else None
+            sign = ("−" if d > 0 else "+") if d is not None else ""
+            ladder.append({"구성": "+ 신경망(Relation-Aware GNN)", "매크로 adj_L1↓": _f3(n_dw.get("macro")),
+                           "법규": _pct(n_off.get("legal")), "무결성": _pct(n_off.get("integrity")),
+                           "다양성": _f3(n_off.get("diversity")),
+                           "기여(Δ)": (f"Neuro: 매크로 {sign}{abs(d):.3f}" if d is not None else "Neuro")})
+        if n_on and n_off:
+            dl = (n_on.get("legal") - n_off.get("legal")) if (isinstance(n_on.get("legal"), (int, float))
+                                                              and isinstance(n_off.get("legal"), (int, float))) else None
+            ladder.append({"구성": "+ 자기교정(Symbolic loop)",
+                           "매크로 adj_L1↓": _f3(n_dw.get("macro")) if n_dw else "—",
+                           "법규": _pct(n_on.get("legal")), "무결성": _pct(n_on.get("integrity")),
+                           "다양성": _f3(n_on.get("diversity")),
+                           "기여(Δ)": (f"Symbolic: 법규 +{dl*100:.0f}%p" if dl is not None else "Symbolic")})
+        ladder.append({"구성": "+ Constrained RL (예정)", "매크로 adj_L1↓": "—", "법규": "—",
+                       "무결성": "—", "다양성": "—", "기여(Δ)": "SWRL 페널티 + Space Syntax 보상"})
+        if len(ladder) > 1:
+            st.table(ladder)
+            st.caption("Neuro(신경망)=충실도(매크로↓), Symbolic(자기교정)=법규준수(off→on). "
+                       "사전학습은 별개 축(§3). v3/v4(RPLAN/결합) 학습되면 사다리에 자동 반영.")
+        else:
+            st.info("ablation 데이터 부족: 매트릭스 실행 후 표시.")
+
     # ── 4) 실제 vs 생성 예시 (규칙기반 생성기) ──
     st.header("4. 실제 도면 vs AI 생성 (같은 program · 규칙기반 예시)")
     if "ex_seed" not in st.session_state:
