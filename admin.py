@@ -871,80 +871,72 @@ if which.startswith("📊"):
         else:
             st.info("ablation 데이터 부족: 매트릭스 실행 후 표시.")
 
-    # ── 4) 실제 vs 생성 예시 (규칙기반 생성기) ──
-    st.header("4. 실제 도면 vs AI 생성 (같은 program · 규칙기반 예시)")
-    if "ex_seed" not in st.session_state:
-        st.session_state.ex_seed = 1
-    if st.button("🎲 다른 예시"):
-        st.session_state.ex_seed += 1
-    test = _mb._load_split(ver, "test")
-    if test:
-        rec = test[st.session_state.ex_seed % len(test)]
-        program = dict(_Counter(n["type"] for n in rec["layout"]["nodes"]
-                                if isinstance(n["id"], int)))
-        st.caption(f"program: {program}")
-        gen = _mb.generate(_model(ver, _mt(REL / ver / "manifest.json")), program,
-                           _random.Random(st.session_state.ex_seed))
-        e1, e2 = st.columns(2)
-        with e1:
-            st.markdown("**실제 (데이터셋)**")
-            st.pyplot(_rv.render_graph_fig(_rv.record_to_graph(rec),
-                      title="real", node_size=1500, font_size=11, layout="kamada"),
-                      use_container_width=True)
-        with e2:
-            st.markdown("**AI 생성 (같은 program)**")
-            st.pyplot(_rv.render_graph_fig(gen, title="generated",
-                      node_size=1500, font_size=11, layout="kamada"),
-                      use_container_width=True)
+    # ── 4) (상세) 실제 vs 생성 예시 ──
+    with st.expander("▸ 상세 — 실제 도면 vs AI 생성 (같은 program · 규칙기반 예시)"):
+        if "ex_seed" not in st.session_state:
+            st.session_state.ex_seed = 1
+        if st.button("🎲 다른 예시"):
+            st.session_state.ex_seed += 1
+        test = _mb._load_split(ver, "test")
+        if test:
+            rec = test[st.session_state.ex_seed % len(test)]
+            program = dict(_Counter(n["type"] for n in rec["layout"]["nodes"]
+                                    if isinstance(n["id"], int)))
+            st.caption(f"program: {program}")
+            gen = _mb.generate(_model(ver, _mt(REL / ver / "manifest.json")), program,
+                               _random.Random(st.session_state.ex_seed))
+            e1, e2 = st.columns(2)
+            with e1:
+                st.markdown("**실제 (데이터셋)**")
+                st.pyplot(_rv.render_graph_fig(_rv.record_to_graph(rec),
+                          title="real", node_size=1500, font_size=11, layout="kamada"),
+                          use_container_width=True)
+            with e2:
+                st.markdown("**AI 생성 (같은 program)**")
+                st.pyplot(_rv.render_graph_fig(gen, title="generated",
+                          node_size=1500, font_size=11, layout="kamada"),
+                          use_container_width=True)
 
     # ── 5) (상세) 전체 매트릭스 — 시드·loop 전수 ──
-    st.header("5. 상세 — 전체 매트릭스 (시드·loop 전수)")
-    st.caption("핵심 요약은 §2. 여기는 **전수 원천**(데이터버전 × 생성기 × 규제루프 × 시드, loop on/off·다양성·신규성 포함). "
-               "단일 소스 = runs/index.jsonl (`python -m plan2graph.experiments agg`). "
-               "⚠️ '데이터버전'은 사전학습축 라벨(ds_version) — 코퍼스(v0 dual / v2 +V2V) 정확 구분은 §2.")
+    with st.expander("▸ 상세 — 전체 매트릭스 (시드·loop 전수, 다양성·신규성 포함)"):
+        st.caption("핵심 요약은 §2. 여기는 **전수 원천**(데이터버전 × 생성기 × 규제루프 × 시드). "
+                   "단일 소스 = runs/index.jsonl. ⚠️ '데이터버전'은 사전학습축 라벨(ds_version) — "
+                   "코퍼스(v0 dual / v2 +V2V) 정확 구분은 §2.")
 
-    def _gen_label(r):
-        return f"{r['generator']}({r['arch']})" if r.get("arch") else r["generator"]
+        def _gen_label(r):
+            return f"{r['generator']}({r['arch']})" if r.get("arch") else r["generator"]
 
-    def _sort_key(r):   # 데이터버전 → 생성기(규칙기반 먼저) → 루프
-        return (r.get("ds_version", "z"), 0 if r["generator"] == "규칙기반" else 1,
-                r.get("arch", ""), str(r.get("loop", "")))
+        def _sort_key(r):
+            return (r.get("ds_version", "z"), 0 if r["generator"] == "규칙기반" else 1,
+                    r.get("arch", ""), str(r.get("loop", "")))
 
-    if summ["eval"]:
-        st.subheader("전체 test")
-        st.table([{"데이터버전": r["ds_version"], "생성기": _gen_label(r),
-                   "규제루프": r["loop"], "시드": r["seeds"],
-                   "인접L1↓": _pm(r["adj_L1_mean"], r["adj_L1_std"]),
-                   "무결성": f"{(r['integrity'] or 0)*100:.0f}%",
-                   "법규": f"{(r['legal'] or 0)*100:.0f}%",
-                   "다양성": f"{(r['diversity'] or 0)*100:.0f}%",
-                   "신규성": f"{(r['novelty'] or 0)*100:.0f}%"}
-                  for r in sorted(summ["eval"], key=_sort_key)])
-        st.caption("인접L1↓: 낮을수록 실제 배치에 가까움 · 무결성=위상 R1~R5 · "
-                   "법규=채광 등 통과(규제루프 on이 위반 자동보정). 생성기 괄호=신경망 아키텍처 세대.")
-    if summ["generalization"]:
-        st.subheader("일반화 — seen / unseen program")
-        st.caption("처음 보는 방 구성(unseen)에서의 사실성 — 사전학습(v2/v3) 효과가 가장 드러나는 축.")
-        st.table([{"데이터버전": r["ds_version"], "생성기": _gen_label(r),
-                   "subset": r["subset"], "시드": r["seeds"],
-                   "인접L1↓": _pm(r["adj_L1_mean"], r["adj_L1_std"])}
-                  for r in sorted(summ["generalization"], key=_sort_key)])
-    if not summ["eval"]:
-        ab_path = REL / "eval_ab.json"     # 원장 없을 때만 레거시 스냅샷 폴백
-        ab = _json.loads(ab_path.read_text(encoding="utf-8")).get("rows", []) \
-            if ab_path.exists() else []
-        if ab:
-            st.caption("실험 원장 없음 — eval_ab.json 스냅샷 표시")
-            st.table([{"버전": r["version"], "생성기": r["generator"], "규제루프": r["reg_loop"],
-                       "무결성": r["integrity"], "법규": r["legal"], "인접L1↓": r["adj_L1"],
-                       "다양성": r["diversity"], "신규성": r["novelty"]} for r in ab])
-        else:
-            st.info("비교 데이터 없음: `bash scripts/run_matrix.sh`"
-                    "(또는 `python -m plan2graph.eval_gen`) 실행 후 표시됩니다.")
-    else:
-        st.caption("요약: **균형 매크로에선 신경망>규칙기반(반전)** — 규칙기반은 APT 과적합·DEH/ROW 실패. "
-                   "사전학습(CubiCasa)은 중립. V2V 확장은 법규 악화(규제루프로 복구). 상세=EXPERIMENTS.md. "
-                   "RPLAN(v3)·결합(v4) 사전학습 결과는 학습 후 같은 표에 자동 추가.")
+        if summ["eval"]:
+            st.subheader("전체 test")
+            st.table([{"데이터버전": r["ds_version"], "생성기": _gen_label(r),
+                       "규제루프": r["loop"], "시드": r["seeds"],
+                       "인접L1↓": _pm(r["adj_L1_mean"], r["adj_L1_std"]),
+                       "무결성": f"{(r['integrity'] or 0)*100:.0f}%",
+                       "법규": f"{(r['legal'] or 0)*100:.0f}%",
+                       "다양성": f"{(r['diversity'] or 0)*100:.0f}%",
+                       "신규성": f"{(r['novelty'] or 0)*100:.0f}%"}
+                      for r in sorted(summ["eval"], key=_sort_key)])
+        if summ["generalization"]:
+            st.subheader("일반화 — seen / unseen program")
+            st.table([{"데이터버전": r["ds_version"], "생성기": _gen_label(r),
+                       "subset": r["subset"], "시드": r["seeds"],
+                       "인접L1↓": _pm(r["adj_L1_mean"], r["adj_L1_std"])}
+                      for r in sorted(summ["generalization"], key=_sort_key)])
+        if not summ["eval"]:
+            ab_path = REL / "eval_ab.json"
+            ab = _json.loads(ab_path.read_text(encoding="utf-8")).get("rows", []) \
+                if ab_path.exists() else []
+            if ab:
+                st.caption("실험 원장 없음 — eval_ab.json 스냅샷 표시")
+                st.table([{"버전": r["version"], "생성기": r["generator"], "규제루프": r["reg_loop"],
+                           "무결성": r["integrity"], "법규": r["legal"], "인접L1↓": r["adj_L1"],
+                           "다양성": r["diversity"], "신규성": r["novelty"]} for r in ab])
+            else:
+                st.info("비교 데이터 없음: `bash scripts/run_matrix.sh` 실행 후 표시됩니다.")
 
     st.stop()
 
