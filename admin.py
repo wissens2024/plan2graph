@@ -278,6 +278,7 @@ st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
 which = st.sidebar.radio("메뉴", ["🧮 종합 현황", "🏢 AI-Hub 검수",
                                  "🏠 CubiCasa 검수", "📐 RPLAN 검수",
                                  "📏 scale 보정", "📜 법령 DB",
+                                 "📈 결과 대시보드",
                                  "📊 위상 모델 결과", "🏗 도면 생성(시연)"],
                           index=0, label_visibility="collapsed")
 
@@ -759,23 +760,38 @@ if which.startswith("📊"):
                       "총 세대 그래프": f"{total:,}", "상태": stat})
     st.table(rows1)
 
-    st.subheader("버전별 상세 — 파인튜닝/사전학습/평가 데이터셋")
+    st.subheader("버전별 상세 — 데이터 + 성능 결과")
+    # 버전 → 대표 신경망 결과(version, pretrain). ds_version(옛 혼동 라벨) 대신 명시적 매핑.
+    def _pkey(p):
+        return None if p in (None, "없음") else p
+    _dwl_macro = {(r["version"], _pkey(r["pretrain"])): r["macro"]
+                  for r in summ.get("dwelling", []) if r["generator"] == "신경망"}
+    _evl = {(r["version"], _pkey(r.get("pretrain")), r["loop"]): r for r in summ.get("eval", [])}
+    _RESULT_KEY = {"v0": ("v0", None), "v2": ("v2", "Cubicasa"),
+                   "v3": ("v0", "Rplan"), "v4": ("v0", "All")}
     detail = []
     for v, ftv, prev, stat in _LADDER:
-        if ftv is None:
+        rk = _RESULT_KEY.get(v)
+        macro = _dwl_macro.get(rk) if rk else None
+        eoff, eon = (_evl.get((*rk, "off")), _evl.get((*rk, "on"))) if rk else (None, None)
+        legal = (f"{(eoff['legal'] or 0)*100:.0f}→{(eon['legal'] or 0)*100:.0f}%"
+                 if (eoff and eon) else "—")
+        macro_s = f"{macro:.3f}" if isinstance(macro, (int, float)) else "—"
+        if ftv is None:   # v1 — 미구축
             detail.append({"버전": v, "도면(시트)": "—", "파인튜닝 세대": "—", "사전학습 그래프": "—",
-                           "train": "—", "val": "—", "test": "—", "test 동결": "—", "상태": stat}); continue
+                           "train": "—", "val": "—", "test": "—",
+                           "매크로 adj_L1↓": "—", "법규(off→on)": "—"}); continue
         fm, _, _, pre_n = _ladder_data(ftv, prev)
         sp = fm.get("splits", {})
         detail.append({"버전": v, "도면(시트)": _fmt(fm.get("n_sheets", 0)),
                        "파인튜닝 세대": _fmt(fm.get("n_graphs", 0)),
                        "사전학습 그래프": _fmt(pre_n) if pre_n else "—",
                        "train": _fmt(sp.get("train")), "val": _fmt(sp.get("val")),
-                       "test": _fmt(sp.get("test")), "test 동결": fm.get("test_frozen_by", "-"),
-                       "상태": stat})
+                       "test": _fmt(sp.get("test")),
+                       "매크로 adj_L1↓": macro_s, "법규(off→on)": legal})
     st.table(detail)
-    st.caption("v3·v4는 별도 코퍼스가 아니라 **v0 파인튜닝 + 글로벌 사전학습**(RPLAN/결합) 변형 — "
-               "파인튜닝·평가 split은 v0와 공유, 사전학습 그래프만 추가. 성능 판정(사전학습 무익)은 §2.")
+    st.caption("매크로 adj_L1·법규 = 해당 버전 **신경망(5시드)** 결과(낮을수록 좋음·균형 test). "
+               "v3·v4는 v0 파인튜닝 + 글로벌 사전학습 변형(평가 split은 v0 공유). 전체 비교는 §2.")
 
     st.subheader("방 종류 분포 (노드 수) — 버전별")
     import pandas as _pd
@@ -1000,6 +1016,195 @@ if which.startswith("📊"):
                 st.info("비교 데이터 없음: `bash scripts/run_matrix.sh` 실행 후 표시됩니다.")
 
     st.stop()
+
+# ════════════════════════════════════════════════════════════════════════════
+# 📈 결과 대시보드 — 데이터셋 조합별 성능 비교 (이전 구조 복원: 608eeaf)
+#   개념: 데이터셋을 합쳐 하나를 학습 → 어떤 조합이 최고인지 비교.
+#   데이터버전 매핑: 없음→v0 · +CubiCasa→v2 · +RPLAN→v3 · +결합→v4 (experiments._PRETRAIN_VER).
+# ════════════════════════════════════════════════════════════════════════════
+if which.startswith("📈"):
+    import json as _json
+    import random as _random
+    from collections import Counter as _Counter
+    from plan2graph import model_baseline as _mb
+    from plan2graph import review as _rv
+
+    REL = config.DATA_DIR / "releases"
+    vers = sorted([p.name for p in REL.glob("v*") if p.is_dir()
+                   and (p / "manifest.json").exists()
+                   and (p / "splits" / "test.txt").exists()]) if REL.exists() else []
+    if not vers:
+        st.info("동결된 버전이 없습니다. `python src/plan2graph/release.py v0` 먼저 실행.")
+        st.stop()
+    st.title("📈 결과 대시보드")
+    st.caption("**데이터셋 조합별 성능 비교** — 데이터를 합쳐 하나를 학습했을 때 어떤 조합이 최고인지 한눈에. "
+               "test는 AI-Hub 동결분으로 전 버전 공유(비교 기준 고정).")
+    ver = vers[-1]
+
+    def _mt(p):
+        return p.stat().st_mtime if p.exists() else 0
+
+    @st.cache_data(show_spinner=False)
+    def _manifest(v, _k):
+        p = REL / v / "manifest.json"
+        return _json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+    @st.cache_data(show_spinner=False)
+    def _evalr(v, _k):
+        p = REL / v / "eval.json"
+        return _json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+    @st.cache_data(show_spinner="데이터셋 통계 집계...")
+    def _roomdist(v, _k):
+        c = _Counter()
+        for f in (REL / v / "graphs").glob("*.json"):
+            r = _json.loads(f.read_text(encoding="utf-8"))
+            for n in r["layout"]["nodes"]:
+                if n.get("type") and n["type"] != "exterior":
+                    c[n["type"]] += 1
+        return dict(c.most_common())
+
+    @st.cache_resource(show_spinner="모델 학습(통계 생성기)...")
+    def _model(v, _k):
+        return _mb.fit(_mb._load_split(v, "train"))
+
+    man = _manifest(ver, _mt(REL / ver / "manifest.json"))
+    ev = _evalr(ver, _mt(REL / ver / "eval.json"))
+
+    @st.cache_data(show_spinner="실험 원장 집계...")
+    def _agg(_k):
+        from plan2graph import experiments
+        return experiments.agg_summary()
+
+    _idx = ROOT / "runs" / "index.jsonl"
+    summ = _agg(_mt(_idx)) if _idx.exists() else {"eval": [], "generalization": []}
+    _v0man = _manifest("v0", _mt(REL / "v0" / "manifest.json"))
+    _AIHUB = _v0man.get("n_graphs")
+    _ai = f"AI-Hub {_AIHUB:,}" if _AIHUB else "AI-Hub"
+
+    def _best_eval(dsv):   # 버전별 수렴본(신경망 최다시드, 규제루프 on)
+        cs = [r for r in summ["eval"] if r.get("ds_version") == dsv
+              and r["generator"] == "신경망" and r["loop"] == "on"]
+        return max(cs, key=lambda r: r["seeds"]) if cs else None
+
+    def _best_unseen(dsv):
+        cs = [r for r in summ["generalization"] if r.get("ds_version") == dsv
+              and r["generator"] == "신경망" and r["subset"] == "unseen"]
+        return max(cs, key=lambda r: r["seeds"]) if cs else None
+
+    def _pm(m, s):
+        return "—" if m is None else (f"{m:.3f}±{s:.3f}" if s else f"{m:.3f}")
+
+    # ── 1) 데이터셋 — 버전별 학습 데이터 구성(합친 구성) ──
+    st.header("1. 데이터셋 — 버전별 학습 데이터 구성")
+    st.caption("버전 = 학습에 넣은 **데이터 조합**(데이터를 합쳐 하나를 학습). 재학습 시 최종값만 남김.")
+    st.table([
+        {"버전": "v0", "데이터셋 구성(합친 데이터)": _ai, "결과": "✅ 완료"},
+        {"버전": "v1", "데이터셋 구성(합친 데이터)": f"{_ai} + 보정(확장)", "결과": "⏳ 보정 진행중"},
+        {"버전": "v2", "데이터셋 구성(합친 데이터)": f"{_ai} + CubiCasa 3,028", "결과": "✅ 완료"},
+        {"버전": "v3", "데이터셋 구성(합친 데이터)": f"{_ai} + RPLAN 80,371", "결과": "✅ 완료"},
+        {"버전": "v4", "데이터셋 구성(합친 데이터)": f"{_ai} + RPLAN 80,371 + CubiCasa 3,028",
+         "결과": "✅ 완료"},
+    ])
+    st.subheader("방 종류 분포 (노드 수)")
+    st.bar_chart(_roomdist(ver, _mt(REL / ver / "manifest.json")))
+
+    # ── 2) 공간 인접확률 (생성 목표) ──
+    st.header("2. 공간 인접확률 (생성 목표)")
+    st.caption("AI-Hub 데이터가 실제로 가진 P(방A~방B) = 생성모델이 맞춰야 할 목표 분포. 거실이 허브임을 보여줌.")
+    if ev.get("top_adjacency"):
+        st.bar_chart({d["pair"]: d["p"] for d in ev["top_adjacency"]})
+    else:
+        st.caption("(인접확률 데이터 없음 — eval.json 미생성)")
+
+    # ── 3) 생성 성능 — 버전별 핵심 ──
+    st.header("3. 생성 성능 — 버전별 핵심 (동결 test, 규제루프 on)")
+    st.caption("같은 동결 test에서 데이터버전별 신경망 성능 + v0 규칙기반(알고리즘) 기준선. "
+               "여러 시드 평균. 전체 매트릭스는 §5.")
+    rows3 = []
+    base = next((r for r in summ["eval"] if r.get("ds_version") == "v0"
+                 and r["generator"] == "규칙기반" and r["loop"] == "on"), None)
+    base_u = next((r for r in summ["generalization"] if r.get("ds_version") == "v0"
+                   and r["generator"] == "규칙기반" and r["subset"] == "unseen"), None)
+    if base:
+        rows3.append({"버전": "v0", "생성기": "규칙기반(알고리즘)",
+                      "인접L1↓(전체)": _pm(base["adj_L1_mean"], base["adj_L1_std"]),
+                      "인접L1↓(unseen)": _pm(base_u["adj_L1_mean"], base_u["adj_L1_std"]) if base_u else "—",
+                      "무결성": f"{(base['integrity'] or 0)*100:.0f}%",
+                      "법규": f"{(base['legal'] or 0)*100:.0f}%"})
+    for dsv in ["v0", "v2", "v3", "v4"]:
+        e, u = _best_eval(dsv), _best_unseen(dsv)
+        if e:
+            rows3.append({"버전": dsv, "생성기": "신경망",
+                          "인접L1↓(전체)": _pm(e["adj_L1_mean"], e["adj_L1_std"]),
+                          "인접L1↓(unseen)": _pm(u["adj_L1_mean"], u["adj_L1_std"]) if u else "—",
+                          "무결성": f"{(e['integrity'] or 0)*100:.0f}%",
+                          "법규": f"{(e['legal'] or 0)*100:.0f}%"})
+    if rows3:
+        st.table(rows3)
+    else:
+        st.info("성능 데이터 없음: `bash scripts/run_matrix.sh` 후 표시됩니다.")
+
+    # ── 4) 실제 vs 생성 예시 (규칙기반 생성기) ──
+    st.header("4. 실제 도면 vs AI 생성 (같은 program · 규칙기반 예시)")
+    if "ex_seed_dash" not in st.session_state:
+        st.session_state.ex_seed_dash = 1
+    if st.button("🎲 다른 예시", key="dash_ex"):
+        st.session_state.ex_seed_dash += 1
+    _test = _mb._load_split(ver, "test")
+    if _test:
+        rec = _test[st.session_state.ex_seed_dash % len(_test)]
+        program = dict(_Counter(n["type"] for n in rec["layout"]["nodes"]
+                                if isinstance(n["id"], int)))
+        st.caption(f"program: {program}")
+        gen = _mb.generate(_model(ver, _mt(REL / ver / "manifest.json")), program,
+                           _random.Random(st.session_state.ex_seed_dash))
+        e1, e2 = st.columns(2)
+        with e1:
+            st.markdown("**실제 (데이터셋)**")
+            st.pyplot(_rv.render_graph_fig(_rv.record_to_graph(rec),
+                      title="real", node_size=1500, font_size=11, layout="kamada"),
+                      use_container_width=True)
+        with e2:
+            st.markdown("**AI 생성 (같은 program)**")
+            st.pyplot(_rv.render_graph_fig(gen, title="generated",
+                      node_size=1500, font_size=11, layout="kamada"),
+                      use_container_width=True)
+
+    # ── 5) A/B 비교 — 데이터버전 × 생성기 × 규제루프 ──
+    st.header("5. A/B 비교 — 데이터버전 × 생성기 × 규제루프")
+    st.caption("데이터버전 = 학습 데이터 조합(**v0**=AI-Hub · **v2**=+CubiCasa · **v3**=+RPLAN · **v4**=+결합). "
+               "각 버전을 생성기(규칙기반 vs 신경망)·규제루프(on/off)로 같은 동결 test에서 비교. "
+               "시드 평균±표준편차. 단일 소스 = runs/index.jsonl.")
+
+    def _gen_label(r):
+        return f"{r['generator']}({r['arch']})" if r.get("arch") else r["generator"]
+
+    def _sort_key(r):
+        return (r.get("ds_version", "z"), 0 if r["generator"] == "규칙기반" else 1,
+                r.get("arch", ""), str(r.get("loop", "")))
+
+    if summ["eval"]:
+        st.subheader("전체 test")
+        st.table([{"데이터버전": r["ds_version"], "생성기": _gen_label(r),
+                   "규제루프": r["loop"], "시드": r["seeds"],
+                   "인접L1↓": _pm(r["adj_L1_mean"], r["adj_L1_std"]),
+                   "무결성": f"{(r['integrity'] or 0)*100:.0f}%",
+                   "법규": f"{(r['legal'] or 0)*100:.0f}%",
+                   "다양성": f"{(r['diversity'] or 0)*100:.0f}%",
+                   "신규성": f"{(r['novelty'] or 0)*100:.0f}%"}
+                  for r in sorted(summ["eval"], key=_sort_key)])
+        st.caption("인접L1↓: 낮을수록 실제 배치에 가까움 · 무결성=위상 R1~R5 · "
+                   "법규=채광 등 통과(규제루프 on이 위반 자동보정).")
+    if summ["generalization"]:
+        st.subheader("일반화 — seen / unseen program")
+        st.caption("처음 보는 방 구성(unseen)에서의 사실성 — 데이터 조합 효과가 가장 드러나는 축.")
+        st.table([{"데이터버전": r["ds_version"], "생성기": _gen_label(r),
+                   "subset": r["subset"], "시드": r["seeds"],
+                   "인접L1↓": _pm(r["adj_L1_mean"], r["adj_L1_std"])}
+                  for r in sorted(summ["generalization"], key=_sort_key)])
+    st.stop()
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # 🏗 도면 생성 (시연) — 자연어 → 위상 도면 + 자기교정 근거

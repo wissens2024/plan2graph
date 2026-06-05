@@ -224,8 +224,8 @@ def parse_config(cfg: str) -> dict:
 
 
 # 데이터셋 버전 = 사전학습 데이터 조합([[dataset-version-scheme]]): v0=AI-Hub, v2=+CubiCasa,
-# v3=+RPLAN. 보정(v1)은 finetune 데이터가 달라 ft_version으로 구분.
-_PRETRAIN_VER = {"없음": "v0", "Cubicasa": "v2", "Rplan": "v3"}
+# v3=+RPLAN, v4=+결합(RPLAN+CubiCasa). 보정(v1)은 finetune 데이터가 달라 ft_version으로 구분.
+_PRETRAIN_VER = {"없음": "v0", "Cubicasa": "v2", "Rplan": "v3", "All": "v4"}
 
 
 def _ds_version(ft_version: str, pretrain: str) -> str:
