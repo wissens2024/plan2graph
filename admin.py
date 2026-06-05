@@ -722,18 +722,28 @@ if which.startswith("📊"):
     st.header("1. 데이터셋 — 동결 릴리스")
     st.caption("동결된 코퍼스 릴리스. **test는 AI-Hub 균형분으로 전 버전 공유** → 비교 기준 고정. "
                "사전학습 변형(RPLAN·결합)과 생성기·구성요소 비교는 **§2·§3**에서.")
+    # 버전 사다리(전부 표시). v0·v2=동결 릴리스(라이브 manifest), v1·v3·v4=조합 정의.
+    _LADDER = [("v0", "AI-Hub dual(클린)", "—", "✅ 릴리스"),
+               ("v1", "AI-Hub dual + 보정·복구", "—", "⏳ 보정중"),
+               ("v2", "AI-Hub dual+V2V", "CubiCasa", "✅ 릴리스"),
+               ("v3", "AI-Hub dual+V2V", "+ RPLAN", "🔄 학습"),
+               ("v4", "AI-Hub dual+V2V", "+ RPLAN+CubiCasa(결합)", "🔄 학습")]
     rows1 = []
-    for v in vers:   # 실제 동결 릴리스만(라이브). v3/v4=사전학습 변형은 §2 성능표.
-        m = _manifest(v, _mt(REL / v / "manifest.json"))
-        ps, psh = m.get("per_source", {}), m.get("per_source_sheets", {})
-        ai, ai_s = ps.get("aihub"), psh.get("aihub")
-        cubi, rpl = ps.get("cubicasa5k"), ps.get("rplan")
-        ft = (f"AI-Hub {ai_s:,} 도면 ({ai:,} 세대)" if ai and ai_s
-              else (f"AI-Hub {ai:,}" if ai else "—"))
-        pre = " + ".join([s for s in (f"CubiCasa {cubi:,}" if cubi else None,
-                                      f"RPLAN {rpl:,}" if rpl else None) if s]) or "—"
-        rows1.append({"버전": v, "파인튜닝(한국형 AI-Hub)": ft, "사전학습(글로벌)": pre,
-                      "세대 그래프": f"{m.get('n_graphs', 0):,}"})
+    for v, ft_lbl, pre_lbl, stat in _LADDER:
+        m = _compose(v)
+        if m:   # 동결 릴리스 = 라이브 manifest
+            ps, psh = m.get("per_source", {}), m.get("per_source_sheets", {})
+            ai, ai_s = ps.get("aihub"), psh.get("aihub")
+            cubi, rpl = ps.get("cubicasa5k"), ps.get("rplan")
+            ft = (f"AI-Hub {ai_s:,} 도면 ({ai:,} 세대)" if ai and ai_s
+                  else (f"AI-Hub {ai:,}" if ai else ft_lbl))
+            pre = " + ".join([s for s in (f"CubiCasa {cubi:,}" if cubi else None,
+                                          f"RPLAN {rpl:,}" if rpl else None) if s]) or "—"
+            rows1.append({"버전": v, "파인튜닝(한국형 AI-Hub)": ft, "사전학습(글로벌)": pre,
+                          "세대 그래프": f"{m.get('n_graphs', 0):,}", "상태": stat})
+        else:   # 릴리스 전/변형 = 정의 라벨
+            rows1.append({"버전": v, "파인튜닝(한국형 AI-Hub)": ft_lbl,
+                          "사전학습(글로벌)": pre_lbl, "세대 그래프": "—", "상태": stat})
     st.table(rows1)
     st.subheader(f"선택 버전 상세 — {ver} (파인튜닝/평가 데이터셋)")
     c1, c2, c3, c4 = st.columns(4)
