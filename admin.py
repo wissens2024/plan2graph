@@ -1181,41 +1181,38 @@ if which.startswith("🏗"):
         "위상까지는 완성·평가됐다(→ 📈 결과 대시보드). **여기서는 그 위상으로 실제 좌표 도면까지 그려 보고**, "
         "더 나은 *좌표 도면 생성 방법*을 탐색한다. (위상 모델은 끝이 아니라 **부품**)")
 
-    # ── 2) 최종 모델 구성 — 데이터 × 사전학습 × 기법 ──
-    st.header("2. 최종 모델 구성 — 데이터 × 사전학습 × 기법")
-    st.caption("**학습 데이터(코퍼스)** × **글로벌 사전학습** × **기법**을 조합해 최종 위상 모델을 완성한다. "
+    # ── 2) 최종 모델 구성 — 사전학습 × 파인튜닝 ──
+    st.header("2. 최종 모델 구성 — 사전학습 × 파인튜닝")
+    st.caption("**글로벌 사전학습 모델** × **한국 파인튜닝 데이터**(+기법)를 조합해 최종 위상 모델을 완성한다. "
                "조합을 자유롭게 골라(미학습 조합은 ⚠️) → ③에서 그 모델로 Neuro-Symbolic 도면 생성.")
-    _VERS = {
-        "v0 · AI-Hub 클린 (7,101)": "v0", "v1 · AI-Hub 전체 (20,828)": "v1",
-        "v2 · +CubiCasa": "v2", "v3 · +RPLAN": "v3", "v4 · +CubiCasa+RPLAN": "v4",
-        "v5 · RPLAN만(글로벌)": "v5", "v6 · CubiCasa만(글로벌)": "v6", "v7 · RPLAN+CubiCasa(글로벌)": "v7",
-    }
+    _FT = {"v0 · AI-Hub 클린 (7,101)": "v0", "v1 · AI-Hub 전체 (20,828)": "v1"}
     _cf1, _cf2, _cf3 = st.columns(3)
-    _dskey = _cf1.selectbox("① 데이터셋 (학습 코퍼스)", list(_VERS),
-                            help="합쳐서 한 번에 학습하는 코퍼스. v5~v7=글로벌만(국내 평가 낮음)")
-    _ver = _VERS[_dskey]
-    _pre = _cf2.selectbox("② 사전학습 (글로벌)", ["없음", "RPLAN", "CubiCasa", "결합(RPLAN+CubiCasa)"],
-                          help="글로벌 도면으로 먼저 학습한 바탕 모델(현재 v0 데이터에만 학습됨)")
+    _pre = _cf1.selectbox("① 사전학습 (글로벌)", ["없음", "RPLAN", "CubiCasa", "결합(RPLAN+CubiCasa)"],
+                          help="글로벌 도면으로 먼저 학습한 바탕 모델")
+    _ftkey = _cf2.selectbox("② 파인튜닝 (한국 데이터)", list(_FT),
+                            help="한국 데이터로 특화. v0=클린 7,101 · v1=AI-Hub 전체 20,828")
+    _ver = _FT[_ftkey]
     _adv = _cf3.selectbox("③ 기법", ["표준", "type조건", "용량 2배"],
                           help="type조건=주거형태 조건화 · 용량2배=파라미터 ×2")
     _SUF = {"없음": "noPretrain", "RPLAN": "pre_global_rplan",
             "CubiCasa": "pre_global_cubicasa", "결합(RPLAN+CubiCasa)": "pre_global_all"}
-    _bits = [_ver]
     if _adv == "type조건":
-        _rid = f"gen-{_ver}-neural-set-transformer-typed-noPretrain-seed42"; _bits.append("+ type조건")
+        _rid = f"gen-{_ver}-neural-set-transformer-typed-noPretrain-seed42"
+        _desc = f"{_ver} + type조건"
     elif _adv == "용량 2배":
-        _rid = f"gen-{_ver}cap2x-neural-set-transformer-v2-noPretrain-seed42"; _bits.append("+ 용량2배")
+        _rid = f"gen-{_ver}cap2x-neural-set-transformer-v2-noPretrain-seed42"
+        _desc = f"{_ver} + 용량2배"
     elif _pre != "없음":
         _rid = f"gen-{_ver}-neural-set-transformer-v2-{_SUF[_pre]}-seed42"
-        _bits = [f"사전학습 {_pre} →", _ver]
+        _desc = f"사전학습 {_pre} → 파인튜닝 {_ver}"
     else:
         _rid = f"gen-{_ver}-neural-set-transformer-v2-noPretrain-seed42"
-    _desc = " ".join(_bits)
+        _desc = f"파인튜닝 {_ver} (사전학습 없음)"
     _ckpt = _ROOT / "runs" / _rid / "checkpoint.pt"
     _exists = _ckpt.exists()
     st.markdown(f"**→ 최종 모델: {_desc}**  ·  {'✅ 학습됨' if _exists else '⚠️ 이 조합 미학습'}")
-    st.caption(f"run_id: `{_rid}`  ·  학습된 조합: 표준=v0~v7 · 용량2배=v0·v1·v4·v7 · "
-               "type조건=v0 · 사전학습=v0. (미학습 조합도 선택은 되나 생성 불가)")
+    st.caption(f"run_id: `{_rid}`  ·  학습된 조합: 사전학습(없음/RPLAN/CubiCasa/결합)×파인튜닝 v0 · "
+               "파인튜닝 v1=사전학습 없음만 · 용량2배=v0·v1 · type조건=v0. (미학습 조합은 ⚠️·생성 불가)")
 
     # ── 3) Neuro-Symbolic 도면 생성 ──
     st.header("3. Neuro-Symbolic 도면 생성")
