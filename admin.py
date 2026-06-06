@@ -1177,41 +1177,50 @@ if which.startswith("🏗"):
     st.header("1. 파이프라인 — 지금 어디까지")
     st.markdown(
         "자연어 → 제약(program) → **위상 생성**(✅ 구현·평가) → **Symbolic 자기교정**(✅ 위상) "
-        "→ **좌표 도면(geometry)**(🔜 다음 단계) → 무결 도면.\n\n"
-        "위상까지는 완성·평가됐다(→ 📈 결과 대시보드). **여기서는 그 위상을 실제로 만들어 보고**, "
-        "다음 단계인 *좌표 도면 생성 방법*을 탐색한다. (위상 모델은 끝이 아니라 **부품**)")
+        "→ **좌표 도면(geometry)**(✅ 규칙기반 1세대 · 고급방법 로드맵) → 무결 도면.\n\n"
+        "위상까지는 완성·평가됐다(→ 📈 결과 대시보드). **여기서는 그 위상으로 실제 좌표 도면까지 그려 보고**, "
+        "더 나은 *좌표 도면 생성 방법*을 탐색한다. (위상 모델은 끝이 아니라 **부품**)")
 
-    # ── 2) 최종 모델 구성 — 사전학습 × 파인튜닝 ──
-    st.header("2. 최종 모델 구성 — 사전학습 × 파인튜닝")
-    st.caption("**글로벌 사전학습 모델** × **한국 파인튜닝 데이터**(+기법)를 조합해 최종 위상 모델을 완성한다. "
-               "현재 학습된 조합을 자유롭게 골라 → ③에서 그 모델로 Neuro-Symbolic 도면 생성.")
+    # ── 2) 최종 모델 구성 — 데이터 × 사전학습 × 기법 ──
+    st.header("2. 최종 모델 구성 — 데이터 × 사전학습 × 기법")
+    st.caption("**학습 데이터(코퍼스)** × **글로벌 사전학습** × **기법**을 조합해 최종 위상 모델을 완성한다. "
+               "조합을 자유롭게 골라(미학습 조합은 ⚠️) → ③에서 그 모델로 Neuro-Symbolic 도면 생성.")
+    _VERS = {
+        "v0 · AI-Hub 클린 (7,101)": "v0", "v1 · AI-Hub 전체 (20,828)": "v1",
+        "v2 · +CubiCasa": "v2", "v3 · +RPLAN": "v3", "v4 · +CubiCasa+RPLAN": "v4",
+        "v5 · RPLAN만(글로벌)": "v5", "v6 · CubiCasa만(글로벌)": "v6", "v7 · RPLAN+CubiCasa(글로벌)": "v7",
+    }
     _cf1, _cf2, _cf3 = st.columns(3)
-    _pre = _cf1.selectbox("① 사전학습 (글로벌)", ["없음", "RPLAN", "CubiCasa", "결합(RPLAN+CubiCasa)"],
-                          help="글로벌 도면으로 먼저 학습한 바탕 모델")
-    _ft = _cf2.selectbox("② 파인튜닝 (한국)", ["AI-Hub v0 (클린)"],
-                         help="한국 데이터로 특화. 현재 학습된 파인튜닝셋 = v0")
+    _dskey = _cf1.selectbox("① 데이터셋 (학습 코퍼스)", list(_VERS),
+                            help="합쳐서 한 번에 학습하는 코퍼스. v5~v7=글로벌만(국내 평가 낮음)")
+    _ver = _VERS[_dskey]
+    _pre = _cf2.selectbox("② 사전학습 (글로벌)", ["없음", "RPLAN", "CubiCasa", "결합(RPLAN+CubiCasa)"],
+                          help="글로벌 도면으로 먼저 학습한 바탕 모델(현재 v0 데이터에만 학습됨)")
     _adv = _cf3.selectbox("③ 기법", ["표준", "type조건", "용량 2배"],
-                          help="type조건=주거형태 조건화 · 용량2배=파라미터 ×2 (둘 다 사전학습 없음 기준)")
+                          help="type조건=주거형태 조건화 · 용량2배=파라미터 ×2")
     _SUF = {"없음": "noPretrain", "RPLAN": "pre_global_rplan",
             "CubiCasa": "pre_global_cubicasa", "결합(RPLAN+CubiCasa)": "pre_global_all"}
+    _bits = [_ver]
     if _adv == "type조건":
-        _rid, _desc = "gen-v0-neural-set-transformer-typed-noPretrain-seed42", "AI-Hub v0 + type조건"
+        _rid = f"gen-{_ver}-neural-set-transformer-typed-noPretrain-seed42"; _bits.append("+ type조건")
     elif _adv == "용량 2배":
-        _rid, _desc = "gen-v0cap2x-neural-set-transformer-v2-noPretrain-seed42", "AI-Hub v0 + 용량 2배"
+        _rid = f"gen-{_ver}cap2x-neural-set-transformer-v2-noPretrain-seed42"; _bits.append("+ 용량2배")
+    elif _pre != "없음":
+        _rid = f"gen-{_ver}-neural-set-transformer-v2-{_SUF[_pre]}-seed42"
+        _bits = [f"사전학습 {_pre} →", _ver]
     else:
-        _rid = f"gen-v0-neural-set-transformer-v2-{_SUF[_pre]}-seed42"
-        _desc = (f"사전학습 {_pre} → " if _pre != "없음" else "") + "AI-Hub v0"
+        _rid = f"gen-{_ver}-neural-set-transformer-v2-noPretrain-seed42"
+    _desc = " ".join(_bits)
     _ckpt = _ROOT / "runs" / _rid / "checkpoint.pt"
     _exists = _ckpt.exists()
     st.markdown(f"**→ 최종 모델: {_desc}**  ·  {'✅ 학습됨' if _exists else '⚠️ 이 조합 미학습'}")
-    st.caption(f"run_id: `{_rid}`"
-               + ("  ·  ⚠️ type조건·용량2배는 사전학습 없음(v0) 기준만 학습 → 사전학습 선택 무시"
-                  if _adv != "표준" else ""))
+    st.caption(f"run_id: `{_rid}`  ·  학습된 조합: 표준=v0~v7 · 용량2배=v0·v1·v4·v7 · "
+               "type조건=v0 · 사전학습=v0. (미학습 조합도 선택은 되나 생성 불가)")
 
     # ── 3) Neuro-Symbolic 도면 생성 ──
     st.header("3. Neuro-Symbolic 도면 생성")
-    st.caption("위 최종 모델로: 자연어 → 제약 → **위상 생성(Neuro)** → **규제 자기교정(Symbolic)**. "
-               "패널2 자기교정 OFF∥ON · 패널3 근거. *(좌표 도면은 §4 — 현재 위상까지)*")
+    st.caption("위 최종 모델로: 자연어 → 제약 → **위상 생성(Neuro)** → **규제 자기교정(Symbolic)** "
+               "→ **좌표 도면(geometry)**. 패널2 위상 OFF∥ON · 패널3 실제 도면 · 패널4 근거.")
     if not _exists:
         st.info("이 조합은 아직 학습되지 않았습니다. 다른 조합을 고르세요(또는 학습 필요).")
     else:
@@ -1256,7 +1265,19 @@ if which.startswith("🏗"):
                                 f"{'✅통과' if v_on['passed'] else '❌'}")
                     st.pyplot(_rv.render_graph_fig(G_on, title="loop on", node_size=1500,
                               font_size=11, layout="kamada"), use_container_width=True)
-                st.markdown("**패널3 — Symbolic 근거 (자기교정 로그)**")
+                st.markdown("**패널3 — 실제 도면 (geometry · 규칙기반 1세대) — 같은 위상 → 좌표 배치**")
+                from plan2graph import floorgeom as _fg
+                d1, d2 = st.columns(2)
+                with d1:
+                    st.pyplot(_fg.render_floorplan_fig(G_off, title="loop off"),
+                              use_container_width=True)
+                with d2:
+                    st.pyplot(_fg.render_floorplan_fig(G_on, title="loop on"),
+                              use_container_width=True)
+                st.caption("방=유형 색사각형 · 검은테=벽 · 흰 틈=문(위상 엣지+경계공유) · 외벽 현관/창. "
+                           "면적은 유형별 표준비(실측 scale 확보 전 근사). "
+                           "좌표회귀·diffusion·RL은 §5 로드맵.")
+                st.markdown("**패널4 — Symbolic 근거 (자기교정 로그)**")
                 st.table([{"시도": h["attempt"], "위반(전)": h["violations_before"],
                            "수정": ", ".join(h["fixes"]) or "—",
                            "위반(후)": h["violations_after"],
@@ -1274,8 +1295,8 @@ if which.startswith("🏗"):
     st.header("4. 도면(geometry) 방법 — 위상→좌표 (로드맵)")
     st.caption("위상 → 좌표 도면을 만드는 방법 후보. {위상 모델} × {도면 방법} × {정제 루프} 중 *최고 도면* 탐색.")
     st.table([
-        {"방법": "규칙기반 기하 배치", "설명": "위상에 좌표·벽 채움(rectangular dissection)",
-         "상태": "스파이크 검증(1세대)"},
+        {"방법": "규칙기반 기하 배치", "설명": "위상에 좌표·벽 채움(squarified treemap·면적비)",
+         "상태": "✅ 구현 — §3에서 시연(1세대)"},
         {"방법": "좌표 회귀 GNN", "설명": "위상+제약 → 좌표 직접 예측", "상태": "예정"},
         {"방법": "Layout diffusion", "설명": "위상 조건 생성형 도면", "상태": "예정"},
         {"방법": "Constrained RL", "설명": "면적·법규·동선 보상 최적화", "상태": "예정(원설계 Phase-3)"},
