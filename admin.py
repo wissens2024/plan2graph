@@ -279,7 +279,7 @@ which = st.sidebar.radio("메뉴", ["🧮 종합 현황", "🏢 AI-Hub 검수",
                                  "🏠 CubiCasa 검수", "📐 RPLAN 검수",
                                  "📏 scale 보정", "📜 법령 DB",
                                  "📈 결과 대시보드",
-                                 "📊 위상 모델 결과", "🏗 도면 생성(시연)"],
+                                 "📊 위상 모델 선정", "🏗 도면 생성"],
                           index=0, label_visibility="collapsed")
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -662,10 +662,9 @@ if which.startswith("📊"):
         st.info("동결된 버전이 없습니다. `python src/plan2graph/release.py v0` 먼저 실행.")
         st.stop()
 
-    st.title("📊 위상 모델 — 성능 비교·선정")
-    st.caption("위상 생성 AI를 **방법(생성기·Neuro-Symbolic·type조건·용량)** 관점으로 비교해 "
-               "**도면 생성에 쓸 최고 구성을 선정**한다. (데이터 조합 상세는 → 📈 결과 대시보드) "
-               "위상 모델은 끝이 아니라 도면을 만드는 **부품**.")
+    st.title("📊 위상 모델 선정")
+    st.caption("📈 결과 대시보드의 비교를 종합해 **도면 생성에 쓸 최고 위상 구성을 선정**한다. "
+               "위상 모델은 끝이 아니라 도면을 만드는 **부품** — 선정 결과를 🏗로 넘긴다.")
      
 
     ver = vers[-1] if vers else None   # 기본(최신 릴리스) — 상세 예시용. 사이드바 버전선택·새로고침 제거.
@@ -715,251 +714,19 @@ if which.startswith("📊"):
     def _pm(m, s):
         return "—" if m is None else (f"{m:.3f}±{s:.3f}" if s else f"{m:.3f}")
 
-    # ── 1) 데이터셋 — 버전 사다리(동결 릴리스 + 사전학습 변형) ──
-    st.header("1. 데이터셋 — 버전 사다리")
-    st.caption("**동결 릴리스**(v0·v2: 레시피로 재현되는 코퍼스) + **사전학습 변형**(v3·v4: v0 위에 글로벌 사전학습만 얹음). "
-               "test는 AI-Hub 균형분으로 전 버전 공유 → 비교 기준 고정. 성능 비교는 **§2·§3**.")
-    # 버전 사다리(전부 표시·실데이터). (버전, 파인튜닝릴리스, 사전학습릴리스, 상태)
-    #   v3/v4는 코퍼스가 아니라 v0 파인튜닝 + 글로벌 사전학습 변형 → 파인튜닝=v0 라이브, 사전학습=global_* 라이브.
-    _LADDER = [("v0", "v0", None, "동결 릴리스"),
-               ("v1", None, None, "보정중"),
-               ("v2", "v2", None, "동결 릴리스"),
-               ("v3", "v0", "global_rplan", "사전학습 변형"),
-               ("v4", "v0", "global_all", "사전학습 변형")]
-
-    def _fmt(x):
-        return f"{x:,}" if isinstance(x, int) else (x or "-")
-
-    def _ladder_data(ftv, prev):
-        """파인튜닝 manifest(fm) + 사전학습 소스 dict(pps) + 사전학습 그래프수(pre_n)."""
-        fm = _compose(ftv) or {}
-        fps = fm.get("per_source", {})
-        if prev:                                   # v3/v4 = 전용 글로벌 릴리스
-            pm = _compose(prev) or {}
-            pps, pre_n = pm.get("per_source", {}), pm.get("n_graphs", 0)
-        else:                                      # v2 = 자체 per_source에 사전학습 내장
-            pps = {k: fps[k] for k in ("rplan", "cubicasa5k") if k in fps}
-            pre_n = sum(pps.values())
-        return fm, fps, pps, pre_n
-
-    def _pre_label(pps):
-        return " + ".join([s for s in (f"RPLAN {pps['rplan']:,}" if pps.get("rplan") else None,
-                                       f"CubiCasa {pps['cubicasa5k']:,}" if pps.get("cubicasa5k") else None)
-                           if s]) or "—"
-
-    rows1 = []
-    for v, ftv, prev, stat in _LADDER:
-        if ftv is None:   # v1 — 정의만(릴리스 전)
-            rows1.append({"버전": v, "파인튜닝(한국형 AI-Hub)": "AI-Hub dual + 보정·복구",
-                          "사전학습(글로벌)": "—", "총 세대 그래프": "—", "상태": stat}); continue
-        fm, fps, pps, pre_n = _ladder_data(ftv, prev)
-        ai, ai_s = fps.get("aihub"), fm.get("per_source_sheets", {}).get("aihub")
-        ft = (f"AI-Hub {ai_s:,} 도면 ({ai:,} 세대)" if ai and ai_s
-              else (f"AI-Hub {ai:,}" if ai else "—"))
-        # 총 세대 = 파인튜닝 + 사전학습. v2는 n_graphs에 사전학습 내장(prev=None)이라 중복합산 방지.
-        total = fm.get("n_graphs", 0) + (pre_n if prev else 0)
-        rows1.append({"버전": v, "파인튜닝(한국형 AI-Hub)": ft, "사전학습(글로벌)": _pre_label(pps),
-                      "총 세대 그래프": f"{total:,}", "상태": stat})
-    st.table(rows1)
-
-    st.subheader("버전별 상세 — 데이터 + 성능 결과")
-    # 버전 → 대표 신경망 결과(version, pretrain). ds_version(옛 혼동 라벨) 대신 명시적 매핑.
-    def _pkey(p):
-        return None if p in (None, "없음") else p
-    _dwl_macro = {(r["version"], _pkey(r["pretrain"])): r["macro"]
-                  for r in summ.get("dwelling", []) if r["generator"] == "신경망"}
-    _evl = {(r["version"], _pkey(r.get("pretrain")), r["loop"]): r for r in summ.get("eval", [])}
-    _RESULT_KEY = {"v0": ("v0", None), "v2": ("v2", "Cubicasa"),
-                   "v3": ("v0", "Rplan"), "v4": ("v0", "All")}
-    detail = []
-    for v, ftv, prev, stat in _LADDER:
-        rk = _RESULT_KEY.get(v)
-        macro = _dwl_macro.get(rk) if rk else None
-        eoff, eon = (_evl.get((*rk, "off")), _evl.get((*rk, "on"))) if rk else (None, None)
-        legal = (f"{(eoff['legal'] or 0)*100:.0f}→{(eon['legal'] or 0)*100:.0f}%"
-                 if (eoff and eon) else "—")
-        macro_s = f"{macro:.3f}" if isinstance(macro, (int, float)) else "—"
-        if ftv is None:   # v1 — 미구축
-            detail.append({"버전": v, "도면": "—", "파인튜닝 세대": "—", "사전학습 그래프": "—",
-                           "train": "—", "val": "—", "test": "—",
-                           "매크로 adj_L1↓": "—", "법규(off→on)": "—"}); continue
-        fm, _, _, pre_n = _ladder_data(ftv, prev)
-        sp = fm.get("splits", {})
-        detail.append({"버전": v, "도면": _fmt(fm.get("n_sheets", 0)),
-                       "파인튜닝 세대": _fmt(fm.get("n_graphs", 0)),
-                       "사전학습 그래프": _fmt(pre_n) if pre_n else "—",
-                       "train": _fmt(sp.get("train")), "val": _fmt(sp.get("val")),
-                       "test": _fmt(sp.get("test")),
-                       "매크로 adj_L1↓": macro_s, "법규(off→on)": legal})
-    st.table(detail)
-    st.caption("매크로 adj_L1·법규 = 해당 버전 **신경망(5시드)** 결과(낮을수록 좋음·균형 test). "
-               "v3·v4는 v0 파인튜닝 + 글로벌 사전학습 변형(평가 split은 v0 공유). 전체 비교는 §2.")
-
-    st.subheader("방 종류 분포 (노드 수) — 버전별")
-    import pandas as _pd
-    _rd = {v: _roomdist(v, _mt(REL / v / "manifest.json")) for v in vers}   # 그래프 보유 릴리스
-    if any(_rd.values()):
-        _types = sorted({t for d in _rd.values() for t in d})
-        _df = _pd.DataFrame({v: [_rd[v].get(t, 0) for t in _types] for v in _rd}, index=_types)
-        st.bar_chart(_df)
-    else:
-        st.caption("표시할 그래프 데이터 없음")
-
-    # ── 2) 핵심 결과 — 균형 소버린 벤치마크 ──
-    st.header("2. 핵심 결과 — 균형 소버린 벤치마크 (동결 test 300도면, loop off)")
-    _b1, _b2, _b3 = st.columns(3)
-    _b1.success("🔄 **반전** — 신경망 > 규칙기반\n\n(균형 매크로)")
-    _b2.success("🎯 **type조건 최대 레버**\n\n(매크로 0.123, 사전학습 무익)")
-    _b3.success("⚖️ **규제루프** — 법규 → 100%")
-    st.caption("주거형태(APT/DEH/ROW) 균형 test. **매크로 평균**(유형 동등가중)이 소버린 헤드라인 — "
-               "원시분포(APT 94%)가 가리던 약형 유형을 드러냄. 여러 시드 평균.")
-
-    def _cfglabel(version, generator, pretrain):
-        g = "규칙기반" if generator == "규칙기반" else "신경망"
-        return version, g, ("—" if pretrain in (None, "없음") else f"+{pretrain}")
-
-    def _f3(x):
-        return f"{x:.3f}" if isinstance(x, (int, float)) else "—"
-
-    # 3-A) dwelling 매크로 (소버린 헤드라인)
-    dwl = sorted(summ.get("dwelling", []),
-                 key=lambda r: (r["version"], r["generator"], str(r.get("pretrain"))))
-    if dwl:
-        _best = min((r for r in dwl if isinstance(r.get("macro"), (int, float))),
-                    key=lambda r: r["macro"], default=None)
-        rowsA = []
-        for r in dwl:
-            v, g, pre = _cfglabel(r["version"], r["generator"], r.get("pretrain"))
-            rowsA.append({"코퍼스": v, "생성기": g, "사전학습": pre,
-                          "APT": _f3(r.get("APT")), "DEH": _f3(r.get("DEH")),
-                          "ROW": _f3(r.get("ROW")), "매크로 adj_L1↓": _f3(r.get("macro")),
-                          "비고": "🏆 현재 최선" if r is _best else ""})
-        st.table(rowsA)
-        st.caption("**반전**: 균형 매크로에선 신경망 < 규칙기반 — 규칙기반은 APT만 잘하고 DEH/ROW에서 무너짐. "
-                   "소버린(전 유형)엔 신경망 우위. 사전학습(RPLAN v3·결합 v4)은 무익. "
-                   "**🏆 = 사전학습/코퍼스 매트릭스 내 최선 (전체 최선은 ↓ type조건 0.123).**")
-
-    # 3-A′) type조건 효과 (typed plugin) — 별도 산출물(typed_effect.json), 단일 최대 레버
-    _te_path = REL / "typed_effect.json"
-    if _te_path.exists():
-        _te = _json.loads(_te_path.read_text(encoding="utf-8"))
-        st.subheader("type조건 효과 — 주거형태 조건화 (단일 최대 레버)")
-        rows_te = []
-        for h in _te["houses"]:
-            on_m, off_m = _te["on"][h], _te["off"][h]
-            rows_te.append({"주거형태": h,
-                            "조건 ON adj_L1↓": f"{on_m[0]:.3f}±{on_m[1]:.3f}",
-                            "조건 OFF adj_L1↓": f"{off_m[0]:.3f}±{off_m[1]:.3f}",
-                            "Δ개선": f"{off_m[0] - on_m[0]:+.3f}"})
-        _mo, _mf = _te["macro_on"], _te["macro_off"]
-        rows_te.append({"주거형태": "🏆 매크로", "조건 ON adj_L1↓": f"{_mo[0]:.3f}±{_mo[1]:.3f}",
-                        "조건 OFF adj_L1↓": f"{_mf[0]:.3f}±{_mf[1]:.3f}",
-                        "Δ개선": f"{_mf[0] - _mo[0]:+.3f}"})
-        st.table(rows_te)
-        st.caption("같은 체크포인트·시드에서 **house_type 조건만 ON/OFF**(typed plugin, ADR-0001). "
-                   "소수형태(ROW·DEH)에서 큰 이득·다수 APT 무변 → 과소대표 유형 격차를 메움. "
-                   "매크로 0.123은 전 사전학습/코퍼스 조합(최선 0.186)을 큰 폭 상회 — **전체 최선·단일 최대 레버.**")
-
-    # 3-B) 전체(마이크로) · 일반화(unseen) · 법규
-    evd = {(r["version"], r["generator"], r.get("pretrain"), r["loop"]): r for r in summ["eval"]}
-    und = {(r["version"], r["generator"], r.get("pretrain")): r
-           for r in summ["generalization"] if r["subset"] == "unseen"}
-    cfgs = []
-    for r in summ["eval"]:
-        k = (r["version"], r["generator"], r.get("pretrain"))
-        if k not in cfgs:
-            cfgs.append(k)
-    rowsB = []
-    for k in sorted(cfgs):
-        off, on, u = evd.get((*k, "off")), evd.get((*k, "on")), und.get(k)
-        if not off:
-            continue
-        v, g, pre = _cfglabel(*k)
-        legal = (f"{(off['legal'] or 0)*100:.0f}→{(on['legal'] or 0)*100:.0f}%"
-                 if on else f"{(off['legal'] or 0)*100:.0f}%")
-        rowsB.append({"코퍼스": v, "생성기": g, "사전학습": pre,
-                      "전체 adj_L1↓": _pm(off["adj_L1_mean"], off["adj_L1_std"]),
-                      "unseen adj_L1↓": _pm(u["adj_L1_mean"], u["adj_L1_std"]) if u else "—",
-                      "무결성": f"{(off['integrity'] or 0)*100:.0f}%", "법규(off→on)": legal})
-    if rowsB:
-        st.subheader("전체 test(마이크로) · 일반화(unseen) · 법규")
-        st.table(rowsB)
-        st.caption("V2V 확장(v2)은 충실도·법규 악화(법규 off v0~0.9→v2~0.4; 규제루프 on→100%). "
-                   "사전학습(CubiCasa·RPLAN v3·결합 v4) ≈ 중립~소폭 악화(무익). 신경망 전체 adj_L1도 규칙기반 하회(반전).")
-    else:
-        st.info("성능 데이터 없음: `bash scripts/run_matrix.sh` 후 표시됩니다.")
-
-    # ── 3.5) Neuro-Symbolic 구성 기여 (ablation 사다리) ──
-    st.header("3. 구성요소 기여 — Neuro-Symbolic ablation 사다리")
-    st.caption("생성 파이프라인을 구성요소별로 누적하며 균형 매크로 기여를 본다 — "
-               "각 단계의 delta = 그 요소(Neuro/Symbolic)의 기여(논문 ablation).")
-    _dwl = summ.get("dwelling", [])
-    if not _dwl:
-        st.info("ablation 데이터 없음: `bash scripts/run_matrix.sh` 후 표시됩니다.")
-    else:
-        avs = sorted({r["version"] for r in _dwl})
-        abl_v = st.selectbox("코퍼스", avs, key="abl_v")
-        aps = sorted({r.get("pretrain") for r in _dwl
-                      if r["version"] == abl_v and r["generator"] == "신경망"})
-        abl_p = st.selectbox("사전학습(신경망)", aps or ["없음"], key="abl_p")
-
-        def _dw(gen, pre=None):
-            return next((r for r in _dwl if r["version"] == abl_v and r["generator"] == gen
-                         and (pre is None or r.get("pretrain") == pre)), None)
-
-        def _evr(gen, loop, pre=None):
-            return next((r for r in summ["eval"] if r["version"] == abl_v
-                         and r["generator"] == gen and r["loop"] == loop
-                         and (pre is None or r.get("pretrain") == pre)), None)
-
-        def _f3(x):
-            return f"{x:.3f}" if isinstance(x, (int, float)) else "—"
-
-        def _pct(x):
-            return f"{x*100:.0f}%" if isinstance(x, (int, float)) else "—"
-
-        b_dw, b_ev = _dw("규칙기반"), _evr("규칙기반", "off")
-        n_dw, n_off, n_on = _dw("신경망", abl_p), _evr("신경망", "off", abl_p), _evr("신경망", "on", abl_p)
-        ladder = []
-        if b_dw and b_ev:
-            ladder.append({"구성": "규칙기반(통계)", "매크로 adj_L1↓": _f3(b_dw.get("macro")),
-                           "법규": _pct(b_ev.get("legal")), "무결성": _pct(b_ev.get("integrity")),
-                           "다양성": _f3(b_ev.get("diversity")), "기여(Δ)": "기준선"})
-        if n_dw and n_off:
-            d = (b_dw.get("macro") - n_dw.get("macro")) if (b_dw and isinstance(b_dw.get("macro"), (int, float))
-                                                            and isinstance(n_dw.get("macro"), (int, float))) else None
-            sign = ("−" if d > 0 else "+") if d is not None else ""
-            ladder.append({"구성": "+ 신경망(Relation-Aware GNN)", "매크로 adj_L1↓": _f3(n_dw.get("macro")),
-                           "법규": _pct(n_off.get("legal")), "무결성": _pct(n_off.get("integrity")),
-                           "다양성": _f3(n_off.get("diversity")),
-                           "기여(Δ)": (f"Neuro: 매크로 {sign}{abs(d):.3f}" if d is not None else "Neuro")})
-        if n_on and n_off:
-            dl = (n_on.get("legal") - n_off.get("legal")) if (isinstance(n_on.get("legal"), (int, float))
-                                                              and isinstance(n_off.get("legal"), (int, float))) else None
-            ladder.append({"구성": "+ 자기교정(Symbolic loop)",
-                           "매크로 adj_L1↓": _f3(n_dw.get("macro")) if n_dw else "—",
-                           "법규": _pct(n_on.get("legal")), "무결성": _pct(n_on.get("integrity")),
-                           "다양성": _f3(n_on.get("diversity")),
-                           "기여(Δ)": (f"Symbolic: 법규 +{dl*100:.0f}%p" if dl is not None else "Symbolic")})
-        ladder.append({"구성": "+ Constrained RL (예정)", "매크로 adj_L1↓": "—", "법규": "—",
-                       "무결성": "—", "다양성": "—", "기여(Δ)": "SWRL 페널티 + Space Syntax 보상"})
-        if len(ladder) > 1:
-            st.table(ladder)
-            st.caption("Neuro(신경망)=충실도(매크로↓), Symbolic(자기교정)=법규준수(off→on). "
-                       "사전학습·데이터는 §2 축(RPLAN v3·결합 v4 = 무익). type조건이 최대 레버(§2).")
-        else:
-            st.info("ablation 데이터 부족: 매트릭스 실행 후 표시.")
-
-    # ── 4) 최고 구성 선정 → 도면 생성으로 ──
-    st.header("4. 최고 구성 선정 → 도면 생성으로")
+    # ── 1) 최고 구성 선정 → 도면 생성으로 ──
+    st.header("1. 최고 구성 선정")
     st.success("**채택 구성(현재 최선): 클린 한국 데이터(v0) + 모델 용량 2배 + 규제 루프(+ type조건).**")
     st.markdown(
-        "위 비교에서 *데이터(§2: 클린 한국이 최고, 글로벌 무익) · 방법(§3: 신경망>규칙기반, 규제루프=법규 100%) "
-        "· 레버(type조건·용량 = 소수형태 개선)* 가 일관된 결론을 가리킨다.\n\n"
-        "→ **이 구성으로 만든 위상**을 다음 단계 **🏗 도면 생성**의 입력(부품)으로 사용한다. "
-        "위상 모델 1개로 끝이 아니라, *도면이 잘 나오는 조합*을 🏗에서 이어서 탐색.")
+        "**📈 결과 대시보드**의 비교가 일관된 결론을 가리킨다:\n"
+        "- **데이터** — 클린 한국(v0)이 최고, 글로벌 증강은 (한국 타깃 기준) 무익.\n"
+        "- **방법** — 신경망 > 규칙기반, 규제 루프가 법규를 100%로 보장.\n"
+        "- **레버** — type조건·모델 용량이 소수 주거형태(DEH·ROW) 격차를 메움.\n\n"
+        "→ **이 구성으로 만든 위상**을 다음 단계 **🏗 도면 생성**의 입력(**부품**)으로 사용한다. "
+        "위상 모델 1개로 끝이 아니라, *도면이 잘 나오는 조합*을 🏗에서 이어 탐색한다.")
+    st.caption("성능 비교 수치·표는 → 📈 결과 대시보드(데이터 조합·방법·용량). 여기는 그 결론(선정)만.")
 
-    # ── 5) (상세) 실제 vs 생성 예시 ──
+    # ── 2) (상세) 실제 vs 생성 예시 ──
     with st.expander("▸ 상세 — 실제 도면 vs AI 생성 (같은 program · 규칙기반 예시)"):
         if "ex_seed" not in st.session_state:
             st.session_state.ex_seed = 1
@@ -987,7 +754,7 @@ if which.startswith("📊"):
 
     # ── 5) (상세) 전체 매트릭스 — 시드·loop 전수 ──
     with st.expander("▸ 상세 — 전체 매트릭스 (시드·loop 전수, 다양성·신규성 포함)"):
-        st.caption("핵심 요약은 §2. 여기는 **전수 원천**(데이터버전 × 생성기 × 규제루프 × 시드). "
+        st.caption("핵심 비교는 📈 결과 대시보드. 여기는 **전수 원천**(데이터버전 × 생성기 × 규제루프 × 시드). "
                    "단일 소스 = runs/index.jsonl. ⚠️ '데이터버전'은 사전학습축 라벨(ds_version) — "
                    "코퍼스(v0 dual / v2 +V2V) 정확 구분은 §2.")
 
