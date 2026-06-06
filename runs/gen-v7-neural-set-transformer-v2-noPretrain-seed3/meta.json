@@ -1,0 +1,138 @@
+{
+  "created": "2026-06-06T07:29:40",
+  "git_commit": "107ef372ba7c2a2b78906e9306a9c531e806cd3f",
+  "env": {
+    "python": "3.11.15",
+    "platform": "linux",
+    "host": "ju-System-Product-Name",
+    "torch": "2.5.1+cu121",
+    "cuda": true,
+    "gpu": "NVIDIA GeForce RTX 3080"
+  },
+  "run_id": "gen-v7-neural-set-transformer-v2-noPretrain-seed3",
+  "kind": "train",
+  "condition": {
+    "task": "generator",
+    "generator": "neural",
+    "arch": "set-transformer-v2",
+    "data_version": "v7",
+    "pretrain": null,
+    "finetune": "v7",
+    "epochs": 100,
+    "lr": 0.001,
+    "seed": 3,
+    "batch_size": 64,
+    "mode": "combine",
+    "combine": [
+      [
+        "global_rplan",
+        "rplan"
+      ],
+      [
+        "v2",
+        "cubicasa5k"
+      ]
+    ]
+  },
+  "loss_curve": {
+    "combine": [
+      [
+        0,
+        0.5093
+      ],
+      [
+        5,
+        0.4833
+      ],
+      [
+        10,
+        0.4799
+      ],
+      [
+        15,
+        0.4793
+      ],
+      [
+        20,
+        0.4785
+      ],
+      [
+        25,
+        0.478
+      ],
+      [
+        30,
+        0.4784
+      ],
+      [
+        35,
+        0.478
+      ],
+      [
+        40,
+        0.4777
+      ],
+      [
+        45,
+        0.4776
+      ],
+      [
+        50,
+        0.4792
+      ],
+      [
+        55,
+        0.4774
+      ],
+      [
+        60,
+        0.4772
+      ],
+      [
+        65,
+        0.4771
+      ],
+      [
+        70,
+        0.4768
+      ],
+      [
+        75,
+        0.4768
+      ],
+      [
+        80,
+        0.4765
+      ],
+      [
+        85,
+        0.4768
+      ],
+      [
+        90,
+        0.4768
+      ],
+      [
+        95,
+        0.4762
+      ],
+      [
+        99,
+        0.4762
+      ]
+    ]
+  },
+  "data": {
+    "combine": [
+      [
+        "global_rplan",
+        "rplan"
+      ],
+      [
+        "v2",
+        "cubicasa5k"
+      ]
+    ]
+  },
+  "checkpoint": "checkpoint.pt"
+}

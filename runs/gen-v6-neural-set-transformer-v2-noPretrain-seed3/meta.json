@@ -1,0 +1,130 @@
+{
+  "created": "2026-06-05T23:44:32",
+  "git_commit": "107ef372ba7c2a2b78906e9306a9c531e806cd3f",
+  "env": {
+    "python": "3.11.15",
+    "platform": "linux",
+    "host": "ju-System-Product-Name",
+    "torch": "2.5.1+cu121",
+    "cuda": true,
+    "gpu": "NVIDIA GeForce RTX 3080"
+  },
+  "run_id": "gen-v6-neural-set-transformer-v2-noPretrain-seed3",
+  "kind": "train",
+  "condition": {
+    "task": "generator",
+    "generator": "neural",
+    "arch": "set-transformer-v2",
+    "data_version": "v6",
+    "pretrain": null,
+    "finetune": "v6",
+    "epochs": 100,
+    "lr": 0.001,
+    "seed": 3,
+    "batch_size": 64,
+    "mode": "combine",
+    "combine": [
+      [
+        "v2",
+        "cubicasa5k"
+      ]
+    ]
+  },
+  "loss_curve": {
+    "combine": [
+      [
+        0,
+        1.3143
+      ],
+      [
+        5,
+        1.1832
+      ],
+      [
+        10,
+        1.1645
+      ],
+      [
+        15,
+        1.1551
+      ],
+      [
+        20,
+        1.1461
+      ],
+      [
+        25,
+        1.1394
+      ],
+      [
+        30,
+        1.1358
+      ],
+      [
+        35,
+        1.1323
+      ],
+      [
+        40,
+        1.1285
+      ],
+      [
+        45,
+        1.1251
+      ],
+      [
+        50,
+        1.1228
+      ],
+      [
+        55,
+        1.1179
+      ],
+      [
+        60,
+        1.1151
+      ],
+      [
+        65,
+        1.1129
+      ],
+      [
+        70,
+        1.1086
+      ],
+      [
+        75,
+        1.1094
+      ],
+      [
+        80,
+        1.1014
+      ],
+      [
+        85,
+        1.0982
+      ],
+      [
+        90,
+        1.0945
+      ],
+      [
+        95,
+        1.0896
+      ],
+      [
+        99,
+        1.0874
+      ]
+    ]
+  },
+  "data": {
+    "combine": [
+      [
+        "v2",
+        "cubicasa5k"
+      ]
+    ]
+  },
+  "checkpoint": "checkpoint.pt"
+}

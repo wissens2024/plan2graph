@@ -1,0 +1,138 @@
+{
+  "created": "2026-06-06T08:58:12",
+  "git_commit": "107ef372ba7c2a2b78906e9306a9c531e806cd3f",
+  "env": {
+    "python": "3.11.15",
+    "platform": "linux",
+    "host": "ju-System-Product-Name",
+    "torch": "2.5.1+cu121",
+    "cuda": true,
+    "gpu": "NVIDIA GeForce RTX 3080"
+  },
+  "run_id": "gen-v3-neural-set-transformer-v2-noPretrain-seed42",
+  "kind": "train",
+  "condition": {
+    "task": "generator",
+    "generator": "neural",
+    "arch": "set-transformer-v2",
+    "data_version": "v3",
+    "pretrain": null,
+    "finetune": "v3",
+    "epochs": 100,
+    "lr": 0.001,
+    "seed": 42,
+    "batch_size": 64,
+    "mode": "combine",
+    "combine": [
+      [
+        "v2",
+        "aihub"
+      ],
+      [
+        "global_rplan",
+        "rplan"
+      ]
+    ]
+  },
+  "loss_curve": {
+    "combine": [
+      [
+        0,
+        0.6074
+      ],
+      [
+        5,
+        0.5624
+      ],
+      [
+        10,
+        0.5496
+      ],
+      [
+        15,
+        0.5431
+      ],
+      [
+        20,
+        0.5395
+      ],
+      [
+        25,
+        0.5383
+      ],
+      [
+        30,
+        0.5381
+      ],
+      [
+        35,
+        0.5369
+      ],
+      [
+        40,
+        0.5343
+      ],
+      [
+        45,
+        0.5327
+      ],
+      [
+        50,
+        0.5324
+      ],
+      [
+        55,
+        0.532
+      ],
+      [
+        60,
+        0.5314
+      ],
+      [
+        65,
+        0.5309
+      ],
+      [
+        70,
+        0.5305
+      ],
+      [
+        75,
+        0.5302
+      ],
+      [
+        80,
+        0.5297
+      ],
+      [
+        85,
+        0.529
+      ],
+      [
+        90,
+        0.5293
+      ],
+      [
+        95,
+        0.5284
+      ],
+      [
+        99,
+        0.5291
+      ]
+    ]
+  },
+  "data": {
+    "combine": [
+      [
+        "v2",
+        "aihub"
+      ],
+      [
+        "global_rplan",
+        "rplan"
+      ]
+    ]
+  },
+  "checkpoint": "checkpoint.pt"
+}

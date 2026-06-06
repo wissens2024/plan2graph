@@ -1,0 +1,146 @@
+{
+  "created": "2026-06-06T13:02:39",
+  "git_commit": "107ef372ba7c2a2b78906e9306a9c531e806cd3f",
+  "env": {
+    "python": "3.11.15",
+    "platform": "linux",
+    "host": "ju-System-Product-Name",
+    "torch": "2.5.1+cu121",
+    "cuda": true,
+    "gpu": "NVIDIA GeForce RTX 3080"
+  },
+  "run_id": "gen-v4-neural-set-transformer-v2-noPretrain-seed42",
+  "kind": "train",
+  "condition": {
+    "task": "generator",
+    "generator": "neural",
+    "arch": "set-transformer-v2",
+    "data_version": "v4",
+    "pretrain": null,
+    "finetune": "v4",
+    "epochs": 100,
+    "lr": 0.001,
+    "seed": 42,
+    "batch_size": 64,
+    "mode": "combine",
+    "combine": [
+      [
+        "v2",
+        "aihub"
+      ],
+      [
+        "v2",
+        "cubicasa5k"
+      ],
+      [
+        "global_rplan",
+        "rplan"
+      ]
+    ]
+  },
+  "loss_curve": {
+    "combine": [
+      [
+        0,
+        0.6326
+      ],
+      [
+        5,
+        0.5857
+      ],
+      [
+        10,
+        0.5723
+      ],
+      [
+        15,
+        0.5653
+      ],
+      [
+        20,
+        0.5603
+      ],
+      [
+        25,
+        0.5583
+      ],
+      [
+        30,
+        0.5602
+      ],
+      [
+        35,
+        0.5553
+      ],
+      [
+        40,
+        0.5541
+      ],
+      [
+        45,
+        0.5534
+      ],
+      [
+        50,
+        0.5528
+      ],
+      [
+        55,
+        0.5519
+      ],
+      [
+        60,
+        0.5516
+      ],
+      [
+        65,
+        0.5504
+      ],
+      [
+        70,
+        0.5499
+      ],
+      [
+        75,
+        0.5499
+      ],
+      [
+        80,
+        0.5496
+      ],
+      [
+        85,
+        0.55
+      ],
+      [
+        90,
+        0.5492
+      ],
+      [
+        95,
+        0.5482
+      ],
+      [
+        99,
+        0.548
+      ]
+    ]
+  },
+  "data": {
+    "combine": [
+      [
+        "v2",
+        "aihub"
+      ],
+      [
+        "v2",
+        "cubicasa5k"
+      ],
+      [
+        "global_rplan",
+        "rplan"
+      ]
+    ]
+  },
+  "checkpoint": "checkpoint.pt"
+}

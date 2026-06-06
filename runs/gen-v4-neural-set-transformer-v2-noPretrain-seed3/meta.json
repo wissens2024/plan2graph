@@ -1,0 +1,146 @@
+{
+  "created": "2026-06-06T15:33:12",
+  "git_commit": "107ef372ba7c2a2b78906e9306a9c531e806cd3f",
+  "env": {
+    "python": "3.11.15",
+    "platform": "linux",
+    "host": "ju-System-Product-Name",
+    "torch": "2.5.1+cu121",
+    "cuda": true,
+    "gpu": "NVIDIA GeForce RTX 3080"
+  },
+  "run_id": "gen-v4-neural-set-transformer-v2-noPretrain-seed3",
+  "kind": "train",
+  "condition": {
+    "task": "generator",
+    "generator": "neural",
+    "arch": "set-transformer-v2",
+    "data_version": "v4",
+    "pretrain": null,
+    "finetune": "v4",
+    "epochs": 100,
+    "lr": 0.001,
+    "seed": 3,
+    "batch_size": 64,
+    "mode": "combine",
+    "combine": [
+      [
+        "v2",
+        "aihub"
+      ],
+      [
+        "v2",
+        "cubicasa5k"
+      ],
+      [
+        "global_rplan",
+        "rplan"
+      ]
+    ]
+  },
+  "loss_curve": {
+    "combine": [
+      [
+        0,
+        0.6355
+      ],
+      [
+        5,
+        0.5873
+      ],
+      [
+        10,
+        0.5733
+      ],
+      [
+        15,
+        0.5655
+      ],
+      [
+        20,
+        0.561
+      ],
+      [
+        25,
+        0.5593
+      ],
+      [
+        30,
+        0.5569
+      ],
+      [
+        35,
+        0.5552
+      ],
+      [
+        40,
+        0.5554
+      ],
+      [
+        45,
+        0.5539
+      ],
+      [
+        50,
+        0.5527
+      ],
+      [
+        55,
+        0.5519
+      ],
+      [
+        60,
+        0.5511
+      ],
+      [
+        65,
+        0.5506
+      ],
+      [
+        70,
+        0.5501
+      ],
+      [
+        75,
+        0.5498
+      ],
+      [
+        80,
+        0.55
+      ],
+      [
+        85,
+        0.5493
+      ],
+      [
+        90,
+        0.5489
+      ],
+      [
+        95,
+        0.5488
+      ],
+      [
+        99,
+        0.5481
+      ]
+    ]
+  },
+  "data": {
+    "combine": [
+      [
+        "v2",
+        "aihub"
+      ],
+      [
+        "v2",
+        "cubicasa5k"
+      ],
+      [
+        "global_rplan",
+        "rplan"
+      ]
+    ]
+  },
+  "checkpoint": "checkpoint.pt"
+}

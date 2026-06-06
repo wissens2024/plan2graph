@@ -1082,13 +1082,16 @@ if which.startswith("📈"):
     _AIHUB = _v0man.get("n_graphs")
     _ai = f"AI-Hub {_AIHUB:,}" if _AIHUB else "AI-Hub"
 
-    def _best_eval(dsv):   # 버전별 수렴본(신경망 최다시드, 규제루프 on)
-        cs = [r for r in summ["eval"] if r.get("ds_version") == dsv
+    # combine 런만(version=vN & pretrain 없음) — 전이학습 런(pretrain 有)과 분리. ds_version 안 씀.
+    def _best_eval(dsv):
+        cs = [r for r in summ["eval"] if r.get("version") == dsv
+              and r.get("pretrain") in (None, "없음")
               and r["generator"] == "신경망" and r["loop"] == "on"]
         return max(cs, key=lambda r: r["seeds"]) if cs else None
 
     def _best_unseen(dsv):
-        cs = [r for r in summ["generalization"] if r.get("ds_version") == dsv
+        cs = [r for r in summ["generalization"] if r.get("version") == dsv
+              and r.get("pretrain") in (None, "없음")
               and r["generator"] == "신경망" and r["subset"] == "unseen"]
         return max(cs, key=lambda r: r["seeds"]) if cs else None
 
@@ -1101,15 +1104,15 @@ if which.startswith("📈"):
                "(전이학습 아님) → 어떤 조합이 최고 성능인지 비교. 평가는 전 버전 **동일 동결 test**(아래 ⓘ).")
     st.table([
         {"버전": "v0", "데이터셋 구성 (합쳐서 한 모델)": "AI-Hub 7,101 (dual 클린, 기준선)", "상태": "완료"},
-        {"버전": "v1", "데이터셋 구성 (합쳐서 한 모델)": "AI-Hub 20,828", "상태": "학습중"},
-        {"버전": "v2", "데이터셋 구성 (합쳐서 한 모델)": "AI-Hub 20,828 + CubiCasa 3,028", "상태": "학습중"},
-        {"버전": "v3", "데이터셋 구성 (합쳐서 한 모델)": "AI-Hub 20,828 + RPLAN 80,371", "상태": "학습중"},
+        {"버전": "v1", "데이터셋 구성 (합쳐서 한 모델)": "AI-Hub 20,828", "상태": "완료"},
+        {"버전": "v2", "데이터셋 구성 (합쳐서 한 모델)": "AI-Hub 20,828 + CubiCasa 3,028", "상태": "완료"},
+        {"버전": "v3", "데이터셋 구성 (합쳐서 한 모델)": "AI-Hub 20,828 + RPLAN 80,371", "상태": "완료"},
         {"버전": "v4", "데이터셋 구성 (합쳐서 한 모델)":
-         "AI-Hub 20,828 + CubiCasa 3,028 + RPLAN 80,371", "상태": "학습중"},
-        {"버전": "v5", "데이터셋 구성 (합쳐서 한 모델)": "RPLAN 80,371 (글로벌만)", "상태": "학습중"},
-        {"버전": "v6", "데이터셋 구성 (합쳐서 한 모델)": "CubiCasa 3,028 (글로벌만)", "상태": "학습중"},
+         "AI-Hub 20,828 + CubiCasa 3,028 + RPLAN 80,371", "상태": "완료"},
+        {"버전": "v5", "데이터셋 구성 (합쳐서 한 모델)": "RPLAN 80,371 (글로벌만)", "상태": "완료"},
+        {"버전": "v6", "데이터셋 구성 (합쳐서 한 모델)": "CubiCasa 3,028 (글로벌만)", "상태": "완료"},
         {"버전": "v7", "데이터셋 구성 (합쳐서 한 모델)":
-         "RPLAN 80,371 + CubiCasa 3,028 (글로벌만)", "상태": "학습중"},
+         "RPLAN 80,371 + CubiCasa 3,028 (글로벌만)", "상태": "완료"},
     ])
     st.info("ⓘ **평가 test = AI-Hub 균형 동결분(소버린 기준).** 주거형태 **APT·DEH·ROW를 골고루**"
             "(각 100시트 = 300시트 / 465그래프) 고정. 우리 목적이 한국형 소버린 AI라 test는 국내 "
@@ -1206,38 +1209,42 @@ if which.startswith("📈"):
                       node_size=1500, font_size=11, layout="kamada"),
                       use_container_width=True)
 
-    # ── 5) A/B 비교 — 데이터버전 × 생성기 × 규제루프 ──
-    st.header("5. A/B 비교 — 데이터버전 × 생성기 × 규제루프")
-    st.caption("데이터버전 = 학습 데이터 조합(**v0**=AI-Hub · **v2**=+CubiCasa · **v3**=+RPLAN · **v4**=+결합). "
-               "각 버전을 생성기(규칙기반 vs 신경망)·규제루프(on/off)로 같은 동결 test에서 비교. "
-               "시드 평균±표준편차. 단일 소스 = runs/index.jsonl.")
+    # ── 5) A/B 비교 — 데이터 조합 × 생성기 × 규제루프 (combine 런만) ──
+    st.header("5. A/B 비교 — 데이터 조합 × 생성기 × 규제루프")
+    st.caption("데이터 조합(v0~v7)을 생성기(규칙기반 vs 신경망)·규제루프(on/off)로 같은 동결 균형 test에서 비교. "
+               "시드 평균±표준편차. **combine 런만**(전이학습 런 제외). 단일 소스 = runs/index.jsonl.")
 
     def _gen_label(r):
         return f"{r['generator']}({r['arch']})" if r.get("arch") else r["generator"]
 
-    def _sort_key(r):
-        return (r.get("ds_version", "z"), 0 if r["generator"] == "규칙기반" else 1,
-                r.get("arch", ""), str(r.get("loop", "")))
+    def _cmb(r):   # combine 런 + 기준선만(pretrain 없음) — 전이학습(pretrain 有) 제외
+        return r.get("pretrain") in (None, "없음")
 
-    if summ["eval"]:
+    def _sort_key(r):
+        return (r.get("version", "z"), 0 if r["generator"] == "규칙기반" else 1,
+                str(r.get("loop", "")))
+
+    _ev5 = [r for r in summ["eval"] if _cmb(r)]
+    _gn5 = [r for r in summ["generalization"] if _cmb(r)]
+    if _ev5:
         st.subheader("전체 test")
-        st.table([{"데이터버전": r["ds_version"], "생성기": _gen_label(r),
+        st.table([{"버전": r["version"], "생성기": _gen_label(r),
                    "규제루프": r["loop"], "시드": r["seeds"],
                    "인접L1↓": _pm(r["adj_L1_mean"], r["adj_L1_std"]),
                    "무결성": f"{(r['integrity'] or 0)*100:.0f}%",
                    "법규": f"{(r['legal'] or 0)*100:.0f}%",
                    "다양성": f"{(r['diversity'] or 0)*100:.0f}%",
                    "신규성": f"{(r['novelty'] or 0)*100:.0f}%"}
-                  for r in sorted(summ["eval"], key=_sort_key)])
+                  for r in sorted(_ev5, key=_sort_key)])
         st.caption("인접L1↓: 낮을수록 실제 배치에 가까움 · 무결성=위상 R1~R5 · "
                    "법규=채광 등 통과(규제루프 on이 위반 자동보정).")
-    if summ["generalization"]:
+    if _gn5:
         st.subheader("일반화 — seen / unseen program")
         st.caption("처음 보는 방 구성(unseen)에서의 사실성 — 데이터 조합 효과가 가장 드러나는 축.")
-        st.table([{"데이터버전": r["ds_version"], "생성기": _gen_label(r),
+        st.table([{"버전": r["version"], "생성기": _gen_label(r),
                    "subset": r["subset"], "시드": r["seeds"],
                    "인접L1↓": _pm(r["adj_L1_mean"], r["adj_L1_std"])}
-                  for r in sorted(summ["generalization"], key=_sort_key)])
+                  for r in sorted(_gn5, key=_sort_key)])
     st.stop()
 
 

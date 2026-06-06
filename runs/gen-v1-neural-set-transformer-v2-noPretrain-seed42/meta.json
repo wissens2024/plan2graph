@@ -1,0 +1,130 @@
+{
+  "created": "2026-06-05T23:56:33",
+  "git_commit": "107ef372ba7c2a2b78906e9306a9c531e806cd3f",
+  "env": {
+    "python": "3.11.15",
+    "platform": "linux",
+    "host": "ju-System-Product-Name",
+    "torch": "2.5.1+cu121",
+    "cuda": true,
+    "gpu": "NVIDIA GeForce RTX 3080"
+  },
+  "run_id": "gen-v1-neural-set-transformer-v2-noPretrain-seed42",
+  "kind": "train",
+  "condition": {
+    "task": "generator",
+    "generator": "neural",
+    "arch": "set-transformer-v2",
+    "data_version": "v1",
+    "pretrain": null,
+    "finetune": "v1",
+    "epochs": 100,
+    "lr": 0.001,
+    "seed": 42,
+    "batch_size": 64,
+    "mode": "combine",
+    "combine": [
+      [
+        "v2",
+        "aihub"
+      ]
+    ]
+  },
+  "loss_curve": {
+    "combine": [
+      [
+        0,
+        1.1144
+      ],
+      [
+        5,
+        0.9814
+      ],
+      [
+        10,
+        0.923
+      ],
+      [
+        15,
+        0.8981
+      ],
+      [
+        20,
+        0.8826
+      ],
+      [
+        25,
+        0.8736
+      ],
+      [
+        30,
+        0.8668
+      ],
+      [
+        35,
+        0.8566
+      ],
+      [
+        40,
+        0.8541
+      ],
+      [
+        45,
+        0.8483
+      ],
+      [
+        50,
+        0.8452
+      ],
+      [
+        55,
+        0.8419
+      ],
+      [
+        60,
+        0.8389
+      ],
+      [
+        65,
+        0.8403
+      ],
+      [
+        70,
+        0.835
+      ],
+      [
+        75,
+        0.8323
+      ],
+      [
+        80,
+        0.8324
+      ],
+      [
+        85,
+        0.8274
+      ],
+      [
+        90,
+        0.8279
+      ],
+      [
+        95,
+        0.827
+      ],
+      [
+        99,
+        0.8245
+      ]
+    ]
+  },
+  "data": {
+    "combine": [
+      [
+        "v2",
+        "aihub"
+      ]
+    ]
+  },
+  "checkpoint": "checkpoint.pt"
+}
