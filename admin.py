@@ -1148,11 +1148,29 @@ if which.startswith("📈"):
 
     # ── 2) 공간 인접확률 (생성 목표) ──
     st.header("2. 공간 인접확률 (생성 목표)")
-    st.caption("AI-Hub 데이터가 실제로 가진 P(방A~방B) = 생성모델이 맞춰야 할 목표 분포. 거실이 허브임을 보여줌.")
-    if ev.get("top_adjacency"):
-        st.bar_chart({d["pair"]: d["p"] for d in ev["top_adjacency"]})
+    st.caption("AI-Hub(v0) 실제 도면의 **P(방A~방B 연결)** = 생성모델이 맞춰야 할 목표 분포(= adj_L1의 P_real). "
+               "통행 연결(door/open 등)만 집계, 상위 15쌍. 거실이 허브임을 보여줌.")
+
+    @st.cache_data(show_spinner="인접확률 집계...")
+    def _adj_target(v, _k):   # 실제 도면의 방-쌍 연결 빈도 → 확률(eval_gen._metrics의 P_real과 동일 정의)
+        pairs = _Counter()
+        for f in (REL / v / "graphs").glob("*.json"):
+            r = _json.loads(f.read_text(encoding="utf-8"))
+            nt = {n["id"]: n["type"] for n in r["layout"]["nodes"] if isinstance(n["id"], int)}
+            for e in r["layout"]["edges"]:
+                if (e.get("via") in _mb.CONNECT_VIAS and isinstance(e.get("source"), int)
+                        and isinstance(e.get("target"), int)):
+                    a, b = nt.get(e["source"]), nt.get(e["target"])
+                    if a and b:
+                        pairs[tuple(sorted((a, b)))] += 1
+        tot = sum(pairs.values()) or 1
+        return {f"{a}–{b}": round(c / tot, 4) for (a, b), c in pairs.most_common(15)}
+
+    _adj = _adj_target("v0", _mt(REL / "v0" / "manifest.json")) if (REL / "v0" / "graphs").exists() else {}
+    if _adj:
+        st.bar_chart(_adj)
     else:
-        st.caption("(인접확률 데이터 없음 — eval.json 미생성)")
+        st.caption("(v0 그래프 없음)")
 
     # ── 3) 생성 성능 — 버전별 핵심 ──
     st.header("3. 생성 성능 — 버전별 핵심 (동결 test, 규제루프 on)")
