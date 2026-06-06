@@ -127,6 +127,25 @@ def layout_rooms(G, width=12.0, height=9.0):
     return dict(zip(order, rects))
 
 
+def layout_stats(G, rects=None):
+    """배치 품질 지표 — 위상 인접이 실제 벽공유(문)로 실현된 비율 등(1세대 품질)."""
+    if rects is None:
+        rects = layout_rooms(G)
+    rooms = [n for n in G.nodes if n != EXTERIOR]
+    tedges = [(u, v) for u, v in G.edges if u != EXTERIOR and v != EXTERIOR]
+    realized = sum(1 for u, v in tedges
+                   if u in rects and v in rects and _shared_edge(rects[u], rects[v]))
+    areas = {n: rects[n][2] * rects[n][3] for n in rects}
+    total = sum(areas.values()) or 1.0
+    return {
+        "rooms": len(rooms),
+        "adj_total": len(tedges),
+        "adj_realized": realized,
+        "adj_rate": (realized / len(tedges)) if tedges else 1.0,
+        "area_share": {n: areas[n] / total for n in rects},
+    }
+
+
 def _shared_edge(r1, r2):
     """두 사각형이 공유하는 벽 구간 → ('v'|'h', 좌표, lo, hi) 또는 None."""
     x1, y1, w1, h1 = r1
