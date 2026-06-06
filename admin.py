@@ -1234,7 +1234,8 @@ if which.startswith("📈"):
                       "인접L1↓(unseen)": _pm(base_u["adj_L1_mean"], base_u["adj_L1_std"]) if base_u else "—",
                       "무결성": f"{(base['integrity'] or 0)*100:.0f}%",
                       "법규": f"{(base['legal'] or 0)*100:.0f}%"})
-    for dsv in ["v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v0cap2x"]:
+    for dsv in ["v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7",
+                "v0cap2x", "v1cap2x", "v4cap2x", "v7cap2x"]:
         e, u = _best_eval(dsv), _best_unseen(dsv)
         if e:
             rows3.append({"버전": dsv, "생성기": "신경망",
