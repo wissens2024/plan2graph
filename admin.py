@@ -1170,12 +1170,15 @@ if which.startswith("📈"):
                "정확한 버전·시드별 값은 `runs/<run_id>/meta.json`.")
     st.markdown("**① 학습·생성 설정**")
     st.table([
-        {"항목": "model", "값": "set-transformer link-predictor (embedding 48 · layers 2 · heads 4 · FFN 96)"},
-        {"항목": "training", "값": "combine (데이터 합쳐 한 번 학습) · optimizer Adam · lr 1e-3"},
+        {"항목": "모델", "값": "set-transformer link-predictor"},
+        {"항목": "모델 크기", "값": "embedding 48 · layers 2 · heads 4 · FFN 96"},
+        {"항목": "학습 방식", "값": "combine (데이터 합쳐 한 번 학습)"},
+        {"항목": "optimizer", "값": "Adam · lr 1e-3"},
         {"항목": "epochs", "값": "100"},
         {"항목": "batch size", "값": "64"},
-        {"항목": "seeds", "값": "42 · 1 · 2 · 3 · 4 (5 runs → mean±std)"},
-        {"항목": "eval", "값": "frozen balanced test (APT/DEH/ROW 300도면) · 규제루프 off/on"},
+        {"항목": "seeds", "값": "42 · 1 · 2 · 3 · 4 (5회 → 평균±표준편차)"},
+        {"항목": "평가 test", "값": "균형 동결 (APT/DEH/ROW 300도면)"},
+        {"항목": "규제루프", "값": "off / on"},
     ])
     st.caption("**파라미터 설정 근거**: 위 기본값(embedding 48·layers 2·heads 4·FFN 96)으로 **전 버전(v0~v7) 통일** "
                "(데이터 조합 효과만 분리). epochs·파라미터 모두 성능에 영향을 주므로, 별도로 **모델 용량 2배 "
