@@ -778,12 +778,12 @@ if which.startswith("📊"):
                  if (eoff and eon) else "—")
         macro_s = f"{macro:.3f}" if isinstance(macro, (int, float)) else "—"
         if ftv is None:   # v1 — 미구축
-            detail.append({"버전": v, "도면(시트)": "—", "파인튜닝 세대": "—", "사전학습 그래프": "—",
+            detail.append({"버전": v, "도면": "—", "파인튜닝 세대": "—", "사전학습 그래프": "—",
                            "train": "—", "val": "—", "test": "—",
                            "매크로 adj_L1↓": "—", "법규(off→on)": "—"}); continue
         fm, _, _, pre_n = _ladder_data(ftv, prev)
         sp = fm.get("splits", {})
-        detail.append({"버전": v, "도면(시트)": _fmt(fm.get("n_sheets", 0)),
+        detail.append({"버전": v, "도면": _fmt(fm.get("n_sheets", 0)),
                        "파인튜닝 세대": _fmt(fm.get("n_graphs", 0)),
                        "사전학습 그래프": _fmt(pre_n) if pre_n else "—",
                        "train": _fmt(sp.get("train")), "val": _fmt(sp.get("val")),
@@ -804,7 +804,7 @@ if which.startswith("📊"):
         st.caption("표시할 그래프 데이터 없음")
 
     # ── 2) 핵심 결과 — 균형 소버린 벤치마크 ──
-    st.header("2. 핵심 결과 — 균형 소버린 벤치마크 (동결 test 300시트, loop off)")
+    st.header("2. 핵심 결과 — 균형 소버린 벤치마크 (동결 test 300도면, loop off)")
     _b1, _b2, _b3 = st.columns(3)
     _b1.success("🔄 **반전** — 신경망 > 규칙기반\n\n(균형 매크로)")
     _b2.success("🎯 **type조건 최대 레버**\n\n(매크로 0.123, 사전학습 무익)")
@@ -1157,7 +1157,7 @@ if which.startswith("📈"):
         {"항목": "에폭(epochs)", "값": "100"},
         {"항목": "배치(batch)", "값": "64"},
         {"항목": "시드(seeds)", "값": "42 · 1 · 2 · 3 · 4 (5회 → 평균±표준편차)"},
-        {"항목": "생성·평가", "값": "동결 균형 test(APT/DEH/ROW 300시트) · 규제루프 off/on"},
+        {"항목": "생성·평가", "값": "동결 균형 test(APT/DEH/ROW 300도면) · 규제루프 off/on"},
     ])
 
     @st.cache_data(show_spinner="목표치(인접분포) 집계...")
@@ -1186,7 +1186,7 @@ if which.startswith("📈"):
     # ── 3) 생성 성능 — 버전별 핵심 ──
     st.header("3. 생성 성능 — 버전별 핵심 (동결 test, 규제루프 on)")
     st.info("ⓘ **평가 test = AI-Hub 균형 동결분(소버린 기준).** 주거형태 **APT·DEH·ROW를 골고루**"
-            "(각 100시트 = 300시트 / 465그래프) 고정 → **전 버전이 이 동일 test로 평가**(조합 비교 타당성). "
+            "(각 100도면 = 300도면 → 465세대그래프) 고정 → **전 버전이 이 동일 test로 평가**(조합 비교 타당성). "
             "글로벌만(v5~v7)이 낮게 나오는 건 정상 — 글로벌↔국내 도메인 격차를 보는 게 목적.")
     with st.expander("ⓘ 평가지표 설명 (범례)"):
         st.markdown(
