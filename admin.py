@@ -1255,7 +1255,9 @@ if which.startswith("📈"):
                       "인접L1↓(전체)": _pm(base["adj_L1_mean"], base["adj_L1_std"]),
                       "인접L1↓(unseen)": _pm(base_u["adj_L1_mean"], base_u["adj_L1_std"]) if base_u else "—",
                       "무결성": f"{(base['integrity'] or 0)*100:.0f}%",
-                      "법규": f"{(base['legal'] or 0)*100:.0f}%"})
+                      "법규": f"{(base['legal'] or 0)*100:.0f}%",
+                      "다양성": f"{(base['diversity'] or 0)*100:.0f}%",
+                      "신규성": f"{(base['novelty'] or 0)*100:.0f}%"})
     for dsv in ["v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7",
                 "v0cap2x", "v1cap2x", "v4cap2x", "v7cap2x"]:
         e, u = _best_eval(dsv), _best_unseen(dsv)
@@ -1264,7 +1266,9 @@ if which.startswith("📈"):
                           "인접L1↓(전체)": _pm(e["adj_L1_mean"], e["adj_L1_std"]),
                           "인접L1↓(unseen)": _pm(u["adj_L1_mean"], u["adj_L1_std"]) if u else "—",
                           "무결성": f"{(e['integrity'] or 0)*100:.0f}%",
-                          "법규": f"{(e['legal'] or 0)*100:.0f}%"})
+                          "법규": f"{(e['legal'] or 0)*100:.0f}%",
+                          "다양성": f"{(e['diversity'] or 0)*100:.0f}%",
+                          "신규성": f"{(e['novelty'] or 0)*100:.0f}%"})
     if rows3:
         st.table(rows3)
     else:
