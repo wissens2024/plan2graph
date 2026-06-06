@@ -1125,12 +1125,8 @@ if which.startswith("📈"):
         _rd = _json.loads(_rdp.read_text(encoding="utf-8"))
         _types = sorted({t for d in _rd.values() for t in d},
                         key=lambda t: -sum(d.get(t, 0) for d in _rd.values()))
-        # 통합(한글) → 대표 영문 / 출처별 원 라벨(AI-Hub=한글, RPLAN·CubiCasa=영문)
-        _EN = {"침실": "Bedroom", "화장실": "Bathroom", "발코니": "Balcony", "거실": "Living",
-               "주방": "Kitchen", "다목적공간": "Study", "드레스룸": "Walk-in", "실외기실": "Utility",
-               "현관": "Entrance", "기타": "Etc", "엘리베이터": "Elevator",
-               "엘리베이터홀": "Elev.Hall", "계단실": "Stairs"}
-        _ORIG = {  # (AI-Hub, RPLAN, CubiCasa) 원 분류명
+        # 출처별 **실제** 원 분류명(AI-Hub=한글, RPLAN·CubiCasa=영문). 대표영문(번역) 제거.
+        _ORIG = {  # (AI-Hub, RPLAN, CubiCasa)
             "침실": ("침실", "masterroom·childroom·secondroom·guestroom", "Bedroom"),
             "거실": ("거실", "livingroom", "LivingRoom"),
             "주방": ("주방", "kitchen·diningroom", "Kitchen"),
@@ -1144,11 +1140,18 @@ if which.startswith("📈"):
         }
         _si = {"AI-Hub": 0, "RPLAN": 1, "CubiCasa": 2}
 
-        def _bi(t):
-            return f"{t} ({_EN[t]})" if t in _EN else t
-
         def _orig(t, s):
             return _ORIG.get(t, (t, t, t))[_si[s]]
+
+        def _sh(x):                       # 긴 라벨(·다수) 축약: 첫 항 + …
+            if x in ("—", ""):
+                return "—"
+            ps = x.split("·")
+            return ps[0] + ("…" if len(ps) > 1 else "")
+
+        def _bi(t):                       # x축: 통합한글(=AI-Hub) (RPLAN실제 / CubiCasa실제)
+            o = _ORIG.get(t)
+            return f"{t} ({_sh(o[1])}/{_sh(o[2])})" if o else t
         _order = [_bi(t) for t in _types]
         # 원시 노드수(양) — 막대 길이=실제 개수. 방종류별 3색 그룹막대(xOffset). 빨강 제외.
         _long = _pd.DataFrame([{"방 종류": _bi(t), "출처": s, "노드 수": _rd[s].get(t, 0),
@@ -1167,7 +1170,7 @@ if which.startswith("📈"):
         st.altair_chart(_ch, use_container_width=True)
         _tot = " · ".join(f"{s} {sum(d.values()):,}" for s, d in _rd.items())
         st.caption(f"출처별 방 종류 **노드 수(양)** — 막대 길이=실제 개수(방종류별 3색 그룹). "
-                   f"x축=통합(한글)+대표영문, **막대에 마우스 올리면 출처별 원 라벨**(AI-Hub 한글 / RPLAN·CubiCasa 영문). "
+                   f"x축 = **한글(=AI-Hub 실제) (RPLAN실제 / CubiCasa실제)**, 긴 라벨은 …축약 — 전체는 툴팁·아래 매핑표. "
                    f"총 노드: {_tot}. (`scripts/roomdist_by_source.py` 스냅샷)")
     else:
         st.bar_chart(_roomdist(ver, _mt(REL / ver / "manifest.json")))
