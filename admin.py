@@ -1142,23 +1142,12 @@ if which.startswith("📈"):
 
         def _orig(t, s):
             return _ORIG.get(t, (t, t, t))[_si[s]]
-
-        def _sh(x):                       # 긴 라벨(·다수) 축약: 첫 항 + …
-            if x in ("—", ""):
-                return "—"
-            ps = x.split("·")
-            return ps[0] + ("…" if len(ps) > 1 else "")
-
-        def _bi(t):                       # x축: 통합한글(=AI-Hub) (RPLAN실제 / CubiCasa실제)
-            o = _ORIG.get(t)
-            return f"{t} ({_sh(o[1])}/{_sh(o[2])})" if o else t
-        _order = [_bi(t) for t in _types]
-        # 원시 노드수(양) — 막대 길이=실제 개수. 방종류별 3색 그룹막대(xOffset). 빨강 제외.
-        _long = _pd.DataFrame([{"방 종류": _bi(t), "출처": s, "노드 수": _rd[s].get(t, 0),
+        # x축은 한글(통합)만 — 가독성. 출처별 원 라벨은 막대 툴팁(원 라벨)에서.
+        _long = _pd.DataFrame([{"방 종류": t, "출처": s, "노드 수": _rd[s].get(t, 0),
                                 "원 라벨": _orig(t, s)}
                                for s in _rd for t in _types])
         _ch = _alt.Chart(_long).mark_bar().encode(
-            x=_alt.X("방 종류:N", sort=_order, title=None),
+            x=_alt.X("방 종류:N", sort=_types, title=None),
             xOffset=_alt.XOffset("출처:N"),
             y=_alt.Y("노드 수:Q", title="노드 수 (양)"),
             color=_alt.Color("출처:N",
@@ -1170,7 +1159,7 @@ if which.startswith("📈"):
         st.altair_chart(_ch, use_container_width=True)
         _tot = " · ".join(f"{s} {sum(d.values()):,}" for s, d in _rd.items())
         st.caption(f"출처별 방 종류 **노드 수(양)** — 막대 길이=실제 개수(방종류별 3색 그룹). "
-                   f"x축 = **한글(=AI-Hub 실제) (RPLAN실제 / CubiCasa실제)**, 긴 라벨은 …축약 — 전체는 툴팁·아래 매핑표. "
+                   f"x축=통합 한글. **막대에 마우스 올리면 출처별 실제 원 라벨**(AI-Hub 한글 / RPLAN·CubiCasa 영문). "
                    f"총 노드: {_tot}. (`scripts/roomdist_by_source.py` 스냅샷)")
     else:
         st.bar_chart(_roomdist(ver, _mt(REL / ver / "manifest.json")))
