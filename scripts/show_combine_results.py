@@ -17,17 +17,17 @@ def main():
     dw = {r["version"]: r for r in neu(s["dwelling"])}
     ev = {(r["version"], r["loop"]): r for r in neu(s["eval"])}
     un = {r["version"]: r for r in neu(s["generalization"]) if r["subset"] == "unseen"}
-    print("ver seeds  macro  micro  unseen  legal(off->on)")
-    for v in ["v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7"]:
+    print("ver seeds  APT   DEH   ROW   macro  micro  unseen")
+    for v in ["v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v0cap2x"]:
         d = dw.get(v); eo = ev.get((v, "off")); en = ev.get((v, "on")); u = un.get(v)
         if not d and not eo:
             print("%-4s  (none)" % v); continue
-        mac = ("%.3f" % d["macro"]) if d else "-"
+        f3=lambda x: ("%.3f"%x) if isinstance(x,(int,float)) else "-"
         mic = ("%.3f" % eo["adj_L1_mean"]) if eo else "-"
         uns = ("%.3f" % u["adj_L1_mean"]) if u else "-"
-        leg = ("%d->%d%%" % ((eo["legal"] or 0) * 100, (en["legal"] or 0) * 100)) if (eo and en) else "-"
         sd = d["seeds"] if d else eo["seeds"]
-        print("%-4s %3d  %5s  %5s  %6s  %s" % (v, sd, mac, mic, uns, leg))
+        ap,de,ro,ma=(f3(d.get("APT")),f3(d.get("DEH")),f3(d.get("ROW")),f3(d.get("macro"))) if d else ("-","-","-","-")
+        print("%-7s %2d  %5s %5s %5s  %5s  %5s  %5s" % (v, sd, ap,de,ro, ma, mic, uns))
 
 
 if __name__ == "__main__":

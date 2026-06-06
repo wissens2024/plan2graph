@@ -1,0 +1,136 @@
+{
+  "created": "2026-06-06T17:42:04",
+  "git_commit": "107ef372ba7c2a2b78906e9306a9c531e806cd3f",
+  "env": {
+    "python": "3.11.15",
+    "platform": "linux",
+    "host": "ju-System-Product-Name",
+    "torch": "2.5.1+cu121",
+    "cuda": true,
+    "gpu": "NVIDIA GeForce RTX 3080"
+  },
+  "run_id": "gen-v0cap2x-neural-set-transformer-v2-noPretrain-seed2",
+  "kind": "train",
+  "condition": {
+    "task": "generator",
+    "generator": "neural",
+    "arch": "set-transformer-v2",
+    "data_version": "v0cap2x",
+    "pretrain": null,
+    "finetune": "v0cap2x",
+    "epochs": 100,
+    "lr": 0.001,
+    "seed": 2,
+    "batch_size": 64,
+    "mode": "combine",
+    "combine": [
+      [
+        "v0",
+        "aihub"
+      ]
+    ],
+    "model": {
+      "emb": 96,
+      "hid": 192,
+      "layers": 4,
+      "heads": 8
+    }
+  },
+  "loss_curve": {
+    "combine": [
+      [
+        0,
+        1.0816
+      ],
+      [
+        5,
+        0.9164
+      ],
+      [
+        10,
+        0.8436
+      ],
+      [
+        15,
+        0.8136
+      ],
+      [
+        20,
+        0.7868
+      ],
+      [
+        25,
+        0.8461
+      ],
+      [
+        30,
+        0.7644
+      ],
+      [
+        35,
+        0.7553
+      ],
+      [
+        40,
+        0.742
+      ],
+      [
+        45,
+        0.7324
+      ],
+      [
+        50,
+        0.7337
+      ],
+      [
+        55,
+        0.7202
+      ],
+      [
+        60,
+        0.7316
+      ],
+      [
+        65,
+        0.7492
+      ],
+      [
+        70,
+        0.7077
+      ],
+      [
+        75,
+        0.7027
+      ],
+      [
+        80,
+        0.7037
+      ],
+      [
+        85,
+        0.7242
+      ],
+      [
+        90,
+        0.6995
+      ],
+      [
+        95,
+        0.6915
+      ],
+      [
+        99,
+        0.6971
+      ]
+    ]
+  },
+  "data": {
+    "combine": [
+      [
+        "v0",
+        "aihub"
+      ]
+    ]
+  },
+  "checkpoint": "checkpoint.pt"
+}

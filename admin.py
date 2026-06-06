@@ -1179,8 +1179,9 @@ if which.startswith("📈"):
     ])
     st.caption("**파라미터 설정 근거**: 위 기본값(embedding 48·layers 2·heads 4·FFN 96)으로 **전 버전(v0~v7) 통일** "
                "(데이터 조합 효과만 분리). epochs·파라미터 모두 성능에 영향을 주므로, 별도로 **모델 용량 2배 "
-               "ablation**(embedding 96·layers 4·heads 8·FFN 192, 같은 v0 데이터)을 수행해 *파라미터를 키우면 "
-               "나아지는지* 확인 — 결과는 §3 표의 `v0cap2x` 행(작은 v0와 직접 비교).")
+               "ablation**(embedding 96·layers 4·heads 8·FFN 192, 같은 v0 데이터)을 수행 → **§3 `v0cap2x` 행.** "
+               "**결과: 2배 모델이 매크로 0.188→0.166 개선**(특히 소수형태 ROW 0.233→0.191) → 기본 모델이 "
+               "소수형태엔 용량 부족이었음(데이터뿐 아니라 모델 용량도 레버).")
 
     @st.cache_data(show_spinner="목표치(인접분포) 집계...")
     def _adj_target(v, _k):   # 실제 도면의 방-쌍 연결 빈도 → 확률(eval_gen._metrics의 P_real과 동일 정의)

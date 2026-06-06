@@ -1,0 +1,136 @@
+{
+  "created": "2026-06-06T17:37:28",
+  "git_commit": "107ef372ba7c2a2b78906e9306a9c531e806cd3f",
+  "env": {
+    "python": "3.11.15",
+    "platform": "linux",
+    "host": "ju-System-Product-Name",
+    "torch": "2.5.1+cu121",
+    "cuda": true,
+    "gpu": "NVIDIA GeForce RTX 3080"
+  },
+  "run_id": "gen-v0cap2x-neural-set-transformer-v2-noPretrain-seed1",
+  "kind": "train",
+  "condition": {
+    "task": "generator",
+    "generator": "neural",
+    "arch": "set-transformer-v2",
+    "data_version": "v0cap2x",
+    "pretrain": null,
+    "finetune": "v0cap2x",
+    "epochs": 100,
+    "lr": 0.001,
+    "seed": 1,
+    "batch_size": 64,
+    "mode": "combine",
+    "combine": [
+      [
+        "v0",
+        "aihub"
+      ]
+    ],
+    "model": {
+      "emb": 96,
+      "hid": 192,
+      "layers": 4,
+      "heads": 8
+    }
+  },
+  "loss_curve": {
+    "combine": [
+      [
+        0,
+        1.0942
+      ],
+      [
+        5,
+        0.9234
+      ],
+      [
+        10,
+        0.87
+      ],
+      [
+        15,
+        0.824
+      ],
+      [
+        20,
+        0.7909
+      ],
+      [
+        25,
+        0.7762
+      ],
+      [
+        30,
+        0.7579
+      ],
+      [
+        35,
+        0.765
+      ],
+      [
+        40,
+        0.7518
+      ],
+      [
+        45,
+        0.7404
+      ],
+      [
+        50,
+        0.7356
+      ],
+      [
+        55,
+        0.7256
+      ],
+      [
+        60,
+        0.7216
+      ],
+      [
+        65,
+        0.7114
+      ],
+      [
+        70,
+        0.7125
+      ],
+      [
+        75,
+        0.7018
+      ],
+      [
+        80,
+        0.7004
+      ],
+      [
+        85,
+        0.7055
+      ],
+      [
+        90,
+        0.7052
+      ],
+      [
+        95,
+        0.7029
+      ],
+      [
+        99,
+        0.6963
+      ]
+    ]
+  },
+  "data": {
+    "combine": [
+      [
+        "v0",
+        "aihub"
+      ]
+    ]
+  },
+  "checkpoint": "checkpoint.pt"
+}
