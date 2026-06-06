@@ -35,6 +35,65 @@ def load_combine_train(combine: list) -> list:
     return recs
 
 
+def _prep(records: list) -> list:
+    """레코드 → (타입ids, 페어 i/j, 인접라벨 y, via라벨) 학습샘플. 노드수 오름차순 정렬."""
+    data = []
+    for rec in records:
+        tids, pos = featurize(rec)
+        n = len(tids)
+        if n < 2:
+            continue
+        pi, pj, ys, vs = [], [], [], []
+        for i in range(n):
+            for j in range(i + 1, n):
+                pi.append(i); pj.append(j)
+                if (i, j) in pos:
+                    ys.append(1.0); vs.append(pos[(i, j)])
+                else:
+                    ys.append(0.0); vs.append(-1)
+        data.append((tids, pi, pj, ys, vs))
+    data.sort(key=lambda d: len(d[0]))
+    return data
+
+
+def _epoch_pass(model, data, opt, bce, ce, dev, batch_size):
+    """1에폭 — 배치 셔플·링크예측(+via) 손실·역전파. 평균 손실 반환."""
+    import torch
+    batches = [data[k:k + batch_size] for k in range(0, len(data), batch_size)]
+    order = torch.randperm(len(batches)).tolist()
+    tot, nb = 0.0, 0
+    for bi in order:
+        batch = batches[bi]
+        B = len(batch); lens = [len(d[0]) for d in batch]; maxN = max(lens)
+        tt = torch.zeros(B, maxN, dtype=torch.long, device=dev)
+        pad = torch.ones(B, maxN, dtype=torch.bool, device=dev)
+        for b, d in enumerate(batch):
+            tt[b, :lens[b]] = torch.tensor(d[0], device=dev)
+            pad[b, :lens[b]] = False
+        e = model.emb(tt)
+        h = model.enc(e, src_key_padding_mask=pad)
+        valid = (~pad).unsqueeze(-1).float()
+        g = (h * valid).sum(1) / valid.sum(1)
+        bidx, iidx, jidx, ys, vs = [], [], [], [], []
+        for b, d in enumerate(batch):
+            _, pi, pj, py, pv = d
+            bidx += [b] * len(pi); iidx += pi; jidx += pj; ys += py; vs += pv
+        bidx = torch.tensor(bidx, device=dev)
+        iidx = torch.tensor(iidx, device=dev); jidx = torch.tensor(jidx, device=dev)
+        hi = h[bidx, iidx]; hj = h[bidx, jidx]
+        feat = torch.cat([hi + hj, (hi - hj).abs(), g[bidx]], dim=1)
+        elog = model.edge(feat).squeeze(-1); vlog = model.via(feat)
+        y = torch.tensor(ys, device=dev)
+        via_y = torch.tensor(vs, device=dev, dtype=torch.long)
+        loss = bce(elog, y)
+        m = via_y >= 0
+        if m.any():
+            loss = loss + ce(vlog[m], via_y[m])
+        opt.zero_grad(); loss.backward(); opt.step()
+        tot += float(loss); nb += 1
+    return tot / max(nb, 1)
+
+
 def train(combine: list, label: str, epochs: int = 100, lr: float = 1e-3,
           seed: int = 42, batch_size: int = 64,
           emb: int = 48, hid: int = 96, layers: int = 2, heads: int = 4):
@@ -52,65 +111,11 @@ def train(combine: list, label: str, epochs: int = 100, lr: float = 1e-3,
     print(f"[combine] {label}: " + " + ".join(f"{s}({rel})" for rel, s in combine)
           + f"  → {len(records)} graphs", flush=True)
 
-    def _prep(records):
-        data = []
-        for rec in records:
-            tids, pos = featurize(rec)
-            n = len(tids)
-            if n < 2:
-                continue
-            pi, pj, ys, vs = [], [], [], []
-            for i in range(n):
-                for j in range(i + 1, n):
-                    pi.append(i); pj.append(j)
-                    if (i, j) in pos:
-                        ys.append(1.0); vs.append(pos[(i, j)])
-                    else:
-                        ys.append(0.0); vs.append(-1)
-            data.append((tids, pi, pj, ys, vs))
-        data.sort(key=lambda d: len(d[0]))
-        return data
-
-    def epoch_pass(data):
-        batches = [data[k:k + batch_size] for k in range(0, len(data), batch_size)]
-        order = torch.randperm(len(batches)).tolist()
-        tot, nb = 0.0, 0
-        for bi in order:
-            batch = batches[bi]
-            B = len(batch); lens = [len(d[0]) for d in batch]; maxN = max(lens)
-            tt = torch.zeros(B, maxN, dtype=torch.long, device=dev)
-            pad = torch.ones(B, maxN, dtype=torch.bool, device=dev)
-            for b, d in enumerate(batch):
-                tt[b, :lens[b]] = torch.tensor(d[0], device=dev)
-                pad[b, :lens[b]] = False
-            e = model.emb(tt)
-            h = model.enc(e, src_key_padding_mask=pad)
-            valid = (~pad).unsqueeze(-1).float()
-            g = (h * valid).sum(1) / valid.sum(1)
-            bidx, iidx, jidx, ys, vs = [], [], [], [], []
-            for b, d in enumerate(batch):
-                _, pi, pj, py, pv = d
-                bidx += [b] * len(pi); iidx += pi; jidx += pj; ys += py; vs += pv
-            bidx = torch.tensor(bidx, device=dev)
-            iidx = torch.tensor(iidx, device=dev); jidx = torch.tensor(jidx, device=dev)
-            hi = h[bidx, iidx]; hj = h[bidx, jidx]
-            feat = torch.cat([hi + hj, (hi - hj).abs(), g[bidx]], dim=1)
-            elog = model.edge(feat).squeeze(-1); vlog = model.via(feat)
-            y = torch.tensor(ys, device=dev)
-            via_y = torch.tensor(vs, device=dev, dtype=torch.long)
-            loss = bce(elog, y)
-            m = via_y >= 0
-            if m.any():
-                loss = loss + ce(vlog[m], via_y[m])
-            opt.zero_grad(); loss.backward(); opt.step()
-            tot += float(loss); nb += 1
-        return tot / max(nb, 1)
-
     data = _prep(records)
     print(f"  {len(data)} graphs, {epochs} epochs, batch={batch_size}", flush=True)
     loss_curve = []
     for ep in range(epochs):
-        ls = epoch_pass(data)
+        ls = _epoch_pass(model, data, opt, bce, ce, dev, batch_size)
         if ep % 5 == 0 or ep == epochs - 1:
             print(f"  ep{ep} loss={ls:.4f}", flush=True)
             loss_curve.append([ep, round(ls, 4)])
@@ -144,6 +149,66 @@ def train(combine: list, label: str, epochs: int = 100, lr: float = 1e-3,
     torch.save(payload, MODELS_DIR / f"gen_{label}.pt")
     print(f"저장(시드): {seeded}  실험보존: {run_dir}  (run_id={run_id})", flush=True)
     return seeded
+
+
+def train_transfer(pretrain: list, finetune: list, run_id: str,
+                   epochs: int = 100, pretrain_epochs: int = 50, lr: float = 1e-3,
+                   seed: int = 42, batch_size: int = 64,
+                   emb: int = 48, hid: int = 96, layers: int = 2, heads: int = 4):
+    """임의 데이터셋 조합의 **2단계 학습**(사전학습 → 파인튜닝) — 🏗 콤보 구성기용.
+
+    pretrain/finetune = combine 스펙 [(release, source), …]. pretrain=[] 이면 파인튜닝만.
+    같은 모델/옵티마이저로 pretrain_epochs 사전학습 후 epochs 파인튜닝(이어학습).
+    runs/<run_id>/checkpoint.pt 저장 → generators.load 로 바로 사용(arch=set-transformer-v2)."""
+    import torch
+    exp.seed_everything(seed)
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    _mc = {"emb": emb, "hid": hid, "layers": layers, "heads": heads}
+    model = _build_model(**_mc).to(dev)
+    opt = torch.optim.Adam(model.parameters(), lr=lr)
+    bce = torch.nn.BCEWithLogitsLoss()
+    ce = torch.nn.CrossEntropyLoss()
+    stages = ([("pretrain", load_combine_train(pretrain), pretrain_epochs)] if pretrain else []) \
+        + [("finetune", load_combine_train(finetune), epochs)]
+    loss_curve: dict = {}
+    for name, recs, n_ep in stages:
+        data = _prep(recs)
+        print(f"[{name}] {len(recs)} graphs ({len(data)} usable), {n_ep} epochs", flush=True)
+        lc = []
+        for ep in range(n_ep):
+            ls = _epoch_pass(model, data, opt, bce, ce, dev, batch_size)
+            if ep % 5 == 0 or ep == n_ep - 1:
+                print(f"  {name} ep{ep} loss={ls:.4f}", flush=True)
+                lc.append([ep, round(ls, 4)])
+        loss_curve[name] = lc
+
+    wt, wh = Counter(), Counter()
+    for rec in load_combine_train(finetune):
+        for nd in rec["layout"]["nodes"]:
+            if isinstance(nd["id"], int):
+                wt[nd["type"]] += 1
+                if nd.get("n_windows", 0) >= 1:
+                    wh[nd["type"]] += 1
+    p_window = {t: wh[t] / wt[t] for t in wt if wt[t]}
+
+    condition = {"task": "generator", "generator": "neural", "arch": ARCH,
+                 "data_version": run_id, "pretrain": pretrain, "finetune": finetune,
+                 "epochs": epochs, "pretrain_epochs": (pretrain_epochs if pretrain else None),
+                 "lr": lr, "seed": seed, "batch_size": batch_size,
+                 "mode": "combo_transfer", "model": _mc}
+    payload = {"state": model.state_dict(), "types": TYPES, "vias": VIAS,
+               "p_window": p_window, "run_id": run_id, "condition": condition}
+    run_dir = exp.start_run(run_id)
+    torch.save(payload, run_dir / "checkpoint.pt")
+    exp.write_meta(run_dir, {"run_id": run_id, "kind": "train", "condition": condition,
+                             "loss_curve": loss_curve,
+                             "data": {"pretrain": pretrain, "finetune": finetune},
+                             "checkpoint": "checkpoint.pt"})
+    (run_dir / "train.log").write_text(
+        " ".join(f"[{k}] " + " ".join(f"ep{e}={l}" for e, l in v)
+                 for k, v in loss_curve.items()) + "\n", encoding="utf-8")
+    print(f"저장: {run_dir}  (run_id={run_id})", flush=True)
+    return run_dir / "checkpoint.pt"
 
 
 def evaluate(label: str, combine: list, seed: int, temperature: float = 0.85):
@@ -195,14 +260,28 @@ if __name__ == "__main__":
         pass
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--combine", required=True,
-                    help="'release:source,release:source' (예: 'v2:aihub,global_rplan:rplan')")
-    ap.add_argument("--label", required=True, help="버전 라벨(vN)")
+    ap.add_argument("--combine", help="'release:source,release:source' (예: 'v2:aihub,global_rplan:rplan')")
+    ap.add_argument("--label", help="버전 라벨(vN)")
     ap.add_argument("--epochs", type=int, default=100)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--eval", action="store_true", help="학습 후 동결 test 평가까지")
+    # 2단계 임의조합(🏗 콤보 구성기)
+    ap.add_argument("--transfer", action="store_true", help="사전학습→파인튜닝 2단계 임의조합")
+    ap.add_argument("--pretrain-spec", default="", help="'release:source,…' (없으면 사전학습 생략)")
+    ap.add_argument("--finetune-spec", default="", help="'release:source,…'")
+    ap.add_argument("--run-id", default=None, help="runs/<run-id> 저장 경로")
+    ap.add_argument("--cap2x", action="store_true", help="모델 용량 2배")
     a = ap.parse_args()
-    spec = [tuple(x.split(":")) for x in a.combine.split(",") if x.strip()]
-    train(spec, a.label, epochs=a.epochs, seed=a.seed)
-    if a.eval:
-        evaluate(a.label, spec, a.seed)
+
+    def _parse_spec(s):
+        return [tuple(x.split(":")) for x in s.split(",") if x.strip()]
+
+    if a.transfer:
+        big = {"emb": 96, "hid": 192, "layers": 4, "heads": 8} if a.cap2x else {}
+        train_transfer(_parse_spec(a.pretrain_spec), _parse_spec(a.finetune_spec),
+                       a.run_id, epochs=a.epochs, seed=a.seed, **big)
+    else:
+        spec = _parse_spec(a.combine)
+        train(spec, a.label, epochs=a.epochs, seed=a.seed)
+        if a.eval:
+            evaluate(a.label, spec, a.seed)

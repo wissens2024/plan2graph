@@ -1181,70 +1181,69 @@ if which.startswith("🏗"):
         "위상까지는 완성·평가됐다(→ 📈 결과 대시보드). **여기서는 그 위상으로 실제 좌표 도면까지 그려 보고**, "
         "더 나은 *좌표 도면 생성 방법*을 탐색한다. (위상 모델은 끝이 아니라 **부품**)")
 
-    # ── 2) 최종 모델 구성 — 사전학습 × 파인튜닝 (없으면 즉석 학습) ──
+    # ── 2) 최종 모델 구성 — 사전학습 × 파인튜닝 (데이터셋 자유 조합) ──
     st.header("2. 최종 모델 구성 — 사전학습 × 파인튜닝")
-    st.caption("**글로벌 사전학습**(무엇을·전부든) × **파인튜닝 데이터셋**을 자유롭게 조합 → 최종 위상 모델. "
-               "**기존 학습본이 없으면 그 자리에서 학습**(GPU1·백그라운드)해 만든다 → ③에서 생성.")
-    _RELd = config.DATA_DIR / "releases"
-    _ftvers = sorted((p.name for p in _RELd.glob("v*")
-                      if p.is_dir() and (p / "splits" / "train.txt").exists()),
-                     key=lambda s: (len(s), s)) if _RELd.exists() else ["v0"]
-    _ftvers = _ftvers or ["v0"]
-    _FTLABEL = {"v0": "v0 · AI-Hub 클린 (7,101)", "v2": "v2 · AI-Hub+CubiCasa"}
-    _cf1, _cf2, _cf3 = st.columns(3)
-    _pre = _cf1.selectbox("① 사전학습 (글로벌)", ["없음", "RPLAN", "CubiCasa", "결합(RPLAN+CubiCasa)"],
-                          help="글로벌 도면으로 먼저 학습할 바탕(하나·전부 자유)")
-    _ver = _cf2.selectbox("② 파인튜닝 데이터셋", _ftvers,
-                          format_func=lambda v: _FTLABEL.get(v, v),
-                          help="동결된 릴리스에서 파인튜닝. 더 추가하려면 release.py로 freeze")
-    _adv = _cf3.selectbox("③ 기법", ["표준", "type조건", "용량 2배"],
-                          help="type조건=주거형태 조건화 · 용량2배=파라미터 ×2")
-    _SUF = {"없음": "noPretrain", "RPLAN": "pre_global_rplan",
-            "CubiCasa": "pre_global_cubicasa", "결합(RPLAN+CubiCasa)": "pre_global_all"}
-    _PRE_REL = {"RPLAN": "global_rplan", "CubiCasa": "global_cubicasa",
-                "결합(RPLAN+CubiCasa)": "global_all"}
-    if _adv == "type조건":
-        _rid = f"gen-{_ver}-neural-set-transformer-typed-noPretrain-seed42"
-        _desc = f"{_ver} + type조건"
-    elif _adv == "용량 2배":
-        _rid = f"gen-{_ver}cap2x-neural-set-transformer-v2-noPretrain-seed42"
-        _desc = f"{_ver} + 용량2배"
-    elif _pre != "없음":
-        _rid = f"gen-{_ver}-neural-set-transformer-v2-{_SUF[_pre]}-seed42"
-        _desc = f"사전학습 {_pre} → 파인튜닝 {_ver}"
-    else:
-        _rid = f"gen-{_ver}-neural-set-transformer-v2-noPretrain-seed42"
-        _desc = f"파인튜닝 {_ver} (사전학습 없음)"
+    st.caption("**① 사전학습**(첫 학습)과 **② 파인튜닝**(두번째 학습)에 **데이터셋을 자유롭게 조합**. "
+               "그 조합의 모델이 없으면 **그 자리에서 백그라운드 학습** → 끝나면 최종 모델. "
+               "(어떤 조합이 의미있는지는 별개 판단 — 여기선 자유 구성)")
+    _DS = {  # 표시명 → combine 스펙(release, source)
+        "AI-Hub(클린)": ("v0", "aihub"),
+        "AI-Hub(전체)": ("v2", "aihub"),
+        "RPLAN(글로벌)": ("global_rplan", "rplan"),
+        "CubiCasa(글로벌)": ("v2", "cubicasa5k"),
+    }
+    _CODE = {"AI-Hub(클린)": "aihubC", "AI-Hub(전체)": "aihubF",
+             "RPLAN(글로벌)": "rplan", "CubiCasa(글로벌)": "cubi"}
+    _cf1, _cf2 = st.columns(2)
+    _pre_sel = _cf1.multiselect("① 사전학습 데이터셋 (첫 학습 · 비우면 생략)", list(_DS), key="cfg_pre",
+                                help="여러 개 합쳐서 먼저 학습. 비우면 사전학습 없이 파인튜닝만")
+    _ft_sel = _cf2.multiselect("② 파인튜닝 데이터셋 (두번째 학습)", list(_DS),
+                               default=["AI-Hub(클린)"], key="cfg_ft",
+                               help="여러 개 합쳐서 이어 학습. 최소 1개")
+    _adv = st.radio("③ 기법", ["표준", "용량 2배"], horizontal=True, key="cfg_adv",
+                    help="용량2배=모델 파라미터 ×2")
+
+    def _tag(sel):
+        return "_".join(sorted(_CODE[s] for s in sel)) if sel else "none"
+
+    def _spec(sel):
+        return ",".join(f"{_DS[s][0]}:{_DS[s][1]}" for s in sel)
+    _cap = "-cap2x" if _adv == "용량 2배" else ""
+    _rid = f"combo-pre_{_tag(_pre_sel)}-ft_{_tag(_ft_sel)}{_cap}-s42"
+    _desc = (f"사전학습[{'+'.join(_pre_sel) or '없음'}] → 파인튜닝[{'+'.join(_ft_sel) or '없음'}]"
+             + (" + 용량2배" if _cap else ""))
     _ckpt = _ROOT / "runs" / _rid / "checkpoint.pt"
     _exists = _ckpt.exists()
     _olog = _ROOT / "logs" / f"ondemand-{_rid}.log"
+    if not _ft_sel:
+        st.warning("② 파인튜닝 데이터셋을 최소 1개 선택하세요.")
+        _exists = False
     st.markdown(f"**→ 최종 모델: {_desc}**  ·  {'✅ 학습됨' if _exists else '⚠️ 미학습'}  "
                 f"<span style='color:gray;font-size:0.85em'>{_rid}</span>", unsafe_allow_html=True)
-    if not _exists:
-        if _adv != "표준":
-            st.caption("⚠️ type조건·용량2배의 미학습 조합은 자동학습 미지원 — 표준(사전학습×파인튜닝)으로 학습하세요.")
-        elif _olog.exists():
+    if _ft_sel and not _exists:
+        if _olog.exists():
             _ll = _olog.read_text(errors="ignore").strip().splitlines()
-            st.warning("🔄 학습 진행 중 (GPU1·백그라운드·100ep) — 완료되면 ✅로 바뀌고 ③에서 생성. "
+            st.warning("🔄 학습 진행 중 (GPU1·백그라운드) — 완료되면 ✅로 바뀌고 ③에서 생성. "
                        f"최근: `{(_ll[-1] if _ll else '학습 시작/사전학습 단계…')[:130]}`")
             _r1, _r2 = st.columns([1, 1])
             if _r1.button("🔄 상태 새로고침"):
                 st.rerun()
-            if _r2.button("↻ 다시 시작(로그 초기화)", help="크래시/중단 시 — 로그 지우고 다시 학습 가능"):
+            if _r2.button("↻ 다시 시작(로그 초기화)", help="크래시/중단 시 — 로그 지우고 다시 학습"):
                 _olog.unlink(missing_ok=True)
                 st.rerun()
         else:
-            st.info("이 조합은 아직 없습니다 → 즉석 학습으로 만들 수 있습니다.")
-            if st.button("🛠 이 조합 학습 시작 (GPU1 · 100ep · 백그라운드)"):
+            st.info("이 조합의 모델이 없습니다 → 즉석 학습으로 만들 수 있습니다.")
+            if st.button("🛠 이 조합 학습 시작 (GPU1 · 백그라운드)"):
                 import subprocess as _sp
                 import sys as _sys
-                _pa = (f"--pretrain {_PRE_REL[_pre]} --pretrain-epochs 50 "
-                       if _pre != "없음" else "")
+                _pa = (f"--pretrain-spec '{_spec(_pre_sel)}' " if _pre_sel else "")
+                _capf = "--cap2x " if _cap else ""
                 _cmd = (f"cd '{_ROOT}' && CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src setsid nohup "
-                        f"{_sys.executable} -u -m plan2graph.train_gen {_pa}--finetune {_ver} "
+                        f"{_sys.executable} -u -m plan2graph.train_combine --transfer "
+                        f"{_pa}--finetune-spec '{_spec(_ft_sel)}' {_capf}--run-id '{_rid}' "
                         f"--epochs 100 --seed 42 > 'logs/ondemand-{_rid}.log' 2>&1 &")
                 _sp.Popen(["bash", "-lc", _cmd])
-                st.success("학습 시작됨 — 파인튜닝만 수 분 / 사전학습 포함 십수 분. "
+                st.success("학습 시작됨 — 데이터량에 따라 수 분~십수 분. "
                            "'상태 새로고침'으로 진행 확인, 완료되면 ③에서 생성.")
                 st.rerun()
 
