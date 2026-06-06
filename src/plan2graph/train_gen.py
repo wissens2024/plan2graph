@@ -270,8 +270,10 @@ class NeuralGenerator:
     def __init__(self, checkpoint: str):
         import torch
         self.torch = torch
-        self.model = _build_model()
         ckpt = torch.load(checkpoint, map_location="cpu", weights_only=False)
+        # 모델 크기 가변 지원: condition.model 있으면 그 크기로 빌드(없으면 기본 48/96/2/4 = 구버전 호환)
+        _mc = (ckpt.get("condition", {}) or {}).get("model") or {}
+        self.model = _build_model(**_mc)
         self.model.load_state_dict(ckpt["state"])
         self.model.eval()
         self.p_window = ckpt.get("p_window", {})

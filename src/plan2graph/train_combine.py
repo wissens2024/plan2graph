@@ -36,12 +36,15 @@ def load_combine_train(combine: list) -> list:
 
 
 def train(combine: list, label: str, epochs: int = 100, lr: float = 1e-3,
-          seed: int = 42, batch_size: int = 64):
-    """소스들을 합쳐 단일 단계로 epochs 학습. run_id·data_version = label(vN)."""
+          seed: int = 42, batch_size: int = 64,
+          emb: int = 48, hid: int = 96, layers: int = 2, heads: int = 4):
+    """소스들을 합쳐 단일 단계로 epochs 학습. run_id·data_version = label(vN).
+    모델 크기(emb/hid/layers/heads)는 condition.model로 저장 → 로드 시 그 크기로 복원(용량 ablation)."""
     import torch
     exp.seed_everything(seed)
     dev = "cuda" if torch.cuda.is_available() else "cpu"
-    model = _build_model().to(dev)
+    _mc = {"emb": emb, "hid": hid, "layers": layers, "heads": heads}
+    model = _build_model(**_mc).to(dev)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     bce = torch.nn.BCEWithLogitsLoss()
     ce = torch.nn.CrossEntropyLoss()
@@ -125,7 +128,7 @@ def train(combine: list, label: str, epochs: int = 100, lr: float = 1e-3,
     condition = {"task": "generator", "generator": "neural", "arch": ARCH,
                  "data_version": label, "pretrain": None, "finetune": label,
                  "epochs": epochs, "lr": lr, "seed": seed, "batch_size": batch_size,
-                 "mode": "combine", "combine": combine}
+                 "mode": "combine", "combine": combine, "model": _mc}
     payload = {"state": model.state_dict(), "types": TYPES, "vias": VIAS,
                "p_window": p_window, "run_id": run_id, "condition": condition}
     run_dir = exp.start_run(run_id)
