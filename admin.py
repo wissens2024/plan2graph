@@ -1128,19 +1128,29 @@ if which.startswith("📈"):
             "글로벌만 학습(v5~v7)은 국내 test에서 낮게 나오는 게 정상 — 글로벌↔국내 도메인 격차를 보는 게 목적.")
     st.subheader("방 종류 분포 — 출처별 (AI-Hub · RPLAN · CubiCasa)")
     import pandas as _pd
+    import altair as _alt
     _rdp = REL / "roomdist_by_source.json"
     if _rdp.exists():
         _rd = _json.loads(_rdp.read_text(encoding="utf-8"))
         _types = sorted({t for d in _rd.values() for t in d},
                         key=lambda t: -sum(d.get(t, 0) for d in _rd.values()))
-        # 출처별 비율(%) — 스케일 다른 출처(RPLAN 546k vs CubiCasa 40k)의 분포 '모양'을 한눈에 비교
-        _df = _pd.DataFrame(
-            {src: [100.0 * d.get(t, 0) / (sum(d.values()) or 1) for t in _types]
-             for src, d in _rd.items()}, index=_types)
-        st.bar_chart(_df)
-        _tot = " · ".join(f"{s} {sum(d.values()):,}노드" for s, d in _rd.items())
-        st.caption(f"출처별 방 종류 **비율(%)** — 색=출처(범례), 분포 모양 비교용. "
-                   f"절대 노드수: {_tot}. (`scripts/roomdist_by_source.py` 스냅샷)")
+        # 원시 노드수(양) — 막대 길이=실제 개수. 방종류별 3색 그룹막대(xOffset). 빨강 제외.
+        _long = _pd.DataFrame([{"방 종류": t, "출처": s, "노드 수": _rd[s].get(t, 0)}
+                               for s in _rd for t in _types])
+        _ch = _alt.Chart(_long).mark_bar().encode(
+            x=_alt.X("방 종류:N", sort=_types, title=None),
+            xOffset=_alt.XOffset("출처:N"),
+            y=_alt.Y("노드 수:Q", title="노드 수 (양)"),
+            color=_alt.Color("출처:N",
+                             scale=_alt.Scale(domain=["AI-Hub", "RPLAN", "CubiCasa"],
+                                              range=["#4C78A8", "#54A24B", "#E6A817"]),
+                             legend=_alt.Legend(title="출처")),
+            tooltip=["방 종류", "출처", _alt.Tooltip("노드 수:Q", format=",")],
+        )
+        st.altair_chart(_ch, use_container_width=True)
+        _tot = " · ".join(f"{s} {sum(d.values()):,}" for s, d in _rd.items())
+        st.caption(f"출처별 방 종류 **노드 수(양)** — 막대 길이=실제 개수(방종류별 3색 그룹). "
+                   f"총 노드: {_tot}. RPLAN은 그래프 수가 많아 절대량이 큼. (`scripts/roomdist_by_source.py` 스냅샷)")
     else:
         st.bar_chart(_roomdist(ver, _mt(REL / ver / "manifest.json")))
         st.caption("출처별 분포는 `python scripts/roomdist_by_source.py` 실행 후 표시.")
