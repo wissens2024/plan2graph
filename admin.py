@@ -1181,53 +1181,59 @@ if which.startswith("🏗"):
         "위상까지는 완성·평가됐다(→ 📈 결과 대시보드). **여기서는 그 위상을 실제로 만들어 보고**, "
         "다음 단계인 *좌표 도면 생성 방법*을 탐색한다. (위상 모델은 끝이 아니라 **부품**)")
 
-    # ── 2) 도면 생성 방법 — 조합 탐색 ──
-    st.header("2. 도면 생성 방법 — 조합 탐색")
-    st.caption("위상 → 좌표 도면을 만드는 방법 후보. **{위상 모델} × {도면 방법} × {정제 루프}** 조합 중 "
-               "*최고 도면*을 찾는다. (현재 위상 단계 구현 · 도면 단계는 로드맵)")
-    st.table([
-        {"방법": "규칙기반 기하 배치", "설명": "위상에 좌표·벽 채움(rectangular dissection)",
-         "상태": "스파이크 검증(1세대)"},
-        {"방법": "좌표 회귀 GNN", "설명": "위상+제약 → 좌표 직접 예측", "상태": "예정"},
-        {"방법": "Layout diffusion", "설명": "위상 조건 생성형 도면", "상태": "예정"},
-        {"방법": "Constrained RL", "설명": "면적·법규·동선 보상 최적화", "상태": "예정(원설계 Phase-3)"},
-        {"방법": "Self-Correction 루프", "설명": "그린다→검사→다시 그린다(위상 규제루프의 geometry 확장)",
-         "상태": "위상 적용 / geometry 예정"},
-    ])
+    # ── 2) 최종 모델 구성 — 사전학습 × 파인튜닝 ──
+    st.header("2. 최종 모델 구성 — 사전학습 × 파인튜닝")
+    st.caption("**글로벌 사전학습 모델** × **한국 파인튜닝 데이터**(+기법)를 조합해 최종 위상 모델을 완성한다. "
+               "현재 학습된 조합을 자유롭게 골라 → ③에서 그 모델로 Neuro-Symbolic 도면 생성.")
+    _cf1, _cf2, _cf3 = st.columns(3)
+    _pre = _cf1.selectbox("① 사전학습 (글로벌)", ["없음", "RPLAN", "CubiCasa", "결합(RPLAN+CubiCasa)"],
+                          help="글로벌 도면으로 먼저 학습한 바탕 모델")
+    _ft = _cf2.selectbox("② 파인튜닝 (한국)", ["AI-Hub v0 (클린)"],
+                         help="한국 데이터로 특화. 현재 학습된 파인튜닝셋 = v0")
+    _adv = _cf3.selectbox("③ 기법", ["표준", "type조건", "용량 2배"],
+                          help="type조건=주거형태 조건화 · 용량2배=파라미터 ×2 (둘 다 사전학습 없음 기준)")
+    _SUF = {"없음": "noPretrain", "RPLAN": "pre_global_rplan",
+            "CubiCasa": "pre_global_cubicasa", "결합(RPLAN+CubiCasa)": "pre_global_all"}
+    if _adv == "type조건":
+        _rid, _desc = "gen-v0-neural-set-transformer-typed-noPretrain-seed42", "AI-Hub v0 + type조건"
+    elif _adv == "용량 2배":
+        _rid, _desc = "gen-v0cap2x-neural-set-transformer-v2-noPretrain-seed42", "AI-Hub v0 + 용량 2배"
+    else:
+        _rid = f"gen-v0-neural-set-transformer-v2-{_SUF[_pre]}-seed42"
+        _desc = (f"사전학습 {_pre} → " if _pre != "없음" else "") + "AI-Hub v0"
+    _ckpt = _ROOT / "runs" / _rid / "checkpoint.pt"
+    _exists = _ckpt.exists()
+    st.markdown(f"**→ 최종 모델: {_desc}**  ·  {'✅ 학습됨' if _exists else '⚠️ 이 조합 미학습'}")
+    st.caption(f"run_id: `{_rid}`"
+               + ("  ·  ⚠️ type조건·용량2배는 사전학습 없음(v0) 기준만 학습 → 사전학습 선택 무시"
+                  if _adv != "표준" else ""))
 
-    # ── 3) 시연 — 자연어 → 위상 + 자기교정 (현재 구현) ──
-    st.header("3. 시연 — 자연어 → 위상 + 자기교정 (현재 구현)")
-    st.caption("선정된 위상 생성기로: 자연어 → 제약 → 위상 생성 → Symbolic 자기교정. "
-               "**패널2** 자기교정 OFF∥ON · **패널3** 위반·수정 근거. "
-               "*(좌표 도면은 다음 단계 — 현재는 위상 그래프까지)*")
-    _runs = sorted(p.parent.name for p in (_ROOT / "runs").glob("gen-v0-neural*/checkpoint.pt")
-                   if "set-transformer-v1-" not in p.parent.name)   # 은퇴 arch(미배치 개발본) 제외
-    if not _runs:
-        st.info("학습된 신경망 체크포인트 없음: `bash scripts/run_matrix.sh` 후 표시.")
+    # ── 3) Neuro-Symbolic 도면 생성 ──
+    st.header("3. Neuro-Symbolic 도면 생성")
+    st.caption("위 최종 모델로: 자연어 → 제약 → **위상 생성(Neuro)** → **규제 자기교정(Symbolic)**. "
+               "패널2 자기교정 OFF∥ON · 패널3 근거. *(좌표 도면은 §4 — 현재 위상까지)*")
+    if not _exists:
+        st.info("이 조합은 아직 학습되지 않았습니다. 다른 조합을 고르세요(또는 학습 필요).")
     else:
         gtext = st.text_input("자연어 요구", "신혼부부 아파트 침실2 욕실1 거실 주방", key="ns_text")
-        gc1, gc2, gc3 = st.columns([3, 1, 1])
-        # 기본=typed(주거형태 조건 시연 즉시 가능) → 없으면 noPretrain-seed42
-        _def = next((r for r in _runs if "typed" in r and "seed42" in r),
-                    next((r for r in _runs if "noPretrain-seed42" in r), _runs[0]))
-        gck = gc1.selectbox("생성기(체크포인트)", _runs, index=_runs.index(_def), key="ns_ck")
-        gseed = gc2.number_input("시드", 0, 9999, 1, key="ns_seed")
-        ght = gc3.selectbox("주거형태", ["자동", "APT", "DEH", "ROW"], key="ns_house",
-                            help="type조건 모델(typed)일 때만 적용 — 아파트/단독/연립 구분")
+        _g2, _g3 = st.columns(2)
+        gseed = _g2.number_input("시드", 0, 9999, 1, key="ns_seed")
+        ght = _g3.selectbox("주거형태", ["자동", "APT", "DEH", "ROW"], key="ns_house",
+                            help="type조건 모델일 때만 적용")
         if st.button("🏗 생성 (Neuro-Symbolic)"):
             from plan2graph import text2graph as _t2g, gen_loop as _gl
 
             @st.cache_resource(show_spinner="생성기 로드(CPU)...")
             def _load_ng(_path):
                 from plan2graph import generators as _G
-                return _G.load(_path)   # arch 디스패치(set-transformer-v2 / typed …)
+                return _G.load(_path)   # arch 디스패치
 
             try:
                 prog = _t2g.parse(gtext)["program"]
                 st.caption(f"제약 program: {prog}")
-                ng = _load_ng(str(_ROOT / "runs" / gck / "checkpoint.pt"))
+                ng = _load_ng(str(_ckpt))
                 _typed = getattr(ng, "arch", "") == "set-transformer-typed"
-                st.caption(f"생성기: {gck}  ·  주거형태조건: "
+                st.caption("주거형태조건: "
                            f"{ght if (_typed and ght != '자동') else '미적용(비-typed 또는 자동)'}")
 
                 def gfn(p, r):
@@ -1238,15 +1244,15 @@ if which.startswith("🏗"):
                 v_off = _gl.verify(G_off)
                 G_on, hist = _gl.generate_compliant(gfn, prog, max_tries=5, repair=True, seed=_sd)
                 v_on = _gl.verify(G_on)
-                st.markdown("**패널2 — 파이프라인 토글 (자기교정 OFF ∥ ON, 같은 입력)**")
+                st.markdown("**패널2 — 자기교정 OFF ∥ ON (같은 입력)**")
                 p1, p2 = st.columns(2)
                 with p1:
-                    st.markdown(f"자기교정 **OFF** — 위반 {v_off['n']} "
+                    st.markdown(f"자기교정 **OFF**(Neuro만) — 위반 {v_off['n']} "
                                 f"{'✅' if v_off['passed'] else '❌'}")
                     st.pyplot(_rv.render_graph_fig(G_off, title="loop off", node_size=1500,
                               font_size=11, layout="kamada"), use_container_width=True)
                 with p2:
-                    st.markdown(f"자기교정 **ON** — 위반 {v_on['n']} "
+                    st.markdown(f"자기교정 **ON**(+Symbolic) — 위반 {v_on['n']} "
                                 f"{'✅통과' if v_on['passed'] else '❌'}")
                     st.pyplot(_rv.render_graph_fig(G_on, title="loop on", node_size=1500,
                               font_size=11, layout="kamada"), use_container_width=True)
@@ -1264,8 +1270,21 @@ if which.startswith("🏗"):
             except Exception as e:  # noqa: BLE001
                 st.error(f"생성 실패: {e}")
 
-    # ── 4) 최종 도면 평가 — '잘 나온 도면'의 기준 (로드맵) ──
-    st.header("4. 최종 도면 평가 — '잘 나온 도면'의 기준 (로드맵)")
+    # ── 4) 도면(geometry) 방법 — 위상→좌표 (로드맵) ──
+    st.header("4. 도면(geometry) 방법 — 위상→좌표 (로드맵)")
+    st.caption("위상 → 좌표 도면을 만드는 방법 후보. {위상 모델} × {도면 방법} × {정제 루프} 중 *최고 도면* 탐색.")
+    st.table([
+        {"방법": "규칙기반 기하 배치", "설명": "위상에 좌표·벽 채움(rectangular dissection)",
+         "상태": "스파이크 검증(1세대)"},
+        {"방법": "좌표 회귀 GNN", "설명": "위상+제약 → 좌표 직접 예측", "상태": "예정"},
+        {"방법": "Layout diffusion", "설명": "위상 조건 생성형 도면", "상태": "예정"},
+        {"방법": "Constrained RL", "설명": "면적·법규·동선 보상 최적화", "상태": "예정(원설계 Phase-3)"},
+        {"방법": "Self-Correction 루프", "설명": "그린다→검사→다시 그린다(위상 규제루프의 geometry 확장)",
+         "상태": "위상 적용 / geometry 예정"},
+    ])
+
+    # ── 5) 최종 도면 평가 — '잘 나온 도면'의 기준 (로드맵) ──
+    st.header("5. 최종 도면 평가 — '잘 나온 도면'의 기준 (로드맵)")
     st.markdown(
         "도면(geometry) 단계가 구현되면 **최종 도면 품질**로 조합을 판정한다:\n"
         "- **면적 정확도** — 생성 면적 vs 요구·실제\n"
@@ -1274,8 +1293,8 @@ if which.startswith("🏗"):
         "- **시각 품질** — 실제 도면과의 유사도 / 전문가 평가\n\n"
         "→ **{위상 모델 × 도면 방법 × 정제 루프}** 중 이 기준에서 최고인 조합을 찾는 것이 다음 목표.")
 
-    # ── 5) 요약 ──
-    st.header("5. 요약")
+    # ── 6) 요약 ──
+    st.header("6. 요약")
     st.markdown(
         "위상은 **부품**, 목표는 **잘 나온 도면**이다. 현재 *자연어→위상 생성+자기교정*까지 동작하며, "
         "다음은 *좌표 도면 방법 조합 탐색 → 최종 도면 품질 평가*다. "
