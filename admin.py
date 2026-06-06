@@ -1115,8 +1115,24 @@ if which.startswith("📈"):
             "(각 100시트 = 300시트 / 465그래프) 고정. 우리 목적이 한국형 소버린 AI라 test는 국내 "
             "주거형태별 균형이어야 하며, **전 버전이 이 동일 test로 평가**된다(조합 비교 타당성). "
             "글로벌만 학습(v5~v7)은 국내 test에서 낮게 나오는 게 정상 — 글로벌↔국내 도메인 격차를 보는 게 목적.")
-    st.subheader("방 종류 분포 (노드 수)")
-    st.bar_chart(_roomdist(ver, _mt(REL / ver / "manifest.json")))
+    st.subheader("방 종류 분포 — 출처별 (AI-Hub · RPLAN · CubiCasa)")
+    import pandas as _pd
+    _rdp = REL / "roomdist_by_source.json"
+    if _rdp.exists():
+        _rd = _json.loads(_rdp.read_text(encoding="utf-8"))
+        _types = sorted({t for d in _rd.values() for t in d},
+                        key=lambda t: -sum(d.get(t, 0) for d in _rd.values()))
+        # 출처별 비율(%) — 스케일 다른 출처(RPLAN 546k vs CubiCasa 40k)의 분포 '모양'을 한눈에 비교
+        _df = _pd.DataFrame(
+            {src: [100.0 * d.get(t, 0) / (sum(d.values()) or 1) for t in _types]
+             for src, d in _rd.items()}, index=_types)
+        st.bar_chart(_df)
+        _tot = " · ".join(f"{s} {sum(d.values()):,}노드" for s, d in _rd.items())
+        st.caption(f"출처별 방 종류 **비율(%)** — 색=출처(범례), 분포 모양 비교용. "
+                   f"절대 노드수: {_tot}. (`scripts/roomdist_by_source.py` 스냅샷)")
+    else:
+        st.bar_chart(_roomdist(ver, _mt(REL / ver / "manifest.json")))
+        st.caption("출처별 분포는 `python scripts/roomdist_by_source.py` 실행 후 표시.")
 
     # ── 2) 공간 인접확률 (생성 목표) ──
     st.header("2. 공간 인접확률 (생성 목표)")
