@@ -1146,7 +1146,25 @@ if which.startswith("📈"):
         st.bar_chart(_roomdist(ver, _mt(REL / ver / "manifest.json")))
         st.caption("출처별 분포는 `python scripts/roomdist_by_source.py` 실행 후 표시.")
 
-    # ── 2) 공간 인접확률 (생성 목표) ──
+    with st.expander("▸ 방 종류 — 소스별 원 분류명 매핑 (AI-Hub / RPLAN / CubiCasa → 통합)"):
+        st.caption("이종 데이터셋의 서로 다른 방 라벨을 **하나의 통합 온톨로지(한글)**로 변환(`adapters/common.py`). "
+                   "차례대로 **AI-Hub / RPLAN / CubiCasa**의 원 분류명.")
+        st.table([
+            {"통합(한글)": "침실", "AI-Hub": "침실", "RPLAN": "masterroom·childroom·secondroom·guestroom", "CubiCasa": "Bedroom"},
+            {"통합(한글)": "거실", "AI-Hub": "거실", "RPLAN": "livingroom", "CubiCasa": "LivingRoom"},
+            {"통합(한글)": "주방", "AI-Hub": "주방", "RPLAN": "kitchen·diningroom", "CubiCasa": "Kitchen"},
+            {"통합(한글)": "화장실", "AI-Hub": "화장실", "RPLAN": "bathroom", "CubiCasa": "Bath(room)"},
+            {"통합(한글)": "현관", "AI-Hub": "현관", "RPLAN": "entrance", "CubiCasa": "Entry·DraughtLobby"},
+            {"통합(한글)": "발코니", "AI-Hub": "발코니", "RPLAN": "balcony", "CubiCasa": "— (없음)"},
+            {"통합(한글)": "드레스룸", "AI-Hub": "드레스룸", "RPLAN": "walkin·storage", "CubiCasa": "WalkIn·Closet·Storage"},
+            {"통합(한글)": "다목적공간", "AI-Hub": "다목적공간", "RPLAN": "studyroom", "CubiCasa": "Study·Office·Den"},
+            {"통합(한글)": "실외기실", "AI-Hub": "실외기실", "RPLAN": "— (없음)", "CubiCasa": "Laundry·Utility"},
+            {"통합(한글)": "기타", "AI-Hub": "기타", "RPLAN": "— (외부·벽 제외)", "CubiCasa": "Hall·Corridor"},
+        ])
+        st.caption("⚠️ **RPLAN은 안방(masterroom)·자녀방·손님방을 따로 분류**하지만 통합 시 모두 '침실'로 합쳐짐 → "
+                   "역할(role) 정보 소실(§5-1 한계와 직결). **발코니·실외기실은 글로벌에 거의 없음** → 한국 고유(도메인 격차).")
+
+    # ── 2) 학습·생성 설정 + 목표치 ──
     st.header("2. 학습·생성 설정 + 목표치")
     st.caption("아래 설정으로 각 버전을 학습하고, **목표치(실제 도면의 인접분포)에 맞춰 생성** → §3에서 성능 평가. "
                "정확한 버전·시드별 값은 `runs/<run_id>/meta.json`.")
@@ -1159,6 +1177,10 @@ if which.startswith("📈"):
         {"항목": "seeds", "값": "42 · 1 · 2 · 3 · 4 (5 runs → mean±std)"},
         {"항목": "eval", "값": "frozen balanced test (APT/DEH/ROW 300도면) · 규제루프 off/on"},
     ])
+    st.caption("**파라미터 설정 근거**: 위 기본값(embedding 48·layers 2·heads 4·FFN 96)으로 **전 버전(v0~v7) 통일** "
+               "(데이터 조합 효과만 분리). epochs·파라미터 모두 성능에 영향을 주므로, 별도로 **모델 용량 2배 "
+               "ablation**(embedding 96·layers 4·heads 8·FFN 192, 같은 v0 데이터)을 수행해 *파라미터를 키우면 "
+               "나아지는지* 확인 — 결과는 §3 표의 `v0cap2x` 행(작은 v0와 직접 비교).")
 
     @st.cache_data(show_spinner="목표치(인접분포) 집계...")
     def _adj_target(v, _k):   # 실제 도면의 방-쌍 연결 빈도 → 확률(eval_gen._metrics의 P_real과 동일 정의)
