@@ -45,12 +45,35 @@
 - 방 쌍 (i,j): `[h_i+h_j, |h_i−h_j|, g]` → 두 헤드: **edge**(연결 여부) + **via**(연결 종류: door/open/balcony/…).
 - 입력 = program(방 타입 집합), 출력 = 인접 그래프. ("Set Transformer" 논문의 ISAB/PMA가 아니라 일반 TransformerEncoder의 집합 self-attention.)
 
-## 4. 학습 절차 (`train_gen.train`)
+## 4. 학습 절차 — 두 모듈 (조합학습 vs 전이학습, 분리)
 
-- **전이학습**: `--pretrain global_{cubicasa|rplan}`(사전학습 50ep) → `--finetune v0`(파인튜닝 100ep). noPretrain은 파인튜닝 100ep만(동일 예산, 공정 비교).
-- **배치학습 레짐**: 가변 방수를 **패딩 + 어텐션 마스크**로 한 배치(기본 64)에 쌓아 한 번에 통과 + 특징 1회 사전계산 → 미배치 대비 수배 가속(다중시드 매트릭스 현실화).
-- 손실 = 링크예측(+via). neg_ratio 3, lr 1e-3, Adam. 시드 고정(`exp.seed_everything`) + `runs/<run_id>/` 보존(재현).
-- run_id = `gen-<데이터버전>-<생성기>-<아키텍처>-<pretrain>-seed<N>`. 체크포인트는 git 제외(시드+코드로 재생성), 메타·지표·원장만 추적.
+- **현재 단계 = 데이터셋 조합학습** (`train_combine.train`): 여러 소스를 **합쳐 한 데이터셋으로 한 번에 100ep 학습**(전이학습 아님). 어떤 조합이 최고인지 비교. → [[combine-matrix-running]]
+- **다음 단계 = 전이학습** (`train_gen.train`): `--pretrain global_*`(50ep) → `--finetune`(100ep). **별도 모듈·메뉴**(섞지 않음). noPretrain은 파인튜닝 100ep만(동일 예산 공정 비교).
+- **공유**: 모델 구조(set-transformer)·featurize·평가지표(`_metrics`)는 동일 → 공정 비교. 학습 루프만 모듈별 보유.
+- **배치학습**: 가변 방수를 패딩+어텐션마스크로 한 배치(64)에 쌓아 통과 + 특징 1회 사전계산(미배치 대비 수배 가속).
+- **손실 = 전 방-쌍 BCE(연결여부) + 양성쌍 via CE.** *배치 레짐은 음성 서브샘플링 없이 전 쌍 사용*(옛 `neg_ratio`는 미배치 잔재). 최적화 Adam(lr 1e-3), 시드 고정(`exp.seed_everything`).
+- **재현**: run_id = `gen-<버전>-neural-<arch>-<pretrain|noPretrain>-seed<N>`. **각 학습의 정확한 파라미터는 `runs/<run_id>/meta.json`의 `condition`에 전량 보존**(checkpoint.pt·train.log 함께). 체크포인트는 git 제외(시드+코드로 재생성), 메타·지표·원장만 git 추적.
+
+### 4-A. 학습 사양 (Training spec — 논문 인용용)
+
+| 항목 | 값 |
+|---|---|
+| 모델 | set-transformer 링크예측기 (일반 TransformerEncoder의 집합 self-attention) |
+| 임베딩 | 48차원 |
+| 인코더 | 2층 · 4헤드 · FFN 96 · dropout 0 |
+| 출력 헤드 | edge(연결여부, BCE) + via(연결종류: door/open/balcony, CE) |
+| 입력 → 출력 | program(방 타입 집합) → 방-쌍 인접 그래프(위상) |
+| 손실 | 전 방-쌍 BCE + 양성쌍 via CE (음성 서브샘플 없음) |
+| 최적화 | Adam, lr 1e-3 |
+| 배치 | 64 (패딩+어텐션마스크, 크기 버킷팅) |
+| 에폭 | 100 (조합 단일학습 / 전이학습 파인튜닝); 전이학습 사전학습 50 |
+| 시드 | 42 · 1 · 2 · 3 · 4 (5시드 → 평균±표준편차) |
+| 생성 온도 T | eval=모델 기본 · 일반화/dwelling 진단=0.85 (*논문 보고 시 통일 권장*) |
+| 평가셋 | AI-Hub 균형 동결 test(APT·DEH·ROW 동등, 전 버전 공유) |
+| 평가 항목 | eval(전체) · seen/unseen(일반화) · dwelling(주거형태) · 규제루프 off/on |
+| 재현 소스 | `runs/<run_id>/meta.json`(condition 전체) · checkpoint.pt · train.log · `runs/index.jsonl`(원장) |
+
+> 논문 작성 시: 표의 값은 코드 기본값이며, **버전·시드별 실제 사용값은 `runs/<run_id>/meta.json`이 정본**(여기서 발췌). 온도 T는 현재 eval/진단이 달라 보고 전 통일 필요.
 
 ## 5. 평가 (`eval_gen`)
 
