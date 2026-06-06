@@ -1225,8 +1225,13 @@ if which.startswith("🏗"):
             st.caption("⚠️ type조건·용량2배의 미학습 조합은 자동학습 미지원 — 표준(사전학습×파인튜닝)으로 학습하세요.")
         elif _olog.exists():
             _ll = _olog.read_text(errors="ignore").strip().splitlines()
-            st.warning(f"🔄 학습 진행 중 (GPU1·백그라운드·100ep). 최근: `{(_ll[-1] if _ll else '')[:130]}`")
-            if st.button("🔄 상태 새로고침"):
+            st.warning("🔄 학습 진행 중 (GPU1·백그라운드·100ep) — 완료되면 ✅로 바뀌고 ③에서 생성. "
+                       f"최근: `{(_ll[-1] if _ll else '학습 시작/사전학습 단계…')[:130]}`")
+            _r1, _r2 = st.columns([1, 1])
+            if _r1.button("🔄 상태 새로고침"):
+                st.rerun()
+            if _r2.button("↻ 다시 시작(로그 초기화)", help="크래시/중단 시 — 로그 지우고 다시 학습 가능"):
+                _olog.unlink(missing_ok=True)
                 st.rerun()
         else:
             st.info("이 조합은 아직 없습니다 → 즉석 학습으로 만들 수 있습니다.")
@@ -1236,7 +1241,7 @@ if which.startswith("🏗"):
                 _pa = (f"--pretrain {_PRE_REL[_pre]} --pretrain-epochs 50 "
                        if _pre != "없음" else "")
                 _cmd = (f"cd '{_ROOT}' && CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src setsid nohup "
-                        f"{_sys.executable} -m plan2graph.train_gen {_pa}--finetune {_ver} "
+                        f"{_sys.executable} -u -m plan2graph.train_gen {_pa}--finetune {_ver} "
                         f"--epochs 100 --seed 42 > 'logs/ondemand-{_rid}.log' 2>&1 &")
                 _sp.Popen(["bash", "-lc", _cmd])
                 st.success("학습 시작됨 — 파인튜닝만 수 분 / 사전학습 포함 십수 분. "
