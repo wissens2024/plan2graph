@@ -1152,12 +1152,12 @@ if which.startswith("📈"):
                "정확한 버전·시드별 값은 `runs/<run_id>/meta.json`.")
     st.markdown("**① 학습·생성 설정**")
     st.table([
-        {"항목": "모델", "값": "set-transformer 링크예측기 (임베딩 48 · 2층 · 4헤드 · FFN 96)"},
-        {"항목": "학습 방식", "값": "데이터 합쳐서 한 번에 학습(조합) · Adam · lr 1e-3"},
-        {"항목": "에폭(epochs)", "값": "100"},
-        {"항목": "배치(batch)", "값": "64"},
-        {"항목": "시드(seeds)", "값": "42 · 1 · 2 · 3 · 4 (5회 → 평균±표준편차)"},
-        {"항목": "생성·평가", "값": "동결 균형 test(APT/DEH/ROW 300도면) · 규제루프 off/on"},
+        {"항목": "model", "값": "set-transformer link-predictor (embedding 48 · layers 2 · heads 4 · FFN 96)"},
+        {"항목": "training", "값": "combine (데이터 합쳐 한 번 학습) · optimizer Adam · lr 1e-3"},
+        {"항목": "epochs", "값": "100"},
+        {"항목": "batch size", "값": "64"},
+        {"항목": "seeds", "값": "42 · 1 · 2 · 3 · 4 (5 runs → mean±std)"},
+        {"항목": "eval", "값": "frozen balanced test (APT/DEH/ROW 300도면) · 규제루프 off/on"},
     ])
 
     @st.cache_data(show_spinner="목표치(인접분포) 집계...")
