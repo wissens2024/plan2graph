@@ -1147,11 +1147,20 @@ if which.startswith("📈"):
         st.caption("출처별 분포는 `python scripts/roomdist_by_source.py` 실행 후 표시.")
 
     # ── 2) 공간 인접확률 (생성 목표) ──
-    st.header("2. 공간 인접확률 (생성 목표)")
-    st.caption("AI-Hub(v0) 실제 도면의 **P(방A~방B 연결)** = 생성모델이 맞춰야 할 목표 분포(= adj_L1의 P_real). "
-               "통행 연결(door/open 등)만 집계, 상위 15쌍. 거실이 허브임을 보여줌.")
+    st.header("2. 학습·생성 설정 + 목표치")
+    st.caption("아래 설정으로 각 버전을 학습하고, **목표치(실제 도면의 인접분포)에 맞춰 생성** → §3에서 성능 평가. "
+               "정확한 버전·시드별 값은 `runs/<run_id>/meta.json`.")
+    st.markdown("**① 학습·생성 설정**")
+    st.table([
+        {"항목": "모델", "값": "set-transformer 링크예측기 (임베딩 48 · 2층 · 4헤드 · FFN 96)"},
+        {"항목": "학습 방식", "값": "데이터 합쳐서 한 번에 학습(조합) · Adam · lr 1e-3"},
+        {"항목": "에폭(epochs)", "값": "100"},
+        {"항목": "배치(batch)", "값": "64"},
+        {"항목": "시드(seeds)", "값": "42 · 1 · 2 · 3 · 4 (5회 → 평균±표준편차)"},
+        {"항목": "생성·평가", "값": "동결 균형 test(APT/DEH/ROW 300시트) · 규제루프 off/on"},
+    ])
 
-    @st.cache_data(show_spinner="인접확률 집계...")
+    @st.cache_data(show_spinner="목표치(인접분포) 집계...")
     def _adj_target(v, _k):   # 실제 도면의 방-쌍 연결 빈도 → 확률(eval_gen._metrics의 P_real과 동일 정의)
         pairs = _Counter()
         for f in (REL / v / "graphs").glob("*.json"):
@@ -1164,11 +1173,13 @@ if which.startswith("📈"):
                     if a and b:
                         pairs[tuple(sorted((a, b)))] += 1
         tot = sum(pairs.values()) or 1
-        return {f"{a}–{b}": round(c / tot, 4) for (a, b), c in pairs.most_common(15)}
+        return [(f"{a}–{b}", c / tot) for (a, b), c in pairs.most_common(15)]
 
-    _adj = _adj_target("v0", _mt(REL / "v0" / "manifest.json")) if (REL / "v0" / "graphs").exists() else {}
+    st.markdown("**② 목표치 — 실제 도면의 방-쌍 연결 확률 P_real** (AI-Hub v0, 통행연결 상위 15쌍)")
+    _adj = _adj_target("v0", _mt(REL / "v0" / "manifest.json")) if (REL / "v0" / "graphs").exists() else []
     if _adj:
-        st.bar_chart(_adj)
+        st.table([{"방-쌍": k, "목표 연결확률": f"{v*100:.1f}%"} for k, v in _adj])
+        st.caption("생성모델이 맞춰야 할 목표(= §3 adj_L1의 P_real). 거실이 상위에 반복 → 한국 집은 거실 허브 구조.")
     else:
         st.caption("(v0 그래프 없음)")
 
