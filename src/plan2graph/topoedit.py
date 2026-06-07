@@ -852,12 +852,12 @@ def render_editor() -> None:
         _img_coords = None
 
     st.title("✏️ 위상 편집 (신규 · 사람 인-더-루프)")
-    st.caption("사람이 원본 위에 완전 기하(영역)를 만들고 → 위상은 결정적으로 추출. "
-               "복도/전실 그리기(차감·면적)·연결·역할은 **자동 저장**됨. "
-               "💾 버튼은 '검증완료' 표시용. 🗑 처음부터=저장 삭제 후 초기화.")
+    st.caption("원본 위에 영역(반투명 박스)을 그려 완전 기하 → 위상은 결정적 추출. "
+               "그리기·연결·역할은 **자동 저장**. (좌측 앱 메뉴는 접어도 됨)")
 
-    default_dir = str(config.DATA_DIR / "raw" / "linked_demo")
-    src = st.sidebar.text_input("라벨 디렉터리", value=default_dir)
+    with st.expander("⚙ 데이터 소스", expanded=False):
+        src = st.text_input("라벨 디렉터리",
+                            value=str(config.DATA_DIR / "raw" / "linked_demo"))
     try:
         plans = scan_dir(src)
     except Exception as e:  # noqa: BLE001
@@ -866,18 +866,18 @@ def render_editor() -> None:
     if not plans:
         st.warning(f"도면 없음: {src}")
         return
-
     led = load_ledger()
     ids = [p.plan_id for p in plans]
-    sel = st.sidebar.selectbox(f"도면 ({len(ids)})", ids)
-    rp = next(p for p in plans if p.plan_id == sel)
-    st.sidebar.caption(f"라벨: {', '.join(rp.label_paths) or '없음'}")
 
+    # ── 상단 바: 도면·세대·상태·액션 (사이드바 아님 → 메뉴 접어도 동작) ──
+    t1, t2, t3, t4 = st.columns([3, 3, 3, 2])
+    sel = t1.selectbox(f"도면 ({len(ids)})", ids)
+    rp = next(p for p in plans if p.plan_id == sel)
     skey = f"topoedit::{sel}"
-    if skey not in st.session_state or st.sidebar.button("↺ 이 도면 다시 로드"):
-        dr, png = load_plan(rp)
-        st.session_state[skey] = {"dr": dr, "png": png,
-                                  "units": segment_units(dr), "states": {}, "draw": {}}
+    if skey not in st.session_state:
+        dr0, png0 = load_plan(rp)
+        st.session_state[skey] = {"dr": dr0, "png": png0,
+                                  "units": segment_units(dr0), "states": {}}
     bundle = st.session_state[skey]
     dr, png, units = bundle["dr"], bundle["png"], bundle["units"]
     if not units:
@@ -887,7 +887,7 @@ def render_editor() -> None:
     def _uid(k):
         return f"{rp.plan_id}_u{min(units[k])}"
 
-    ui = st.sidebar.selectbox(
+    ui = t2.selectbox(
         f"세대 ({len(units)})", range(len(units)),
         format_func=lambda k: f"세대 {k + 1} · {len(units[k])}방 · "
                               f"[{led.get(_uid(k), {}).get('status', '미검수')}]")
@@ -899,63 +899,58 @@ def render_editor() -> None:
                            else init_state(dr, unit_id, rp.house, units[ui]))
     stt = states[unit_id]
 
-    # ── 사이드바: 도구(모드) + 상태/액션 ──
-    sb = st.sidebar
-    sb.divider()
-    tool = sb.radio("도구", ["👁 보기", "🟦 박스 추가", "✒️ 영역 그리기(점)",
-                            "🔗 연결", "🏷 역할"], key=f"tool_{unit_id}")
-    if tool.startswith("🔗"):
-        cv_via = sb.selectbox("연결 종류(via)", VIA_KINDS, key="cvia")
-        cv_base = "복도"
-    elif tool.startswith(("🟦", "✒️")):
-        cv_base = sb.selectbox("그릴 공간 종류", DRAW_BASES, key="cbase")
-        cv_via = "door"
-    else:
-        cv_base, cv_via = "복도", "door"
     nroom = sum(1 for n in stt.nodes.values() if n.base not in CONNECTOR_BASES)
     nconn = len(stt.nodes) - nroom
-    sb.caption(f"방 {nroom} · 연결공간 {nconn} · 엣지 {len(stt.edges)} · 자동저장")
-    if sb.button("💾 검증완료로 표시", use_container_width=True):
+    t3.metric("방 · 연결공간 · 엣지", f"{nroom} · {nconn} · {len(stt.edges)}")
+    if t4.button("💾 검증완료", use_container_width=True):
         save_svg(stt, dr, status="검증완료", curator="admin")
         st.toast("검증완료로 저장")
-    if sb.button("🗑 처음부터(저장 삭제)", use_container_width=True):
+    if t4.button("🗑 처음부터", use_container_width=True):
         delete_record(unit_id)
         states.pop(unit_id, None)
         _rerun(st)
 
-    # ── 배경(원본+현재 영역 반투명박스+연결선+라벨) ──
+    # ── 도구(가로 라디오) — 상단 ──
+    tool = st.radio("도구", ["👁 보기", "🟦 박스 추가", "✒️ 영역 그리기(점)",
+                            "🔗 연결", "🏷 역할"], horizontal=True, key=f"tool_{unit_id}")
+
     bg, mp_xy, (dw, dh) = bake_background(dr, png, stt)
     if bg is None:
         st.warning("배경 생성 실패(방 없음).")
         return
     mp = (mp_xy[0], mp_xy[1], mp_xy[2], mp_xy[3], dw, dh)
 
+    # ── 도면(좌, 크게) · 컨트롤(우 패널) ──
+    canvas_col, panel = st.columns([4, 1])
+
     if tool.startswith("👁"):
-        st.image(bg)
-        if st.button("🔎 위상 추출 미리보기 (SVG→그래프)"):
+        with canvas_col:
+            st.image(bg)
+        if panel.button("🔎 위상 추출 미리보기", use_container_width=True):
             regions, doors, links = parse_svg(to_svg(stt, dr))
             G = extract_topology(regions, doors, links)
             ndd = sum(1 for *_x, v in G.edges(data="via") if v == "door")
-            st.info(f"노드 {G.number_of_nodes()} · 엣지 {G.number_of_edges()} "
-                    f"(문 {ndd} · 수동 {G.number_of_edges() - ndd})")
+            panel.info(f"노드 {G.number_of_nodes()} · 엣지 {G.number_of_edges()} "
+                       f"(문 {ndd}·수동 {G.number_of_edges() - ndd})")
     elif tool.startswith("🏷"):
-        st.image(bg)
-        nid = st.selectbox(
+        with canvas_col:
+            st.image(bg)
+        nid = panel.selectbox(
             "노드 선택", list(stt.nodes),
             format_func=lambda i: f"{_disp_id(i)} · {stt.nodes[i].role}"
             + (f" · 🛁{','.join(stt.nodes[i].fixtures)}" if stt.nodes[i].fixtures else "")
             + (f" · {stt.nodes[i].area_px:,.0f}px²" if stt.nodes[i].area_px else ""),
             key=f"rsel_{unit_id}")
         n = stt.nodes[nid]
-        rc1, rc2 = st.columns([3, 1])
-        newr = rc1.selectbox("역할", ROLES,
-                             index=ROLES.index(n.role) if n.role in ROLES else ROLES.index("기타"),
-                             key=f"rval_{nid}")
+        newr = panel.selectbox(
+            "역할", ROLES,
+            index=ROLES.index(n.role) if n.role in ROLES else ROLES.index("기타"),
+            key=f"rval_{nid}")
         if newr != n.role:
             set_role(stt, nid, newr)
             write_svg(stt, dr)
             _rerun(st)
-        if rc2.button("🗑 삭제", use_container_width=True):   # 라벨/사람 영역 모두 삭제 가능
+        if panel.button("🗑 이 노드 삭제", use_container_width=True):
             remove_node(stt, nid)
             write_svg(stt, dr)
             _rerun(st)
@@ -965,13 +960,20 @@ def render_editor() -> None:
             return
         mode = ("rect" if tool.startswith("🟦")
                 else "polygon" if tool.startswith("✒️") else "line")
+        if mode == "line":
+            cv_via = panel.selectbox("연결 종류(via)", VIA_KINDS, key="cvia")
+            cv_base = "복도"
+        else:
+            cv_base = panel.selectbox("그릴 공간 종류", DRAW_BASES, key="cbase")
+            cv_via = "door"
         buf = bundle.setdefault("clk", {}).setdefault(unit_id, {"pts": [], "last": None})
-        hint = {"rect": "박스 **대각선 두 모서리**를 클릭",
-                "polygon": "모서리들을 클릭한 뒤 **[✓ 완성]**",
-                "line": "**방 A → 방 B** 두 번 클릭(연결)"}[mode]
-        st.caption(f"🖊 {hint}. (클릭점 {len(buf['pts'])}개)")
-        disp = _overlay_clicks(bg, buf["pts"], mp, mode)
-        val = _img_coords(disp, key=f"ic_{unit_id}_{mode}")
+        hint = {"rect": "박스 **대각선 두 모서리** 클릭",
+                "polygon": "모서리들 클릭 후 **[✓ 완성]**",
+                "line": "**방 A → 방 B** 클릭"}[mode]
+        panel.caption(f"🖊 {hint}\n\n클릭점 {len(buf['pts'])}개")
+        with canvas_col:
+            disp = _overlay_clicks(bg, buf["pts"], mp, mode)
+            val = _img_coords(disp, key=f"ic_{unit_id}_{mode}")
         if val and val.get("x") is not None and (val["x"], val["y"]) != buf["last"]:
             buf["last"] = (val["x"], val["y"])
             buf["pts"].append(_cv_to_orig(val["x"], val["y"], mp))
@@ -989,23 +991,21 @@ def render_editor() -> None:
                     write_svg(stt, dr)
                 buf["pts"] = []
             _rerun(st)
-        b1, b2 = st.columns(2)
-        if mode == "polygon" and b1.button("✓ 완성", type="primary"):
+        if mode == "polygon" and panel.button("✓ 완성", type="primary",
+                                               use_container_width=True):
             if len(buf["pts"]) >= 3:
                 add_drawn_region(stt, cv_base, buf["pts"], dr)
                 write_svg(stt, dr)
             buf["pts"] = []
             _rerun(st)
-        if b2.button("↩ 클릭 취소"):
+        if panel.button("↩ 클릭 취소", use_container_width=True):
             buf["pts"] = []
             _rerun(st)
-        if tool.startswith("🔗") and stt.edges:
-            st.caption("연결 삭제:")
+        if mode == "line" and stt.edges:
+            panel.caption("연결 삭제:")
             for e in list(stt.edges):
-                c1, c2 = st.columns([6, 1])
-                c1.text(f"{_disp_id(e['a'])}:{stt.nodes[e['a']].role} — "
-                        f"{_disp_id(e['b'])}:{stt.nodes[e['b']].role} ({e['via']})")
-                if c2.button("✕", key=f"de_{e['a']}_{e['b']}"):
+                if panel.button(f"✕ {_disp_id(e['a'])}–{_disp_id(e['b'])} ({e['via']})",
+                                key=f"de_{e['a']}_{e['b']}", use_container_width=True):
                     remove_edge(stt, e["a"], e["b"])
                     write_svg(stt, dr)
                     _rerun(st)
