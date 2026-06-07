@@ -778,6 +778,22 @@ def _nearest_node(st: State, pt):
     return best
 
 
+def _overlay_clicks(bg, pts, mp, mode):
+    """배경 이미지 위에 현재 클릭점(빨강) + 연결선 미리보기를 그려 반환(원본 px → 표시 px)."""
+    from PIL import ImageDraw
+    x0, y0, nw, nh, dw, dh = mp
+    im = bg.copy()
+    d = ImageDraw.Draw(im)
+    dp = [((ox - x0) / nw * dw, (oy - y0) / nh * dh) for ox, oy in pts]
+    if mode == "polygon" and len(dp) >= 2:
+        d.line(dp, fill=(230, 30, 30), width=2)
+    if mode in ("rect", "line") and len(dp) == 1:
+        pass
+    for px, py in dp:
+        d.ellipse([px - 5, py - 5, px + 5, py + 5], fill=(230, 30, 30))
+    return im
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Streamlit 화면 (admin.py에서 호출)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -830,11 +846,10 @@ def _draw_buf(bundle, unit_id):
 
 def render_editor() -> None:
     import streamlit as st
-    try:
-        from streamlit_drawable_canvas import st_canvas as _canvas
-        _patch_canvas_image_to_url()      # streamlit 1.58 호환 shim
+    try:                                  # drawable-canvas는 streamlit 1.58 프런트 비호환(배경 404)
+        from streamlit_image_coordinates import streamlit_image_coordinates as _img_coords
     except Exception:  # noqa: BLE001
-        _canvas = None
+        _img_coords = None
 
     st.title("✏️ 위상 편집 (신규 · 사람 인-더-루프)")
     st.caption("사람이 원본 위에 완전 기하(영역)를 만들고 → 위상은 결정적으로 추출. "
@@ -945,34 +960,44 @@ def render_editor() -> None:
             write_svg(stt, dr)
             _rerun(st)
     else:
-        if _canvas is None:
-            st.warning("streamlit-drawable-canvas 미설치")
+        if _img_coords is None:
+            st.warning("streamlit-image-coordinates 미설치")
             return
         mode = ("rect" if tool.startswith("🟦")
                 else "polygon" if tool.startswith("✒️") else "line")
-        hint = {"rect": "드래그로 박스를 그린 뒤",
-                "polygon": "모서리를 클릭(마지막 시작점 더블클릭으로 닫기) 뒤",
-                "line": "방→방 선을 그은 뒤"}[mode]
-        st.caption(f"🖊 {hint} **[✓ 적용]**. 배경 반투명 박스=현재 영역.")
-        gen = bundle.setdefault("cv_gen", {}).get(unit_id, 0)
-        res = _canvas(fill_color="rgba(230,30,30,0.25)", stroke_color="#e01e1e",
-                      stroke_width=3, background_image=bg, drawing_mode=mode,
-                      height=dh, width=dw, update_streamlit=True,
-                      display_toolbar=True, key=f"cv_{unit_id}_{gen}")
-        if st.button("✓ 적용", type="primary"):
-            regs, lines = parse_canvas(res.json_data if res else None, mp)
-            nap = 0
-            for pts in regs:
-                if add_drawn_region(stt, cv_base, pts, dr) is not None:
-                    nap += 1
-            for p1, p2 in lines:
-                na, nb = _nearest_node(stt, p1), _nearest_node(stt, p2)
-                if na is not None and nb is not None and add_edge(stt, na, nb, cv_via):
-                    nap += 1
-            if nap:
+        buf = bundle.setdefault("clk", {}).setdefault(unit_id, {"pts": [], "last": None})
+        hint = {"rect": "박스 **대각선 두 모서리**를 클릭",
+                "polygon": "모서리들을 클릭한 뒤 **[✓ 완성]**",
+                "line": "**방 A → 방 B** 두 번 클릭(연결)"}[mode]
+        st.caption(f"🖊 {hint}. (클릭점 {len(buf['pts'])}개)")
+        disp = _overlay_clicks(bg, buf["pts"], mp, mode)
+        val = _img_coords(disp, key=f"ic_{unit_id}_{mode}")
+        if val and val.get("x") is not None and (val["x"], val["y"]) != buf["last"]:
+            buf["last"] = (val["x"], val["y"])
+            buf["pts"].append(_cv_to_orig(val["x"], val["y"], mp))
+            if mode == "rect" and len(buf["pts"]) == 2:
+                (x1, y1), (x2, y2) = buf["pts"]
+                add_drawn_region(stt, cv_base,
+                                 [(x1, y1), (x2, y1), (x2, y2), (x1, y2)], dr)
                 write_svg(stt, dr)
-            bundle["cv_gen"][unit_id] = gen + 1
-            st.toast(f"적용 {nap}건")
+                buf["pts"] = []
+            elif mode == "line" and len(buf["pts"]) == 2:
+                na = _nearest_node(stt, buf["pts"][0])
+                nb = _nearest_node(stt, buf["pts"][1])
+                if na is not None and nb is not None:
+                    add_edge(stt, na, nb, cv_via)
+                    write_svg(stt, dr)
+                buf["pts"] = []
+            _rerun(st)
+        b1, b2 = st.columns(2)
+        if mode == "polygon" and b1.button("✓ 완성", type="primary"):
+            if len(buf["pts"]) >= 3:
+                add_drawn_region(stt, cv_base, buf["pts"], dr)
+                write_svg(stt, dr)
+            buf["pts"] = []
+            _rerun(st)
+        if b2.button("↩ 클릭 취소"):
+            buf["pts"] = []
             _rerun(st)
         if tool.startswith("🔗") and stt.edges:
             st.caption("연결 삭제:")
