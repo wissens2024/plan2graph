@@ -729,22 +729,16 @@ def bake_background(dr: Drawing, png: bytes, st: State, max_w: int = 900,
     crop = img.crop((x0, y0, x1, y1)).convert("RGBA")
     ov = Image.new("RGBA", crop.size, (0, 0, 0, 0))
     dd = ImageDraw.Draw(ov)
-    _EC = {"door": (21, 101, 192, 255), "open": (242, 169, 0, 255),
-           "corridor": (120, 120, 120, 255), "entrance": (200, 0, 0, 255)}
-    for e in st.edges:                                   # 연결선 — via별 색·굵게
-        a, b = st.nodes.get(e["a"]), st.nodes.get(e["b"])
-        if a and b:
-            p1, p2 = (a.cx - x0, a.cy - y0), (b.cx - x0, b.cy - y0)
-            dd.line([p1, p2], fill=(255, 255, 255, 220), width=7)   # 흰 테두리(대비)
-            dd.line([p1, p2], fill=_EC.get(e.get("via"), (20, 20, 20, 255)), width=4)
-    for n in st.nodes.values():                          # 반투명 색박스
+    R = 15
+    # 1) 영역 색박스
+    for n in st.nodes.values():
         if n.polygon is None:
             continue
         pts = [(x - x0, y - y0) for x, y in n.polygon.exterior.coords]
         if len(pts) >= 3:
             dd.polygon(pts, fill=_hex_rgba(ROLE_COLOR.get(n.role, "#cccccc"), 90),
                        outline=(40, 40, 40, 255))
-    R = 16                                               # 노드 = 동그라미(색)+id, 아래 역할
+    # 2) 노드 동그라미(글자 없이)
     for n in st.nodes.values():
         cx, cy = n.cx - x0, n.cy - y0
         hl = (n.id == highlight)
@@ -752,6 +746,18 @@ def bake_background(dr: Drawing, png: bytes, st: State, max_w: int = 900,
                    fill=_hex_rgba(ROLE_COLOR.get(n.role, "#cccccc"), 255),
                    outline=(230, 30, 30, 255) if hl else (40, 40, 40, 255),
                    width=5 if hl else 2)
+    # 3) 연결선 — 동그라미 위에(via별 색·흰 테두리)
+    _EC = {"door": (21, 101, 192, 255), "open": (242, 169, 0, 255),
+           "corridor": (120, 120, 120, 255), "entrance": (200, 0, 0, 255)}
+    for e in st.edges:
+        a, b = st.nodes.get(e["a"]), st.nodes.get(e["b"])
+        if a and b:
+            p1, p2 = (a.cx - x0, a.cy - y0), (b.cx - x0, b.cy - y0)
+            dd.line([p1, p2], fill=(255, 255, 255, 235), width=7)
+            dd.line([p1, p2], fill=_EC.get(e.get("via"), (20, 20, 20, 255)), width=4)
+    # 4) id·역할 글자 — 맨 위(연결선 위에 읽히게)
+    for n in st.nodes.values():
+        cx, cy = n.cx - x0, n.cy - y0
         try:
             dd.text((cx, cy), _disp_id(n.id), fill=(255, 255, 255, 255),
                     font=_pil_font(), anchor="mm")
