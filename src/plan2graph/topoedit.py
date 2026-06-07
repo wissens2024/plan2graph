@@ -172,9 +172,30 @@ def _fixtures_in(dr: Drawing, poly) -> list[str]:
             if o.centroid and poly.contains(Point(*o.centroid))]
 
 
+def _infer_door_edges(dr: Drawing, nodes: dict, gap: float = 60.0) -> list:
+    """문마다 가장 가까운 2개 방 → 기본 연결선(편집 출발점). source=auto.
+    복도 신설 전이라 일부는 방-방(틀림)이지만, 사람이 삭제·재연결하는 토대."""
+    from shapely.geometry import Point
+    items = [(nid, n.polygon) for nid, n in nodes.items() if n.polygon is not None]
+    edges, seen = [], set()
+    for d in dr.doors:
+        if not d.centroid:
+            continue
+        p = Point(*d.centroid)
+        cand = sorted(((poly.distance(p), nid) for nid, poly in items), key=lambda t: t[0])
+        cand = [(dist, nid) for dist, nid in cand if dist <= gap][:2]
+        if len(cand) == 2 and cand[0][1] != cand[1][1]:
+            key = frozenset((cand[0][1], cand[1][1]))
+            if key not in seen:
+                seen.add(key)
+                edges.append({"a": cand[0][1], "b": cand[1][1],
+                              "via": "door", "source": "auto"})
+    return edges
+
+
 def init_state(dr: Drawing, plan_id: str, house: str,
                room_ids=None) -> State:
-    """원시 방 = 노드. 엣지 0(자동추론 금지). 기구는 보조정보로 귀속.
+    """원시 방 = 노드. 엣지 = 문 기반 기본 연결(편집 출발점). 기구는 보조정보로 귀속.
     room_ids 주면 그 방들만 = 세대 단위 편집(segment_units 결과)."""
     ids = list(room_ids) if room_ids is not None else list(range(len(dr.rooms)))
     nodes = {}
@@ -187,7 +208,8 @@ def init_state(dr: Drawing, plan_id: str, house: str,
         nodes[i] = Node(id=i, base=base, role=base, source="label",
                         cx=float(cx), cy=float(cy), polygon=r.polygon,
                         fixtures=_fixtures_in(dr, r.polygon), area_px=float(r.area_px))
-    return State(plan_id=plan_id, house=house, nodes=nodes, edges=[])
+    return State(plan_id=plan_id, house=house, nodes=nodes,
+                 edges=_infer_door_edges(dr, nodes))
 
 
 def add_edge(st: State, a: int, b: int, via: str) -> bool:
@@ -682,9 +704,11 @@ def crop_overlay_image(dr: Drawing, png: bytes, st: State, draw_pts,
     return out, (x0, y0, native_w, native_h)
 
 
-def bake_background(dr: Drawing, png: bytes, st: State, max_w: int = 900, margin: int = 90):
-    """캔버스 배경 = 원본 크롭 + 현재 영역(반투명 색박스)+연결선+라벨을 구운 이미지.
-    반환 (PIL RGB, (x0,y0,native_w,native_h), (disp_w,disp_h)). 클릭→원본 좌표 매핑용."""
+def bake_background(dr: Drawing, png: bytes, st: State, max_w: int = 900,
+                    margin: int = 90, highlight=None):
+    """캔버스 배경 = 원본 크롭 + 영역(반투명 색박스) + 연결선 + 노드(동그라미+id).
+    반환 (PIL RGB, (x0,y0,native_w,native_h), (disp_w,disp_h)). 클릭→원본 좌표 매핑용.
+    highlight=강조할 노드 id(연결 시 선택된 A를 빨갛게)."""
     from PIL import Image, ImageDraw
     if not png:
         return None, (0, 0, 0, 0), (0, 0)
@@ -717,10 +741,19 @@ def bake_background(dr: Drawing, png: bytes, st: State, max_w: int = 900, margin
         if len(pts) >= 3:
             dd.polygon(pts, fill=_hex_rgba(ROLE_COLOR.get(n.role, "#cccccc"), 90),
                        outline=(40, 40, 40, 255))
-    for n in st.nodes.values():                          # 라벨
+    R = 16                                               # 노드 = 동그라미(색)+id, 아래 역할
+    for n in st.nodes.values():
+        cx, cy = n.cx - x0, n.cy - y0
+        hl = (n.id == highlight)
+        dd.ellipse([cx - R, cy - R, cx + R, cy + R],
+                   fill=_hex_rgba(ROLE_COLOR.get(n.role, "#cccccc"), 255),
+                   outline=(230, 30, 30, 255) if hl else (40, 40, 40, 255),
+                   width=5 if hl else 2)
         try:
-            dd.text((n.cx - x0, n.cy - y0), f"{_disp_id(n.id)} {n.role}",
-                    fill=(17, 17, 17, 255), font=_pil_font())
+            dd.text((cx, cy), _disp_id(n.id), fill=(255, 255, 255, 255),
+                    font=_pil_font(), anchor="mm")
+            dd.text((cx, cy + R + 2), n.role, fill=(20, 20, 20, 255),
+                    font=_pil_font(), anchor="ma")
         except Exception:
             pass
     out = Image.alpha_composite(crop, ov).convert("RGB")
@@ -958,50 +991,63 @@ def render_editor() -> None:
         if _img_coords is None:
             st.warning("streamlit-image-coordinates 미설치")
             return
-        mode = "polygon" if tool.startswith("✒️") else "line"
-        if mode == "line":
+        buf = bundle.setdefault("clk", {}).setdefault(
+            unit_id, {"pts": [], "last": None, "sel": None})
+        if tool.startswith("🔗"):                          # 연결: 노드 → 노드
             cv_via = panel.selectbox("연결 종류(via)", VIA_KINDS, key="cvia")
-            cv_base = "복도"
-        else:
+            sel = buf.get("sel")
+            if sel is not None and sel in stt.nodes:
+                panel.info(f"**{_disp_id(sel)} {stt.nodes[sel].role}** 선택됨 → "
+                           f"연결할 노드 클릭 (취소: 같은 노드 다시 클릭)")
+            else:
+                buf["sel"] = sel = None
+                panel.info("① 노드(동그라미) 클릭 → ② 연결할 노드 클릭")
+            with canvas_col:
+                disp = bake_background(dr, png, stt, highlight=sel)[0]
+                val = _img_coords(disp, key=f"ic_{unit_id}_line")
+            if val and val.get("x") is not None and (val["x"], val["y"]) != buf["last"]:
+                buf["last"] = (val["x"], val["y"])
+                node = _nearest_node(stt, _cv_to_orig(val["x"], val["y"], mp))
+                if node is not None:
+                    if sel is None:
+                        buf["sel"] = node
+                    elif node != sel:
+                        add_edge(stt, sel, node, cv_via)
+                        write_svg(stt, dr)
+                        buf["sel"] = None
+                    else:
+                        buf["sel"] = None
+                _rerun(st)
+            if stt.edges:
+                panel.caption(f"연결 {len(stt.edges)}개 — ✕로 삭제:")
+                for e in list(stt.edges):
+                    if panel.button(
+                            f"✕ {_disp_id(e['a'])} {stt.nodes[e['a']].role} – "
+                            f"{_disp_id(e['b'])} {stt.nodes[e['b']].role}",
+                            key=f"de_{e['a']}_{e['b']}", use_container_width=True):
+                        remove_edge(stt, e["a"], e["b"])
+                        write_svg(stt, dr)
+                        _rerun(st)
+        else:                                              # ✒️ 영역 그리기(폴리곤)
             cv_base = panel.selectbox("그릴 공간 종류", DRAW_BASES, key="cbase")
-            cv_via = "door"
-        buf = bundle.setdefault("clk", {}).setdefault(unit_id, {"pts": [], "last": None})
-        hint = {"polygon": "영역 모서리들을 차례로 클릭 후 **[✓ 완성]** "
-                           "(사각형이면 네 모서리)",
-                "line": "**방 A → 방 B** 두 번 클릭"}[mode]
-        panel.caption(f"🖊 {hint}\n\n클릭점 {len(buf['pts'])}개")
-        with canvas_col:
-            disp = _overlay_clicks(bg, buf["pts"], mp, mode)
-            val = _img_coords(disp, key=f"ic_{unit_id}_{mode}")
-        if val and val.get("x") is not None and (val["x"], val["y"]) != buf["last"]:
-            buf["last"] = (val["x"], val["y"])
-            buf["pts"].append(_cv_to_orig(val["x"], val["y"], mp))
-            if mode == "line" and len(buf["pts"]) == 2:
-                na = _nearest_node(stt, buf["pts"][0])
-                nb = _nearest_node(stt, buf["pts"][1])
-                if na is not None and nb is not None:
-                    add_edge(stt, na, nb, cv_via)
+            panel.caption(f"영역 모서리들 클릭 후 **[✓ 완성]** (사각형=네 모서리)"
+                          f"\n\n클릭점 {len(buf['pts'])}개")
+            with canvas_col:
+                disp = _overlay_clicks(bg, buf["pts"], mp, "polygon")
+                val = _img_coords(disp, key=f"ic_{unit_id}_poly")
+            if val and val.get("x") is not None and (val["x"], val["y"]) != buf["last"]:
+                buf["last"] = (val["x"], val["y"])
+                buf["pts"].append(_cv_to_orig(val["x"], val["y"], mp))
+                _rerun(st)
+            if panel.button("✓ 완성", type="primary", use_container_width=True):
+                if len(buf["pts"]) >= 3:
+                    add_drawn_region(stt, cv_base, buf["pts"], dr)
                     write_svg(stt, dr)
                 buf["pts"] = []
-            _rerun(st)
-        if mode == "polygon" and panel.button("✓ 완성", type="primary",
-                                               use_container_width=True):
-            if len(buf["pts"]) >= 3:
-                add_drawn_region(stt, cv_base, buf["pts"], dr)
-                write_svg(stt, dr)
-            buf["pts"] = []
-            _rerun(st)
-        if panel.button("↩ 클릭 취소", use_container_width=True):
-            buf["pts"] = []
-            _rerun(st)
-        if mode == "line" and stt.edges:
-            panel.caption("연결 삭제:")
-            for e in list(stt.edges):
-                if panel.button(f"✕ {_disp_id(e['a'])}–{_disp_id(e['b'])} ({e['via']})",
-                                key=f"de_{e['a']}_{e['b']}", use_container_width=True):
-                    remove_edge(stt, e["a"], e["b"])
-                    write_svg(stt, dr)
-                    _rerun(st)
+                _rerun(st)
+            if panel.button("↩ 클릭 취소", use_container_width=True):
+                buf["pts"] = []
+                _rerun(st)
 
 
 if __name__ == "__main__":

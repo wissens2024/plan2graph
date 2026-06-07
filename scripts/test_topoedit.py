@@ -41,8 +41,8 @@ def main() -> None:
     unit_id = f"{rp.plan_id}_u{min(room_ids)}"
     st = te.init_state(dr, unit_id, rp.house, room_ids)
     assert len(st.nodes) == len(room_ids), f"노드({len(st.nodes)})≠세대방({len(room_ids)})"
-    assert len(st.edges) == 0, "초기 엣지≠0 — 자동추론 금지 위반!"
-    print(f"[init]   unit={unit_id} nodes={len(st.nodes)} edges=0 (자동추론 없음 OK)")
+    assert all(e.get("source") == "auto" for e in st.edges), "init 엣지=문 자동연결이어야"
+    print(f"[init]   unit={unit_id} nodes={len(st.nodes)} edges={len(st.edges)} (문 기본연결, 편집 출발점)")
 
     ids = list(st.nodes)
     assert te.add_edge(st, ids[0], ids[1], "door")
