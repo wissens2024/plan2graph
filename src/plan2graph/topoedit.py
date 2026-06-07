@@ -1044,42 +1044,8 @@ def render_editor() -> None:
         states.pop(unit_id, None)
         _rerun(st)
 
-    # ── 📏 축척/면적 (scale 보정 통합) ──
-    with st.expander("📏 축척 / 면적 (scale 보정 통합)", expanded=False):
-        info = sheet_scale_info(rp.plan_id)
-        cur_mm = ((dr.scale * 1000) if getattr(dr, "scale", None)
-                  else (info["mm_per_px"] if info else None))
-        st.caption(
-            f"현재 축척 **{round(cur_mm, 3) if cur_mm else '—'} mm/px** · "
-            f"{(info['confidence'] if info else '없음')} · "
-            f"침실중앙 {(info.get('bedroom_med_m2') or '—') if info else '—'}㎡ · "
-            f"{'면적 ㎡ 표시중' if getattr(dr, 'scale', None) else 'scale 없어 px²'}")
-        sc1, sc2, sc3 = st.columns([2, 1, 1])
-        new_mm = sc1.number_input("scale 수동(mm/px)", min_value=0.0,
-                                  value=float(cur_mm) if cur_mm else 0.0,
-                                  step=0.1, format="%.4f", key=f"mm_{unit_id}")
-        if sc2.button("적용", use_container_width=True, key=f"asc_{unit_id}"):
-            from plan2graph import scale_ocr
-            ok = new_mm > 0
-            scale_ocr.update_scale_row(rp.plan_id, new_mm if ok else None,
-                                       "ok" if ok else "quarantined", "manual")
-            bundle["dr"].scale = (new_mm / 1000.0) if ok else None
-            st.toast("축척 저장")
-            _rerun(st)
-        if sc3.button("📍 OCR 추정", use_container_width=True, key=f"ocr_{unit_id}"):
-            import types
-            from plan2graph import scale_ocr
-            with st.spinner("치수선 OCR 추정 중..."):
-                st.session_state[f"est_{unit_id}"] = scale_ocr.estimate_scale(
-                    types.SimpleNamespace(png_bytes=png, dr=dr))
-        est = st.session_state.get(f"est_{unit_id}")
-        if est:
-            st.caption(f"OCR 추정 **{est.get('scale_mm_per_px')} mm/px** · "
-                       f"{est.get('confidence')} · 침실 {est.get('bedroom_med_m2')}㎡ "
-                       f"— 맞으면 위 입력란에 넣고 [적용]")
-
     # ── 도구(가로 라디오) — 상단 ──
-    tool = st.radio("도구", ["👁 보기", "✒️ 영역 그리기", "🔗 연결", "🏷 역할"],
+    tool = st.radio("도구", ["👁 보기", "✒️ 영역 그리기", "🔗 연결", "🏷 역할", "📏 면적보정"],
                     horizontal=True, key=f"tool_{unit_id}")
 
     bg, mp_xy, (dw, dh) = bake_background(dr, png, stt)
@@ -1135,6 +1101,39 @@ def render_editor() -> None:
                           + ", ".join(f"{_disp_id(k)}→{v}" for k, v in list(sug.items())[:10]))
         else:
             panel.caption("자동 제안 없음(신호와 이미 일치 / 신호 부족)")
+    elif tool.startswith("📏"):                            # 면적보정(scale)
+        with canvas_col:
+            st.image(bg)
+        info = sheet_scale_info(rp.plan_id)
+        cur_mm = ((dr.scale * 1000) if getattr(dr, "scale", None)
+                  else (info["mm_per_px"] if info else None))
+        panel.caption(
+            f"축척 **{round(cur_mm, 3) if cur_mm else '—'} mm/px**\n\n"
+            f"{(info['confidence'] if info else '없음')} · 침실중앙 "
+            f"{(info.get('bedroom_med_m2') or '—') if info else '—'}㎡\n\n"
+            f"{'면적 ㎡ 적용중' if getattr(dr, 'scale', None) else 'scale 없어 px²'}")
+        new_mm = panel.number_input("scale 수동(mm/px)", min_value=0.0,
+                                    value=float(cur_mm) if cur_mm else 0.0,
+                                    step=0.1, format="%.4f", key=f"mm_{unit_id}")
+        if panel.button("적용", use_container_width=True, key=f"asc_{unit_id}"):
+            from plan2graph import scale_ocr
+            ok = new_mm > 0
+            scale_ocr.update_scale_row(rp.plan_id, new_mm if ok else None,
+                                       "ok" if ok else "quarantined", "manual")
+            bundle["dr"].scale = (new_mm / 1000.0) if ok else None
+            st.toast("축척 저장")
+            _rerun(st)
+        if panel.button("📍 OCR 추정", use_container_width=True, key=f"ocr_{unit_id}"):
+            import types
+            from plan2graph import scale_ocr
+            with st.spinner("치수선 OCR 추정 중..."):
+                st.session_state[f"est_{unit_id}"] = scale_ocr.estimate_scale(
+                    types.SimpleNamespace(png_bytes=png, dr=dr))
+        est = st.session_state.get(f"est_{unit_id}")
+        if est:
+            panel.caption(f"OCR 추정 **{est.get('scale_mm_per_px')} mm/px** · "
+                          f"{est.get('confidence')} · 침실 {est.get('bedroom_med_m2')}㎡ "
+                          f"— 맞으면 위에 넣고 [적용]")
     else:
         if _img_coords is None:
             st.warning("streamlit-image-coordinates 미설치")
