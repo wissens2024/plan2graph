@@ -107,14 +107,37 @@ def scan_dir(dirpath) -> list[RawPlan]:
     return sorted(groups.values(), key=lambda r: r.plan_id)
 
 
+def sheet_scale_info(plan_id: str):
+    """scale 보정 결과(scale.csv)에서 이 시트 축척 조회.
+    반환 {mm_per_px, confidence, bedroom_med_m2} 또는 None. (scale 보정 ↔ 편집기 통합)"""
+    try:
+        from plan2graph import scale_ocr
+        row = scale_ocr.load_scale_csv().get(plan_id)
+    except Exception:  # noqa: BLE001
+        return None
+    if not row:
+        return None
+    s = row.get("scale_mm_per_px")
+    try:
+        mm = float(s) if s not in (None, "") else None
+    except (TypeError, ValueError):
+        mm = None
+    return {"mm_per_px": mm, "confidence": row.get("confidence", ""),
+            "bedroom_med_m2": row.get("bedroom_med_m2", "")}
+
+
 def load_plan(rp: RawPlan, scale: float | None = config.DEFAULT_SCALE):
-    """RawPlan → (Drawing, png_bytes). 위상 그래프는 만들지 않는다(사람 몫)."""
+    """RawPlan → (Drawing, png_bytes). 위상 그래프는 만들지 않는다(사람 몫).
+    scale 보정값(scale.csv, confidence=ok)이 있으면 dr.scale(m/px) 설정 → 면적 m²."""
     docs = []
     for label in ("SPA", "STR", "OBJ", "OCR"):
         jp = rp.label_paths.get(label)
         if jp:
             docs.append(load_coco(jp))
     dr = assemble_drawing(docs, image_path=rp.png_path, scale=scale)
+    info = sheet_scale_info(rp.plan_id)
+    if info and info["mm_per_px"] and info["confidence"] == "ok":
+        dr.scale = info["mm_per_px"] / 1000.0     # mm/px → m/px
     return dr, rp.png_path.read_bytes()
 
 
@@ -307,18 +330,22 @@ SVG_SCHEMA = "topo-human-svg-v1"
 
 def to_svg(st: State, dr: Drawing) -> str:
     W, H = int(dr.width or 0), int(dr.height or 0)
+    sc = getattr(dr, "scale", None)           # m/px (scale 보정에서 옴)
+    smm = round(sc * 1000, 4) if sc else ""    # mm/px
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
            f'viewBox="0 0 {W} {H}" data-schema="{SVG_SCHEMA}" data-plan="{st.plan_id}" '
-           f'data-house="{st.house}">']
+           f'data-house="{st.house}" data-scale-mm-per-px="{smm}">']
     for n in st.nodes.values():
         if n.polygon is None:
             continue
         pts = " ".join(f"{round(x, 1)},{round(y, 1)}"
                        for x, y in n.polygon.exterior.coords)
+        m2 = f"{n.area_px * sc * sc:.2f}" if sc else ""
         out.append(
             f'  <polygon points="{pts}" data-id="{n.id}" data-base="{n.base}" '
             f'data-role="{n.role}" data-source="{n.source}" '
-            f'data-area-px="{round(n.area_px, 1)}" fill="{ROLE_COLOR.get(n.role, "#ccc")}" '
+            f'data-area-px="{round(n.area_px, 1)}" data-area-m2="{m2}" '
+            f'fill="{ROLE_COLOR.get(n.role, "#ccc")}" '
             f'fill-opacity="0.4" stroke="#333" stroke-width="1"/>')
     for d in dr.doors:
         if d.centroid:
@@ -546,6 +573,14 @@ def _set_kfont() -> None:
 def _disp_id(nid) -> str:
     """표시용 짧은 id — 라벨 방=원본 idx(0~), 연결공간(100000+)=C1,C2… (긴 숫자 숨김)."""
     return f"C{nid - 99999}" if isinstance(nid, int) and nid >= 100000 else str(nid)
+
+
+def _area_label(area_px: float, dr) -> str:
+    """축척(dr.scale=m/px) 있으면 ㎡, 없으면 px². m²=area_px×scale²."""
+    sc = getattr(dr, "scale", None)
+    if sc:
+        return f"{area_px * sc * sc:.1f}㎡"
+    return f"{area_px:,.0f}px²"
 
 
 def _poly_patch(poly, **kw):
@@ -943,7 +978,12 @@ def render_editor() -> None:
 
     nroom = sum(1 for n in stt.nodes.values() if n.base not in CONNECTOR_BASES)
     nconn = len(stt.nodes) - nroom
-    t3.metric("방 · 연결공간 · 엣지", f"{nroom} · {nconn} · {len(stt.edges)}")
+    if getattr(dr, "scale", None):
+        tot_m2 = sum(n.area_px for n in stt.nodes.values()
+                     if n.polygon is not None) * dr.scale * dr.scale
+        t3.metric("방·연결·엣지 · 면적", f"{nroom}·{nconn}·{len(stt.edges)} · {tot_m2:.0f}㎡")
+    else:
+        t3.metric("방 · 연결공간 · 엣지", f"{nroom} · {nconn} · {len(stt.edges)}")
     if t4.button("💾 검증완료", use_container_width=True):
         save_svg(stt, dr, status="검증완료", curator="admin")
         st.toast("검증완료로 저장")
@@ -951,6 +991,40 @@ def render_editor() -> None:
         delete_record(unit_id)
         states.pop(unit_id, None)
         _rerun(st)
+
+    # ── 📏 축척/면적 (scale 보정 통합) ──
+    with st.expander("📏 축척 / 면적 (scale 보정 통합)", expanded=False):
+        info = sheet_scale_info(rp.plan_id)
+        cur_mm = ((dr.scale * 1000) if getattr(dr, "scale", None)
+                  else (info["mm_per_px"] if info else None))
+        st.caption(
+            f"현재 축척 **{round(cur_mm, 3) if cur_mm else '—'} mm/px** · "
+            f"{(info['confidence'] if info else '없음')} · "
+            f"침실중앙 {(info.get('bedroom_med_m2') or '—') if info else '—'}㎡ · "
+            f"{'면적 ㎡ 표시중' if getattr(dr, 'scale', None) else 'scale 없어 px²'}")
+        sc1, sc2, sc3 = st.columns([2, 1, 1])
+        new_mm = sc1.number_input("scale 수동(mm/px)", min_value=0.0,
+                                  value=float(cur_mm) if cur_mm else 0.0,
+                                  step=0.1, format="%.4f", key=f"mm_{unit_id}")
+        if sc2.button("적용", use_container_width=True, key=f"asc_{unit_id}"):
+            from plan2graph import scale_ocr
+            ok = new_mm > 0
+            scale_ocr.update_scale_row(rp.plan_id, new_mm if ok else None,
+                                       "ok" if ok else "quarantined", "manual")
+            bundle["dr"].scale = (new_mm / 1000.0) if ok else None
+            st.toast("축척 저장")
+            _rerun(st)
+        if sc3.button("📍 OCR 추정", use_container_width=True, key=f"ocr_{unit_id}"):
+            import types
+            from plan2graph import scale_ocr
+            with st.spinner("치수선 OCR 추정 중..."):
+                st.session_state[f"est_{unit_id}"] = scale_ocr.estimate_scale(
+                    types.SimpleNamespace(png_bytes=png, dr=dr))
+        est = st.session_state.get(f"est_{unit_id}")
+        if est:
+            st.caption(f"OCR 추정 **{est.get('scale_mm_per_px')} mm/px** · "
+                       f"{est.get('confidence')} · 침실 {est.get('bedroom_med_m2')}㎡ "
+                       f"— 맞으면 위 입력란에 넣고 [적용]")
 
     # ── 도구(가로 라디오) — 상단 ──
     tool = st.radio("도구", ["👁 보기", "✒️ 영역 그리기", "🔗 연결", "🏷 역할"],
@@ -981,7 +1055,7 @@ def render_editor() -> None:
             "노드 선택", list(stt.nodes),
             format_func=lambda i: f"{_disp_id(i)} · {stt.nodes[i].role}"
             + (f" · 🛁{','.join(stt.nodes[i].fixtures)}" if stt.nodes[i].fixtures else "")
-            + (f" · {stt.nodes[i].area_px:,.0f}px²" if stt.nodes[i].area_px else ""),
+            + (f" · {_area_label(stt.nodes[i].area_px, dr)}" if stt.nodes[i].area_px else ""),
             key=f"rsel_{unit_id}")
         n = stt.nodes[nid]
         newr = panel.selectbox(
