@@ -785,6 +785,36 @@ def _rerun(st_mod) -> None:
     (getattr(st_mod, "rerun", None) or st_mod.experimental_rerun)()
 
 
+def _patch_canvas_image_to_url() -> None:
+    """drawable-canvas 0.9.3 ↔ streamlit 1.58 호환 shim.
+    streamlit이 elements.image.image_to_url를 제거(→lib.image_utils, 시그니처도 변경)해
+    캔버스가 죽음. 옛 시그니처로 데이터URI 반환하는 함수를 복원한다(멱등)."""
+    try:
+        import streamlit.elements.image as _img
+    except Exception:
+        return
+    if hasattr(_img, "image_to_url"):
+        return
+    import base64
+    from PIL import Image as _PILImage
+
+    def image_to_url(image, width=-1, clamp=False, channels="RGB",
+                     output_format="PNG", image_id=""):
+        im = image
+        if not isinstance(im, _PILImage.Image):
+            try:
+                import numpy as _np
+                im = (_PILImage.fromarray(im) if isinstance(im, _np.ndarray)
+                      else _PILImage.open(im))
+            except Exception:
+                return ""
+        b = io.BytesIO()
+        im.save(b, format="PNG")
+        return "data:image/png;base64," + base64.b64encode(b.getvalue()).decode()
+
+    _img.image_to_url = image_to_url
+
+
 def _draw_buf(bundle, unit_id):
     return bundle["draw"].setdefault(
         unit_id, {"active": False, "base": "복도", "pts": [], "last": None})
@@ -794,6 +824,7 @@ def render_editor() -> None:
     import streamlit as st
     try:
         from streamlit_drawable_canvas import st_canvas as _canvas
+        _patch_canvas_image_to_url()      # streamlit 1.58 호환 shim
     except Exception:  # noqa: BLE001
         _canvas = None
 
@@ -901,7 +932,7 @@ def render_editor() -> None:
             set_role(stt, nid, newr)
             write_svg(stt, dr)
             _rerun(st)
-        if n.source == "human" and rc2.button("🗑 삭제", use_container_width=True):
+        if rc2.button("🗑 삭제", use_container_width=True):   # 라벨/사람 영역 모두 삭제 가능
             remove_node(stt, nid)
             write_svg(stt, dr)
             _rerun(st)
