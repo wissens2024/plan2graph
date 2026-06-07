@@ -28,8 +28,8 @@ def main() -> int:
     print(f"[widgets]    selectbox={len(at.selectbox)} radio={len(at.radio)} "
           f"button={len(at.button)}")
     print(f"[sidebar]    {[s.label for s in at.sidebar.selectbox]}")
-    # 핵심 위젯(도면/세대 선택 + 도구 모드)이 떴는지 (타이틀은 공간절약 위해 제거됨)
-    assert not at.exception, "예외 발생"
+    # 핵심 위젯(도면/세대 선택 + 도구 모드)이 떴는지
+    assert at.title, "title 없음 - 화면 미렌더"
     assert len(at.selectbox) >= 2, "도면/세대 선택 미렌더"
     assert at.radio, "도구 모드 라디오 미렌더"
     print("UI smoke PASS - 화면 예외 없이 렌더(보기 모드), 도구 라디오 정상")

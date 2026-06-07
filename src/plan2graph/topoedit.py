@@ -980,32 +980,33 @@ def render_editor() -> None:
     except Exception:  # noqa: BLE001
         _img_coords = None
 
-    src = st.session_state.get("topo_src", str(config.DATA_DIR / "raw" / "linked_demo"))
+    st.title("✏️ 위상 편집 (신규 · 사람 인-더-루프)")
+    st.caption("원본 위에 영역(반투명 박스)을 그려 완전 기하 → 위상은 결정적 추출. "
+               "그리기·연결·역할은 **자동 저장**. (좌측 앱 메뉴는 접어도 됨)")
+
+    with st.expander("⚙ 데이터 소스", expanded=False):
+        src = st.text_input("라벨 디렉터리",
+                            value=str(config.DATA_DIR / "raw" / "linked_demo"))
     try:
         plans = scan_dir(src)
     except Exception as e:  # noqa: BLE001
         st.error(f"스캔 실패: {e}")
         return
     if not plans:
-        st.warning(f"도면 없음: {src} (하단 ⚙ 데이터 소스에서 경로 변경)")
-        with st.expander("⚙ 데이터 소스"):
-            ns = st.text_input("라벨 디렉터리", value=src)
-            if ns != src:
-                st.session_state.topo_src = ns
-                _rerun(st)
+        st.warning(f"도면 없음: {src}")
         return
     led = load_ledger()
     ids = [p.plan_id for p in plans]
 
-    # ── 컴팩트 헤더(한 줄): 도면·세대·요약·결정 — 도면 공간 최대화 ──
-    h = st.columns([3, 3, 2, 1.3, 1.3, 1.3])
-    sel = h[0].selectbox("도면", ids, label_visibility="collapsed")
+    # ── 상단 바: 도면·세대·상태·액션 (사이드바 아님 → 메뉴 접어도 동작) ──
+    t1, t2, t3, t4 = st.columns([3, 3, 3, 2])
+    sel = t1.selectbox(f"도면 ({len(ids)})", ids)
     rp = next(p for p in plans if p.plan_id == sel)
     skey = f"topoedit::{sel}"
     if skey not in st.session_state:
-        d0, g0 = load_plan(rp)
-        st.session_state[skey] = {"dr": d0, "png": g0,
-                                  "units": segment_units(d0), "states": {}}
+        dr0, png0 = load_plan(rp)
+        st.session_state[skey] = {"dr": dr0, "png": png0,
+                                  "units": segment_units(dr0), "states": {}}
     bundle = st.session_state[skey]
     dr, png, units = bundle["dr"], bundle["png"], bundle["units"]
     if not units:
@@ -1015,9 +1016,9 @@ def render_editor() -> None:
     def _uid(k):
         return f"{rp.plan_id}_u{min(units[k])}"
 
-    ui = h[1].selectbox(
-        "세대", range(len(units)), label_visibility="collapsed",
-        format_func=lambda k: f"세대{k + 1}·{len(units[k])}방·"
+    ui = t2.selectbox(
+        f"세대 ({len(units)})", range(len(units)),
+        format_func=lambda k: f"세대 {k + 1} · {len(units[k])}방 · "
                               f"[{led.get(_uid(k), {}).get('status', '미검수')}]")
     unit_id = _uid(ui)
     states = bundle["states"]
@@ -1029,19 +1030,57 @@ def render_editor() -> None:
 
     nroom = sum(1 for n in stt.nodes.values() if n.base not in CONNECTOR_BASES)
     nconn = len(stt.nodes) - nroom
-    m2 = (sum(n.area_px for n in stt.nodes.values() if n.polygon is not None)
-          * dr.scale * dr.scale) if getattr(dr, "scale", None) else None
-    h[2].caption(f"방{nroom}·연결{nconn}·엣지{len(stt.edges)}"
-                 + (f" · **{m2:.0f}㎡**" if m2 else ""))
-    if h[3].button("✅검증", use_container_width=True):
+    if getattr(dr, "scale", None):
+        tot_m2 = sum(n.area_px for n in stt.nodes.values()
+                     if n.polygon is not None) * dr.scale * dr.scale
+        t3.metric("방·연결·엣지 · 면적", f"{nroom}·{nconn}·{len(stt.edges)} · {tot_m2:.0f}㎡")
+    else:
+        t3.metric("방 · 연결공간 · 엣지", f"{nroom} · {nconn} · {len(stt.edges)}")
+    if t4.button("💾 검증완료", use_container_width=True):
         save_svg(stt, dr, status="검증완료", curator="admin")
-        st.toast("검증완료")
-    if h[4].button("◑모호", use_container_width=True):
-        save_svg(stt, dr, status="모호", curator="admin")
-        st.toast("모호")
-    if h[5].button("⛔제외", use_container_width=True):
-        set_status(unit_id, "제외", curator="admin")
-        st.toast("제외")
+        st.toast("검증완료로 저장")
+    if t4.button("🗑 처음부터", use_container_width=True):
+        delete_record(unit_id)
+        states.pop(unit_id, None)
+        _rerun(st)
+
+    # ── 📏 축척/면적 (scale 보정 통합) ──
+    with st.expander("📏 축척 / 면적 (scale 보정 통합)", expanded=False):
+        info = sheet_scale_info(rp.plan_id)
+        cur_mm = ((dr.scale * 1000) if getattr(dr, "scale", None)
+                  else (info["mm_per_px"] if info else None))
+        st.caption(
+            f"현재 축척 **{round(cur_mm, 3) if cur_mm else '—'} mm/px** · "
+            f"{(info['confidence'] if info else '없음')} · "
+            f"침실중앙 {(info.get('bedroom_med_m2') or '—') if info else '—'}㎡ · "
+            f"{'면적 ㎡ 표시중' if getattr(dr, 'scale', None) else 'scale 없어 px²'}")
+        sc1, sc2, sc3 = st.columns([2, 1, 1])
+        new_mm = sc1.number_input("scale 수동(mm/px)", min_value=0.0,
+                                  value=float(cur_mm) if cur_mm else 0.0,
+                                  step=0.1, format="%.4f", key=f"mm_{unit_id}")
+        if sc2.button("적용", use_container_width=True, key=f"asc_{unit_id}"):
+            from plan2graph import scale_ocr
+            ok = new_mm > 0
+            scale_ocr.update_scale_row(rp.plan_id, new_mm if ok else None,
+                                       "ok" if ok else "quarantined", "manual")
+            bundle["dr"].scale = (new_mm / 1000.0) if ok else None
+            st.toast("축척 저장")
+            _rerun(st)
+        if sc3.button("📍 OCR 추정", use_container_width=True, key=f"ocr_{unit_id}"):
+            import types
+            from plan2graph import scale_ocr
+            with st.spinner("치수선 OCR 추정 중..."):
+                st.session_state[f"est_{unit_id}"] = scale_ocr.estimate_scale(
+                    types.SimpleNamespace(png_bytes=png, dr=dr))
+        est = st.session_state.get(f"est_{unit_id}")
+        if est:
+            st.caption(f"OCR 추정 **{est.get('scale_mm_per_px')} mm/px** · "
+                       f"{est.get('confidence')} · 침실 {est.get('bedroom_med_m2')}㎡ "
+                       f"— 맞으면 위 입력란에 넣고 [적용]")
+
+    # ── 도구(가로 라디오) — 상단 ──
+    tool = st.radio("도구", ["👁 보기", "✒️ 영역 그리기", "🔗 연결", "🏷 역할"],
+                    horizontal=True, key=f"tool_{unit_id}")
 
     bg, mp_xy, (dw, dh) = bake_background(dr, png, stt)
     if bg is None:
@@ -1049,10 +1088,8 @@ def render_editor() -> None:
         return
     mp = (mp_xy[0], mp_xy[1], mp_xy[2], mp_xy[3], dw, dh)
 
-    # ── 도면(좌, 크게) · 도구+컨트롤(우 패널) ──
-    canvas_col, panel = st.columns([5, 1])
-    tool = panel.radio("도구", ["👁 보기", "✒️ 영역 그리기", "🔗 연결", "🏷 역할"],
-                       key=f"tool_{unit_id}")
+    # ── 도면(좌, 크게) · 컨트롤(우 패널) ──
+    canvas_col, panel = st.columns([4, 1])
 
     if tool.startswith("👁"):
         with canvas_col:
@@ -1159,18 +1196,6 @@ def render_editor() -> None:
             if panel.button("↩ 클릭 취소", use_container_width=True):
                 buf["pts"] = []
                 _rerun(st)
-
-    # ── 하단(부수적): 데이터 소스 · 초기화 (자주 안 씀) ──
-    with st.expander("⚙ 데이터 소스 · 초기화"):
-        ns = st.text_input("라벨 디렉터리", value=src)
-        if ns != src:
-            st.session_state.topo_src = ns
-            _rerun(st)
-        st.caption("축척(면적 m²)은 자동 적용(scale.csv) · 보정은 좌측 '📏 scale 보정' 메뉴")
-        if st.button("🗑 이 세대 처음부터(저장 삭제)"):
-            delete_record(unit_id)
-            states.pop(unit_id, None)
-            _rerun(st)
 
 
 if __name__ == "__main__":
