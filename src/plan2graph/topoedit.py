@@ -49,7 +49,7 @@ STATUSES = ("미검수", "검증완료", "모호", "제외")
 # 사람이 지정하는 역할(라벨 base에서 세분) — 욕실/화장실, 안방/침실, 전용 등
 ROLES = ("거실", "주방", "현관", "침실", "안방", "화장실", "욕실", "전용화장실",
          "전용욕실", "드레스룸", "발코니", "실외기실", "다목적공간", "복도", "전실",
-         "기타", "실외", "엘리베이터홀", "계단실", "엘리베이터")
+         "기타", "구조물", "실외", "엘리베이터홀", "계단실", "엘리베이터")
 
 ROLE_COLOR = {
     "침실": "#6CA6E8", "안방": "#1f6fd6", "거실": "#E8453C", "주방": "#F2A900",
@@ -233,6 +233,58 @@ def init_state(dr: Drawing, plan_id: str, house: str,
                         fixtures=_fixtures_in(dr, r.polygon), area_px=float(r.area_px))
     return State(plan_id=plan_id, house=house, nodes=nodes,
                  edges=_infer_door_edges(dr, nodes))
+
+
+def suggest_roles(st: State, dr: Drawing) -> dict:
+    """라벨만이 아니라 **이름(OCR)·기구(OBJ)·면적** 신호로 역할 자동 제안 {nid: role}.
+    위상(연결)이 아니라 속성이라 자동 추정 OK — 사람이 확정. 신호 없으면 제안 없음.
+    - OCR 이름(폴리곤 내 텍스트)이 최강: '안방'·'욕실'·'드레스' 등 직접 매핑
+    - 기구: 욕조→욕실, 싱크대/가스레인지→주방, 변기만→화장실
+    - 면적: 가장 큰 침실→안방, 아주 작은 기타→구조물(기둥/배관)
+    """
+    from shapely.geometry import Point
+    NAME = (("안방", "안방"), ("드레스", "드레스룸"), ("부부욕실", "전용욕실"),
+            ("부부", "전용욕실"), ("욕실", "욕실"), ("화장실", "화장실"),
+            ("주방", "주방"), ("식당", "주방"), ("거실", "거실"), ("현관", "현관"),
+            ("발코니", "발코니"), ("복도", "복도"), ("다용도", "다목적공간"),
+            ("실외기", "실외기실"), ("침실", "침실"))
+    texts = [(t.ocr_text, t.centroid) for t in getattr(dr, "texts", [])
+             if getattr(t, "ocr_text", None) and t.centroid]
+    beds = [(n.area_px, nid) for nid, n in st.nodes.items()
+            if n.base == "침실" and n.polygon is not None]
+    master = max(beds)[1] if beds else None
+    sc = getattr(dr, "scale", None)
+    out = {}
+    for nid, n in st.nodes.items():
+        if n.polygon is None:
+            continue
+        sug = None
+        for txt, c in texts:                              # 1) OCR 이름
+            try:
+                if n.polygon.contains(Point(*c)):
+                    for kw, role in NAME:
+                        if kw in txt:
+                            sug = role
+                            break
+            except Exception:
+                pass
+            if sug:
+                break
+        if sug is None:                                   # 2) 기구
+            if any("욕조" in f for f in n.fixtures):
+                sug = "욕실"
+            elif any(f in ("싱크대", "가스레인지") for f in n.fixtures):
+                sug = "주방"
+        if sug is None:                                   # 3) 면적
+            if nid == master and n.base == "침실":
+                sug = "안방"
+            elif n.base == "기타":
+                m2 = (n.area_px * sc * sc) if sc else None
+                if (m2 is not None and m2 < 1.0) or (m2 is None and n.area_px < 5000):
+                    sug = "구조물"
+        if sug and sug != n.role:
+            out[nid] = sug
+    return out
 
 
 def add_edge(st: State, a: int, b: int, via: str) -> bool:
@@ -1070,6 +1122,19 @@ def render_editor() -> None:
             remove_node(stt, nid)
             write_svg(stt, dr)
             _rerun(st)
+        panel.markdown("---")
+        sug = suggest_roles(stt, dr)
+        if sug:
+            if panel.button(f"🤖 자동 역할 제안 적용 ({len(sug)}개)",
+                            use_container_width=True):
+                for k, v in sug.items():
+                    set_role(stt, k, v)
+                write_svg(stt, dr)
+                _rerun(st)
+            panel.caption("제안(이름·기구·면적): "
+                          + ", ".join(f"{_disp_id(k)}→{v}" for k, v in list(sug.items())[:10]))
+        else:
+            panel.caption("자동 제안 없음(신호와 이미 일치 / 신호 부족)")
     else:
         if _img_coords is None:
             st.warning("streamlit-image-coordinates 미설치")
