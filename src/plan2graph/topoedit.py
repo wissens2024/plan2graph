@@ -980,7 +980,7 @@ def render_editor() -> None:
     except Exception:  # noqa: BLE001
         _img_coords = None
 
-    st.title("✏️ 위상 편집 (신규 · 사람 인-더-루프)")
+    st.title("✏️ 위상 편집")
     st.caption("원본 위에 영역(반투명 박스)을 그려 완전 기하 → 위상은 결정적 추출. "
                "그리기·연결·역할은 **자동 저장**. (좌측 앱 메뉴는 접어도 됨)")
 

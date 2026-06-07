@@ -32,6 +32,10 @@ st.markdown("""<style>
 section[data-testid="stSidebar"] .block-container,
 section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{padding-top:1rem;}
 section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.35rem;}
+/* 모든 타이틀 폰트 ~50% 축소 (st.title=h1·header=h2·subheader=h3) */
+h1{font-size:1.4rem!important;}
+h2{font-size:1.15rem!important;}
+h3{font-size:1.0rem!important;}
 </style>""", unsafe_allow_html=True)
 SPLIT = "Training"
 GRAPHS = config.PROCESSED_DIR / "graphs"
