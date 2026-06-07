@@ -227,6 +227,149 @@ def remove_node(st: State, nid: int) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 영역 그리기(사람) + 차감(carve) + 면적 — 복도/전실을 '진짜 폴리곤'으로 신설
+#   사람이 도면 위에 찍은 꼭짓점 → 폴리곤. 겹치는 방에서 difference로 잘라내(carve)
+#   면적 중복 제거. 자동 carve(폐기한 extract2)를 사람 손으로.
+# ─────────────────────────────────────────────────────────────────────────────
+def _largest_poly(geom):
+    """Polygon/Multi/GeometryCollection → 최대면적 Polygon(없으면 None)."""
+    if geom is None or geom.is_empty:
+        return None
+    if geom.geom_type == "Polygon":
+        return geom
+    polys = [g for g in getattr(geom, "geoms", [])
+             if g.geom_type == "Polygon" and not g.is_empty]
+    return max(polys, key=lambda g: g.area) if polys else None
+
+
+def add_drawn_region(st: State, base: str, points, dr: Drawing,
+                     role: str | None = None) -> int | None:
+    """사람이 찍은 꼭짓점(원본 px)들 → 폴리곤 연결공간 노드. 겹치는 라벨 방에서
+    difference로 차감(carve)해 면적 중복 제거. 면적 계산."""
+    from shapely.geometry import Polygon as _Poly
+    from shapely.validation import make_valid
+    pts = [(float(x), float(y)) for x, y in points]
+    if len(pts) < 3:
+        return None
+    poly = _Poly(pts)
+    if not poly.is_valid:
+        poly = _largest_poly(make_valid(poly))
+    if poly is None or poly.is_empty:
+        return None
+    for n in st.nodes.values():       # 겹치는 라벨 방에서 차감
+        if n.source == "label" and n.polygon is not None and n.polygon.intersects(poly):
+            carved = _largest_poly(n.polygon.difference(poly))
+            if carved is not None:
+                n.polygon = carved
+                n.area_px = carved.area
+                c = carved.centroid
+                n.cx, n.cy = c.x, c.y
+    nid = st._next_conn
+    st._next_conn += 1
+    c = poly.centroid
+    st.nodes[nid] = Node(id=nid, base=base, role=role or base, source="human",
+                         cx=c.x, cy=c.y, polygon=poly, area_px=poly.area)
+    return nid
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SVG(완전 기하) = 사람 산출물 · 위상 추출의 입력. 원본 raster/라벨은 별도 보존.
+#   영역=<polygon data-*> · 문=<circle data-kind=door> · 비문연결=<line data-kind=link>.
+#   AI-Hub 원본 px 좌표계 그대로(SPA/STR에서 옴).
+# ─────────────────────────────────────────────────────────────────────────────
+SVG_SCHEMA = "topo-human-svg-v1"
+
+
+def to_svg(st: State, dr: Drawing) -> str:
+    W, H = int(dr.width or 0), int(dr.height or 0)
+    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
+           f'viewBox="0 0 {W} {H}" data-schema="{SVG_SCHEMA}" data-plan="{st.plan_id}" '
+           f'data-house="{st.house}">']
+    for n in st.nodes.values():
+        if n.polygon is None:
+            continue
+        pts = " ".join(f"{round(x, 1)},{round(y, 1)}"
+                       for x, y in n.polygon.exterior.coords)
+        out.append(
+            f'  <polygon points="{pts}" data-id="{n.id}" data-base="{n.base}" '
+            f'data-role="{n.role}" data-source="{n.source}" '
+            f'data-area-px="{round(n.area_px, 1)}" fill="{ROLE_COLOR.get(n.role, "#ccc")}" '
+            f'fill-opacity="0.4" stroke="#333" stroke-width="1"/>')
+    for d in dr.doors:
+        if d.centroid:
+            out.append(
+                f'  <circle cx="{round(d.centroid[0], 1)}" cy="{round(d.centroid[1], 1)}" '
+                f'r="6" data-kind="door" data-subtype="{d.subtype or ""}"/>')
+    for e in st.edges:           # 사람이 표시한 비-문 연결(open/corridor/entrance)
+        out.append(f'  <line data-kind="link" data-a="{e["a"]}" data-b="{e["b"]}" '
+                   f'data-via="{e["via"]}"/>')
+    out.append("</svg>")
+    return "\n".join(out)
+
+
+def parse_svg(svg: str):
+    """우리 SVG → (regions, doors, links). 위상 추출의 입력(SVG가 단일 진실)."""
+    import xml.etree.ElementTree as ET
+    from shapely.geometry import Polygon as _Poly
+    root = ET.fromstring(svg)
+    ns = root.tag[:root.tag.index("}") + 1] if root.tag.startswith("{") else ""
+    regions, doors, links = [], [], []
+    for el in root:
+        tag = el.tag.replace(ns, "")
+        if tag == "polygon":
+            coords = []
+            for tok in el.get("points", "").split():
+                xy = tok.split(",")
+                if len(xy) == 2:
+                    coords.append((float(xy[0]), float(xy[1])))
+            if len(coords) >= 3:
+                regions.append({
+                    "id": int(el.get("data-id")), "base": el.get("data-base"),
+                    "role": el.get("data-role"), "source": el.get("data-source"),
+                    "area_px": float(el.get("data-area-px", 0) or 0),
+                    "polygon": _Poly(coords)})
+        elif tag == "circle" and el.get("data-kind") == "door":
+            doors.append({"x": float(el.get("cx")), "y": float(el.get("cy")),
+                          "subtype": el.get("data-subtype") or None})
+        elif tag == "line" and el.get("data-kind") == "link":
+            links.append({"a": int(el.get("data-a")), "b": int(el.get("data-b")),
+                          "via": el.get("data-via")})
+    return regions, doors, links
+
+
+def extract_topology(regions, doors, links=None, gap: float = 60.0):
+    """완전 기하(영역+문) → 위상 그래프(결정적). 문마다 가장 가까운 2영역=엣지.
+    영역에 복도가 들어있어 routing 정확(두더지잡기 없음). 면적은 노드 속성."""
+    from shapely.geometry import Point
+    G = nx.Graph()
+    for r in regions:
+        G.add_node(r["id"], base=r["base"], role=r["role"],
+                   area_px=round(r["area_px"], 1),
+                   is_connector=r["base"] in CONNECTOR_BASES)
+    for d in doors:
+        p = Point(d["x"], d["y"])
+        cand = sorted(((r["polygon"].distance(p), r["id"]) for r in regions),
+                      key=lambda t: t[0])
+        cand = [(dist, rid) for dist, rid in cand if dist <= gap][:2]
+        if len(cand) == 2 and cand[0][1] != cand[1][1]:
+            G.add_edge(cand[0][1], cand[1][1], via="door")
+    for l in (links or []):
+        if l["a"] in G and l["b"] in G:
+            G.add_edge(l["a"], l["b"], via=l["via"])
+    return G
+
+
+def save_svg(st: State, dr: Drawing, *, status: str = "검증완료",
+             curator: str = "", notes: str = "", ts: str | None = None) -> Path:
+    REC_DIR.mkdir(parents=True, exist_ok=True)
+    p = REC_DIR / f"{st.plan_id}.svg"
+    p.write_text(to_svg(st, dr), encoding="utf-8")
+    set_status(st.plan_id, status, curator=curator, notes=notes,
+               ts=ts or datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    return p
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 영속 (신규 포맷 topo-human-v1)
 # ─────────────────────────────────────────────────────────────────────────────
 def _ring(poly) -> list:
@@ -288,6 +431,30 @@ def state_from_record(rec: dict, dr: Drawing | None = None) -> State:
     edges = [{"a": e["a"], "b": e["b"], "via": e["via"],
               "source": e.get("source", "human")} for e in rec["edges"]]
     st = State(plan_id=rec["plan_id"], house=rec["house"], nodes=nodes, edges=edges)
+    st._next_conn = nextc
+    return st
+
+
+def load_svg_text(unit_id: str) -> str | None:
+    p = REC_DIR / f"{unit_id}.svg"
+    return p.read_text(encoding="utf-8") if p.exists() else None
+
+
+def state_from_svg(svg: str, dr: Drawing, plan_id: str, house: str) -> State:
+    """저장 SVG → State 복원(재편집). 영역=노드, link=엣지. 기구는 dr에서 재귀속."""
+    regions, _doors, links = parse_svg(svg)
+    nodes, nextc = {}, 100000
+    for r in regions:
+        poly = r["polygon"]
+        c = poly.centroid
+        nodes[r["id"]] = Node(id=r["id"], base=r["base"], role=r["role"],
+                              source=r["source"], cx=c.x, cy=c.y, polygon=poly,
+                              area_px=r["area_px"],
+                              fixtures=_fixtures_in(dr, poly) if r["source"] == "label" else [])
+        if isinstance(r["id"], int) and r["id"] >= nextc:
+            nextc = r["id"] + 1
+    edges = [{"a": l["a"], "b": l["b"], "via": l["via"], "source": "human"} for l in links]
+    st = State(plan_id=plan_id, house=house, nodes=nodes, edges=edges)
     st._next_conn = nextc
     return st
 
@@ -402,6 +569,59 @@ def render_figure(dr: Drawing, png: bytes | None, st: State,
     return fig
 
 
+def _hex_rgba(hex_color: str, alpha: int):
+    h = hex_color.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), alpha)
+
+
+def crop_overlay_image(dr: Drawing, png: bytes, st: State, draw_pts,
+                       margin: int = 90, max_w: int = 760):
+    """유닛 크롭 raster + 영역 외곽 + 그리는 중 폴리곤 → (PIL RGB, (x0,y0,native_w,native_h)).
+    클릭→원본좌표 매핑용. draw_pts=현재 찍은 꼭짓점(원본 px)."""
+    from PIL import Image, ImageDraw
+    if not png:
+        return None, (0, 0, 0, 0)
+    img = Image.open(io.BytesIO(png)).convert("RGB")
+    xs, ys = [], []
+    for n in st.nodes.values():
+        if n.polygon is not None:
+            a, b, c, d = n.polygon.bounds
+            xs += [a, c]
+            ys += [b, d]
+    for x, y in draw_pts:
+        xs.append(x)
+        ys.append(y)
+    if not xs:
+        return None, (0, 0, 0, 0)
+    x0 = max(0, int(min(xs) - margin))
+    y0 = max(0, int(min(ys) - margin))
+    x1 = min(img.width, int(max(xs) + margin))
+    y1 = min(img.height, int(max(ys) + margin))
+    crop = img.crop((x0, y0, x1, y1)).convert("RGBA")
+    ov = Image.new("RGBA", crop.size, (0, 0, 0, 0))
+    dd = ImageDraw.Draw(ov)
+    for n in st.nodes.values():
+        if n.polygon is None:
+            continue
+        pts = [(x - x0, y - y0) for x, y in n.polygon.exterior.coords]
+        if len(pts) >= 3:
+            dd.polygon(pts, fill=_hex_rgba(ROLE_COLOR.get(n.role, "#cccccc"), 80),
+                       outline=(50, 50, 50, 255))
+    if draw_pts:
+        fp = [(x - x0, y - y0) for x, y in draw_pts]
+        if len(fp) >= 2:
+            dd.line(fp + ([fp[0]] if len(fp) >= 3 else []), fill=(230, 30, 30, 255), width=3)
+        for px, py in fp:
+            dd.ellipse([px - 6, py - 6, px + 6, py + 6], fill=(230, 30, 30, 255))
+    out = Image.alpha_composite(crop, ov).convert("RGB")
+    native_w, native_h = x1 - x0, y1 - y0
+    if out.width > max_w:
+        out = out.resize((max_w, max(1, int(out.height * max_w / out.width))))
+    return out, (x0, y0, native_w, native_h)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Streamlit 화면 (admin.py에서 호출)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -409,11 +629,21 @@ def _rerun(st_mod) -> None:
     (getattr(st_mod, "rerun", None) or st_mod.experimental_rerun)()
 
 
+def _draw_buf(bundle, unit_id):
+    return bundle["draw"].setdefault(
+        unit_id, {"active": False, "base": "복도", "pts": [], "last": None})
+
+
 def render_editor() -> None:
     import streamlit as st
+    try:
+        from streamlit_image_coordinates import streamlit_image_coordinates as _img_coords
+    except Exception:  # noqa: BLE001
+        _img_coords = None
+
     st.title("✏️ 위상 편집 (신규 · 사람 인-더-루프)")
-    st.caption("원본 도면 위에서 사람이 위상을 직접 만든다. 자동 추론 없음 — "
-               "방=노드(원시), 연결공간·문·역할은 사람이 박는다. → 깨끗한 위상 gold.")
+    st.caption("사람이 원본 위에 완전 기하(영역)를 만들고 → 위상은 결정적으로 추출. "
+               "복도/전실을 그려넣고(겹친 방서 차감·면적), 문은 자동·역할 확정 → SVG gold 저장.")
 
     default_dir = str(config.DATA_DIR / "raw" / "linked_demo")
     src = st.sidebar.text_input("라벨 디렉터리", value=default_dir)
@@ -436,7 +666,7 @@ def render_editor() -> None:
     if skey not in st.session_state or st.sidebar.button("↺ 이 도면 다시 로드"):
         dr, png = load_plan(rp)
         st.session_state[skey] = {"dr": dr, "png": png,
-                                  "units": segment_units(dr), "states": {}}
+                                  "units": segment_units(dr), "states": {}, "draw": {}}
     bundle = st.session_state[skey]
     dr, png, units = bundle["dr"], bundle["png"], bundle["units"]
     if not units:
@@ -453,25 +683,60 @@ def render_editor() -> None:
     unit_id = _uid(ui)
     states = bundle["states"]
     if unit_id not in states or st.sidebar.button("↺ 이 세대 초기화"):
-        rec = load_record(unit_id)
-        states[unit_id] = (state_from_record(rec, dr) if rec
+        svg = load_svg_text(unit_id)
+        states[unit_id] = (state_from_svg(svg, dr, unit_id, rp.house) if svg
                            else init_state(dr, unit_id, rp.house, units[ui]))
+        bundle["draw"].pop(unit_id, None)
     stt = states[unit_id]
+    draw = _draw_buf(bundle, unit_id)
 
     col1, col2 = st.columns([3, 2])
     with col1:
-        st.pyplot(render_figure(dr, png, stt))
-    with col2:
-        st.markdown("**➊ 연결공간 추가** (복도·전실 신설→방 연결)")
-        cb = st.selectbox("종류", CONNECTOR_BASES, key="cb")
-        mem = st.multiselect(
-            "연결할 방", list(stt.nodes),
-            format_func=lambda i: f"{i}:{stt.nodes[i].role}", key="cm")
-        if st.button("+ 연결공간 추가", use_container_width=True) and mem:
-            add_connector(stt, cb, mem)
-            _rerun(st)
+        if draw["active"] and _img_coords is not None:
+            st.info(f"🖊 **{draw['base']}** 그리는 중 — 영역 모서리를 차례로 클릭 "
+                    f"(점 {len(draw['pts'])}개, 3개 이상이면 완성 가능)")
+            img, (cx0, cy0, ncw, nch) = crop_overlay_image(dr, png, stt, draw["pts"])
+            if img is not None:
+                val = _img_coords(img, key=f"ic_{unit_id}")
+                if val and val.get("x") is not None:
+                    if (val["x"], val["y"]) != draw["last"]:
+                        draw["pts"].append((cx0 + (val["x"] / img.width) * ncw,
+                                            cy0 + (val["y"] / img.height) * nch))
+                        draw["last"] = (val["x"], val["y"])
+                        _rerun(st)
+        else:
+            st.pyplot(render_figure(dr, png, stt))
 
-        st.markdown("**➋ 연결(엣지)**")
+    with col2:
+        st.markdown("**➍ 연결공간 그리기** (복도·전실 영역 → 겹친 방서 차감·면적)")
+        if _img_coords is None:
+            st.warning("streamlit-image-coordinates 미설치 — 그리기 불가")
+        elif not draw["active"]:
+            draw["base"] = st.selectbox("종류", CONNECTOR_BASES, key="db")
+            if st.button("🖊 그리기 시작", use_container_width=True):
+                draw["active"] = True
+                draw["pts"] = []
+                draw["last"] = None
+                _rerun(st)
+        else:
+            d1, d2, d3 = st.columns(3)
+            if d1.button("↩ 점취소") and draw["pts"]:
+                draw["pts"].pop()
+                _rerun(st)
+            if d2.button("✓ 완성"):
+                if len(draw["pts"]) >= 3:
+                    add_drawn_region(stt, draw["base"], draw["pts"], dr)
+                draw["active"] = False
+                draw["pts"] = []
+                draw["last"] = None
+                _rerun(st)
+            if d3.button("✗ 취소"):
+                draw["active"] = False
+                draw["pts"] = []
+                draw["last"] = None
+                _rerun(st)
+
+        st.markdown("**➋ 연결(엣지)** — 문은 저장 시 자동추출, open/corridor만 수동")
         a = st.selectbox("A", list(stt.nodes),
                          format_func=lambda i: f"{i}:{stt.nodes[i].role}", key="ea")
         b = st.selectbox("B", list(stt.nodes),
@@ -489,13 +754,14 @@ def render_editor() -> None:
                 _rerun(st)
 
     st.markdown("---")
-    st.markdown("**➌ 역할 지정** (기구 보고 욕실/화장실·안방 등 세분)")
+    st.markdown("**➌ 역할 지정** (기구🛁·면적 보고 욕실/화장실·안방 등 세분)")
     cols = st.columns(4)
     for i, (nid, n) in enumerate(list(stt.nodes.items())):
         with cols[i % 4]:
             fx = f" 🛁{','.join(n.fixtures)}" if n.fixtures else ""
+            ar = f" · {n.area_px:,.0f}px²" if n.area_px else ""
             newr = st.selectbox(
-                f"{nid} ({n.base}){fx}", ROLES,
+                f"{nid} ({n.base}){fx}{ar}", ROLES,
                 index=ROLES.index(n.role) if n.role in ROLES else ROLES.index("기타"),
                 key=f"role_{nid}")
             if newr != n.role:
@@ -505,12 +771,19 @@ def render_editor() -> None:
                 _rerun(st)
 
     st.markdown("---")
+    if st.button("🔎 위상 추출 미리보기 (SVG→그래프)"):
+        regions, doors, links = parse_svg(to_svg(stt, dr))
+        G = extract_topology(regions, doors, links)
+        nd = sum(1 for *_x, v in G.edges(data="via") if v == "door")
+        st.info(f"추출: 노드 {G.number_of_nodes()} · 엣지 {G.number_of_edges()} "
+                f"(문 {nd} · 수동 {G.number_of_edges() - nd})")
+
     note = st.text_input("메모")
     status = st.selectbox("상태", STATUSES, index=STATUSES.index("검증완료"))
-    if st.button("💾 저장 (gold)", type="primary"):
-        rec = to_record(stt, status=status, curator="admin", notes=note)
-        p = save_record(rec)
-        st.success(f"저장 완료: {p.name}  ·  노드 {len(rec['nodes'])} · 엣지 {len(rec['edges'])}")
+    if st.button("💾 저장 (SVG gold)", type="primary"):
+        p = save_svg(stt, dr, status=status, curator="admin", notes=note)
+        nreg = sum(1 for n in stt.nodes.values() if n.polygon is not None)
+        st.success(f"저장: {p.name} · 영역 {nreg}개")
 
 
 if __name__ == "__main__":
