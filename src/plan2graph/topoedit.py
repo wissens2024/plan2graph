@@ -911,8 +911,8 @@ def render_editor() -> None:
         _rerun(st)
 
     # ── 도구(가로 라디오) — 상단 ──
-    tool = st.radio("도구", ["👁 보기", "🟦 박스 추가", "✒️ 영역 그리기(점)",
-                            "🔗 연결", "🏷 역할"], horizontal=True, key=f"tool_{unit_id}")
+    tool = st.radio("도구", ["👁 보기", "✒️ 영역 그리기", "🔗 연결", "🏷 역할"],
+                    horizontal=True, key=f"tool_{unit_id}")
 
     bg, mp_xy, (dw, dh) = bake_background(dr, png, stt)
     if bg is None:
@@ -958,8 +958,7 @@ def render_editor() -> None:
         if _img_coords is None:
             st.warning("streamlit-image-coordinates 미설치")
             return
-        mode = ("rect" if tool.startswith("🟦")
-                else "polygon" if tool.startswith("✒️") else "line")
+        mode = "polygon" if tool.startswith("✒️") else "line"
         if mode == "line":
             cv_via = panel.selectbox("연결 종류(via)", VIA_KINDS, key="cvia")
             cv_base = "복도"
@@ -967,9 +966,9 @@ def render_editor() -> None:
             cv_base = panel.selectbox("그릴 공간 종류", DRAW_BASES, key="cbase")
             cv_via = "door"
         buf = bundle.setdefault("clk", {}).setdefault(unit_id, {"pts": [], "last": None})
-        hint = {"rect": "박스 **대각선 두 모서리** 클릭",
-                "polygon": "모서리들 클릭 후 **[✓ 완성]**",
-                "line": "**방 A → 방 B** 클릭"}[mode]
+        hint = {"polygon": "영역 모서리들을 차례로 클릭 후 **[✓ 완성]** "
+                           "(사각형이면 네 모서리)",
+                "line": "**방 A → 방 B** 두 번 클릭"}[mode]
         panel.caption(f"🖊 {hint}\n\n클릭점 {len(buf['pts'])}개")
         with canvas_col:
             disp = _overlay_clicks(bg, buf["pts"], mp, mode)
@@ -977,13 +976,7 @@ def render_editor() -> None:
         if val and val.get("x") is not None and (val["x"], val["y"]) != buf["last"]:
             buf["last"] = (val["x"], val["y"])
             buf["pts"].append(_cv_to_orig(val["x"], val["y"], mp))
-            if mode == "rect" and len(buf["pts"]) == 2:
-                (x1, y1), (x2, y2) = buf["pts"]
-                add_drawn_region(stt, cv_base,
-                                 [(x1, y1), (x2, y1), (x2, y2), (x1, y2)], dr)
-                write_svg(stt, dr)
-                buf["pts"] = []
-            elif mode == "line" and len(buf["pts"]) == 2:
+            if mode == "line" and len(buf["pts"]) == 2:
                 na = _nearest_node(stt, buf["pts"][0])
                 nb = _nearest_node(stt, buf["pts"][1])
                 if na is not None and nb is not None:
