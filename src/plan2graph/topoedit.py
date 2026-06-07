@@ -729,11 +729,14 @@ def bake_background(dr: Drawing, png: bytes, st: State, max_w: int = 900,
     crop = img.crop((x0, y0, x1, y1)).convert("RGBA")
     ov = Image.new("RGBA", crop.size, (0, 0, 0, 0))
     dd = ImageDraw.Draw(ov)
-    for e in st.edges:                                   # 연결선
+    _EC = {"door": (21, 101, 192, 255), "open": (242, 169, 0, 255),
+           "corridor": (120, 120, 120, 255), "entrance": (200, 0, 0, 255)}
+    for e in st.edges:                                   # 연결선 — via별 색·굵게
         a, b = st.nodes.get(e["a"]), st.nodes.get(e["b"])
         if a and b:
-            dd.line([(a.cx - x0, a.cy - y0), (b.cx - x0, b.cy - y0)],
-                    fill=(20, 20, 20, 255), width=3)
+            p1, p2 = (a.cx - x0, a.cy - y0), (b.cx - x0, b.cy - y0)
+            dd.line([p1, p2], fill=(255, 255, 255, 220), width=7)   # 흰 테두리(대비)
+            dd.line([p1, p2], fill=_EC.get(e.get("via"), (20, 20, 20, 255)), width=4)
     for n in st.nodes.values():                          # 반투명 색박스
         if n.polygon is None:
             continue
