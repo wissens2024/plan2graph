@@ -22,3 +22,6 @@ torch-geometric>=2.4      # GNN/graph-diffusion
 
 # ── 실험·시각 (선택) ──
 # wandb                   # 실험 추적(선택)
+
+# ── 위상 편집기(✏️) — 캔버스 그리기 ──
+streamlit-drawable-canvas   # 원본 위 박스/폴리곤/선 그리기(사람 위상 구축)

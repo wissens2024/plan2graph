@@ -41,6 +41,9 @@ LEDGER = OUT_DIR / "_ledger.jsonl"
 
 SCHEMA = "topo-human-v1"
 CONNECTOR_BASES = ("복도", "전실")
+# 그리기로 신설 가능한 공간 종류 — 연결공간(복도·전실)뿐 아니라 빠지거나 잘못된 방도 직접 추가.
+DRAW_BASES = ("복도", "전실", "발코니", "다목적공간", "실외기실", "드레스룸",
+              "기타", "거실", "주방", "침실", "화장실", "현관")
 VIA_KINDS = ("door", "open", "corridor", "entrance")
 STATUSES = ("미검수", "검증완료", "모호", "제외")
 # 사람이 지정하는 역할(라벨 base에서 세분) — 욕실/화장실, 안방/침실, 전용 등
@@ -359,14 +362,28 @@ def extract_topology(regions, doors, links=None, gap: float = 60.0):
     return G
 
 
-def save_svg(st: State, dr: Drawing, *, status: str = "검증완료",
-             curator: str = "", notes: str = "", ts: str | None = None) -> Path:
+def write_svg(st: State, dr: Drawing) -> Path:
+    """SVG 파일만 기록(자동저장용 — ledger/상태 미기록)."""
     REC_DIR.mkdir(parents=True, exist_ok=True)
     p = REC_DIR / f"{st.plan_id}.svg"
     p.write_text(to_svg(st, dr), encoding="utf-8")
+    return p
+
+
+def save_svg(st: State, dr: Drawing, *, status: str = "검증완료",
+             curator: str = "", notes: str = "", ts: str | None = None) -> Path:
+    """SVG 기록 + 상태(ledger) 기록(명시 저장·검증완료 표시용)."""
+    p = write_svg(st, dr)
     set_status(st.plan_id, status, curator=curator, notes=notes,
                ts=ts or datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     return p
+
+
+def delete_record(unit_id: str) -> None:
+    """저장 SVG 삭제(처음부터 다시 시작용)."""
+    p = REC_DIR / f"{unit_id}.svg"
+    if p.exists():
+        p.unlink()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -504,6 +521,11 @@ def _set_kfont() -> None:
                 continue
 
 
+def _disp_id(nid) -> str:
+    """표시용 짧은 id — 라벨 방=원본 idx(0~), 연결공간(100000+)=C1,C2… (긴 숫자 숨김)."""
+    return f"C{nid - 99999}" if isinstance(nid, int) and nid >= 100000 else str(nid)
+
+
 def _poly_patch(poly, **kw):
     """shapely Polygon(구멍 포함) → matplotlib PathPatch(holes 투명하게)."""
     from matplotlib.path import Path as _MP
@@ -552,9 +574,9 @@ def render_figure(dr: Drawing, png: bytes | None, st: State,
         if n.polygon is None:
             ax.plot(n.cx, n.cy, "D", ms=12, zorder=5,
                     color=ROLE_COLOR.get(n.role, "#888"), mec="#222")
-    # 라벨(id·역할)
+    # 라벨(짧은 id·역할)
     for n in st.nodes.values():
-        ax.text(n.cx, n.cy, f"{n.id}\n{n.role}", fontsize=7, ha="center",
+        ax.text(n.cx, n.cy, f"{_disp_id(n.id)}\n{n.role}", fontsize=7, ha="center",
                 va="center", weight="bold", color="#111", zorder=6)
     # 문 위치(원시 STR) — 사람 참고용 회색점
     for d in dr.doors:
@@ -588,6 +610,30 @@ def _hex_rgba(hex_color: str, alpha: int):
     if len(h) == 3:
         h = "".join(c * 2 for c in h)
     return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), alpha)
+
+
+_PIL_FONT = None
+
+
+def _pil_font():
+    """PIL ImageDraw용 한글 폰트(없으면 기본). 기본폰트는 latin-1뿐이라 한글 크래시→TTF 필수."""
+    global _PIL_FONT
+    if _PIL_FONT is None:
+        from PIL import ImageFont
+        for p in (ROOT / "fonts" / "NanumGothic.ttf",
+                  Path.home() / ".fonts" / "NanumGothic.ttf",
+                  Path("C:/Windows/Fonts/malgun.ttf"),
+                  Path("/usr/share/fonts/truetype/nanum/NanumGothic.ttf"),
+                  Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc")):
+            try:
+                if p.exists():
+                    _PIL_FONT = ImageFont.truetype(str(p), 13)
+                    break
+            except Exception:
+                continue
+        if _PIL_FONT is None:
+            _PIL_FONT = ImageFont.load_default()
+    return _PIL_FONT
 
 
 def crop_overlay_image(dr: Drawing, png: bytes, st: State, draw_pts,
@@ -636,6 +682,102 @@ def crop_overlay_image(dr: Drawing, png: bytes, st: State, draw_pts,
     return out, (x0, y0, native_w, native_h)
 
 
+def bake_background(dr: Drawing, png: bytes, st: State, max_w: int = 900, margin: int = 90):
+    """캔버스 배경 = 원본 크롭 + 현재 영역(반투명 색박스)+연결선+라벨을 구운 이미지.
+    반환 (PIL RGB, (x0,y0,native_w,native_h), (disp_w,disp_h)). 클릭→원본 좌표 매핑용."""
+    from PIL import Image, ImageDraw
+    if not png:
+        return None, (0, 0, 0, 0), (0, 0)
+    img = Image.open(io.BytesIO(png)).convert("RGB")
+    xs, ys = [], []
+    for n in st.nodes.values():
+        if n.polygon is not None:
+            a, b, c, d = n.polygon.bounds
+            xs += [a, c]
+            ys += [b, d]
+    if xs:
+        x0 = max(0, int(min(xs) - margin))
+        y0 = max(0, int(min(ys) - margin))
+        x1 = min(img.width, int(max(xs) + margin))
+        y1 = min(img.height, int(max(ys) + margin))
+    else:
+        x0, y0, x1, y1 = 0, 0, img.width, img.height
+    crop = img.crop((x0, y0, x1, y1)).convert("RGBA")
+    ov = Image.new("RGBA", crop.size, (0, 0, 0, 0))
+    dd = ImageDraw.Draw(ov)
+    for e in st.edges:                                   # 연결선
+        a, b = st.nodes.get(e["a"]), st.nodes.get(e["b"])
+        if a and b:
+            dd.line([(a.cx - x0, a.cy - y0), (b.cx - x0, b.cy - y0)],
+                    fill=(20, 20, 20, 255), width=3)
+    for n in st.nodes.values():                          # 반투명 색박스
+        if n.polygon is None:
+            continue
+        pts = [(x - x0, y - y0) for x, y in n.polygon.exterior.coords]
+        if len(pts) >= 3:
+            dd.polygon(pts, fill=_hex_rgba(ROLE_COLOR.get(n.role, "#cccccc"), 90),
+                       outline=(40, 40, 40, 255))
+    for n in st.nodes.values():                          # 라벨
+        try:
+            dd.text((n.cx - x0, n.cy - y0), f"{_disp_id(n.id)} {n.role}",
+                    fill=(17, 17, 17, 255), font=_pil_font())
+        except Exception:
+            pass
+    out = Image.alpha_composite(crop, ov).convert("RGB")
+    nw, nh = x1 - x0, y1 - y0
+    if out.width > max_w:
+        out = out.resize((max_w, max(1, int(out.height * max_w / out.width))))
+    return out, (x0, y0, nw, nh), (out.width, out.height)
+
+
+def _cv_to_orig(x, y, mp):
+    """캔버스 표시좌표 → 원본 px. mp=(x0,y0,native_w,native_h,disp_w,disp_h)."""
+    x0, y0, nw, nh, dw, dh = mp
+    return (x0 + (x / dw) * nw, y0 + (y / dh) * nh)
+
+
+def parse_canvas(json_data, mp):
+    """fabric objects → (regions: 폴리곤 꼭짓점들[원본px], lines: [(p1,p2)원본px]).
+    rect=드래그 박스, path/polygon=점찍기, line=연결선."""
+    regions, lines = [], []
+    for o in (json_data or {}).get("objects", []):
+        t = o.get("type")
+        if t == "rect":
+            L, T = o.get("left", 0), o.get("top", 0)
+            W = o.get("width", 0) * o.get("scaleX", 1)
+            H = o.get("height", 0) * o.get("scaleY", 1)
+            regions.append([_cv_to_orig(x, y, mp) for x, y in
+                            ((L, T), (L + W, T), (L + W, T + H), (L, T + H))])
+        elif t in ("path", "polygon"):
+            pts = []
+            if o.get("path"):
+                for seg in o["path"]:
+                    if len(seg) >= 3 and isinstance(seg[1], (int, float)):
+                        pts.append((seg[1], seg[2]))
+            elif o.get("points"):
+                L, T = o.get("left", 0), o.get("top", 0)
+                pts = [(L + p.get("x", 0), T + p.get("y", 0)) for p in o["points"]]
+            if len(pts) >= 3:
+                regions.append([_cv_to_orig(x, y, mp) for x, y in pts])
+        elif t == "line":
+            lines.append((_cv_to_orig(o.get("x1", 0), o.get("y1", 0), mp),
+                          _cv_to_orig(o.get("x2", 0), o.get("y2", 0), mp)))
+    return regions, lines
+
+
+def _nearest_node(st: State, pt):
+    """원본좌표 pt에서 가장 가까운 영역 노드 id(연결선 끝→방 매핑)."""
+    from shapely.geometry import Point
+    p = Point(*pt)
+    best, bd = None, 1e18
+    for nid, n in st.nodes.items():
+        if n.polygon is not None:
+            dd = n.polygon.distance(p)
+            if dd < bd:
+                best, bd = nid, dd
+    return best
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Streamlit 화면 (admin.py에서 호출)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -651,13 +793,14 @@ def _draw_buf(bundle, unit_id):
 def render_editor() -> None:
     import streamlit as st
     try:
-        from streamlit_image_coordinates import streamlit_image_coordinates as _img_coords
+        from streamlit_drawable_canvas import st_canvas as _canvas
     except Exception:  # noqa: BLE001
-        _img_coords = None
+        _canvas = None
 
     st.title("✏️ 위상 편집 (신규 · 사람 인-더-루프)")
     st.caption("사람이 원본 위에 완전 기하(영역)를 만들고 → 위상은 결정적으로 추출. "
-               "복도/전실을 그려넣고(겹친 방서 차감·면적), 문은 자동·역할 확정 → SVG gold 저장.")
+               "복도/전실 그리기(차감·면적)·연결·역할은 **자동 저장**됨. "
+               "💾 버튼은 '검증완료' 표시용. 🗑 처음부터=저장 삭제 후 초기화.")
 
     default_dir = str(config.DATA_DIR / "raw" / "linked_demo")
     src = st.sidebar.text_input("라벨 디렉터리", value=default_dir)
@@ -696,108 +839,112 @@ def render_editor() -> None:
                               f"[{led.get(_uid(k), {}).get('status', '미검수')}]")
     unit_id = _uid(ui)
     states = bundle["states"]
-    if unit_id not in states or st.sidebar.button("↺ 이 세대 초기화"):
+    if unit_id not in states:
         svg = load_svg_text(unit_id)
         states[unit_id] = (state_from_svg(svg, dr, unit_id, rp.house) if svg
                            else init_state(dr, unit_id, rp.house, units[ui]))
-        bundle["draw"].pop(unit_id, None)
     stt = states[unit_id]
-    draw = _draw_buf(bundle, unit_id)
 
-    col1, col2 = st.columns([3, 2])
-    with col1:
-        if draw["active"] and _img_coords is not None:
-            st.info(f"🖊 **{draw['base']}** 그리는 중 — 영역 모서리를 차례로 클릭 "
-                    f"(점 {len(draw['pts'])}개, 3개 이상이면 완성 가능)")
-            img, (cx0, cy0, ncw, nch) = crop_overlay_image(dr, png, stt, draw["pts"])
-            if img is not None:
-                val = _img_coords(img, key=f"ic_{unit_id}")
-                if val and val.get("x") is not None:
-                    if (val["x"], val["y"]) != draw["last"]:
-                        draw["pts"].append((cx0 + (val["x"] / img.width) * ncw,
-                                            cy0 + (val["y"] / img.height) * nch))
-                        draw["last"] = (val["x"], val["y"])
-                        _rerun(st)
-        else:
-            st.pyplot(render_figure(dr, png, stt))
+    # ── 사이드바: 도구(모드) + 상태/액션 ──
+    sb = st.sidebar
+    sb.divider()
+    tool = sb.radio("도구", ["👁 보기", "🟦 박스 추가", "✒️ 영역 그리기(점)",
+                            "🔗 연결", "🏷 역할"], key=f"tool_{unit_id}")
+    if tool.startswith("🔗"):
+        cv_via = sb.selectbox("연결 종류(via)", VIA_KINDS, key="cvia")
+        cv_base = "복도"
+    elif tool.startswith(("🟦", "✒️")):
+        cv_base = sb.selectbox("그릴 공간 종류", DRAW_BASES, key="cbase")
+        cv_via = "door"
+    else:
+        cv_base, cv_via = "복도", "door"
+    nroom = sum(1 for n in stt.nodes.values() if n.base not in CONNECTOR_BASES)
+    nconn = len(stt.nodes) - nroom
+    sb.caption(f"방 {nroom} · 연결공간 {nconn} · 엣지 {len(stt.edges)} · 자동저장")
+    if sb.button("💾 검증완료로 표시", use_container_width=True):
+        save_svg(stt, dr, status="검증완료", curator="admin")
+        st.toast("검증완료로 저장")
+    if sb.button("🗑 처음부터(저장 삭제)", use_container_width=True):
+        delete_record(unit_id)
+        states.pop(unit_id, None)
+        _rerun(st)
 
-    with col2:
-        st.markdown("**➍ 연결공간 그리기** (복도·전실 영역 → 겹친 방서 차감·면적)")
-        if _img_coords is None:
-            st.warning("streamlit-image-coordinates 미설치 — 그리기 불가")
-        elif not draw["active"]:
-            draw["base"] = st.selectbox("종류", CONNECTOR_BASES, key="db")
-            if st.button("🖊 그리기 시작", use_container_width=True):
-                draw["active"] = True
-                draw["pts"] = []
-                draw["last"] = None
-                _rerun(st)
-        else:
-            d1, d2, d3 = st.columns(3)
-            if d1.button("↩ 점취소") and draw["pts"]:
-                draw["pts"].pop()
-                _rerun(st)
-            if d2.button("✓ 완성"):
-                if len(draw["pts"]) >= 3:
-                    add_drawn_region(stt, draw["base"], draw["pts"], dr)
-                draw["active"] = False
-                draw["pts"] = []
-                draw["last"] = None
-                _rerun(st)
-            if d3.button("✗ 취소"):
-                draw["active"] = False
-                draw["pts"] = []
-                draw["last"] = None
-                _rerun(st)
+    # ── 배경(원본+현재 영역 반투명박스+연결선+라벨) ──
+    bg, mp_xy, (dw, dh) = bake_background(dr, png, stt)
+    if bg is None:
+        st.warning("배경 생성 실패(방 없음).")
+        return
+    mp = (mp_xy[0], mp_xy[1], mp_xy[2], mp_xy[3], dw, dh)
 
-        st.markdown("**➋ 연결(엣지)** — 문은 저장 시 자동추출, open/corridor만 수동")
-        a = st.selectbox("A", list(stt.nodes),
-                         format_func=lambda i: f"{i}:{stt.nodes[i].role}", key="ea")
-        b = st.selectbox("B", list(stt.nodes),
-                         format_func=lambda i: f"{i}:{stt.nodes[i].role}", key="eb")
-        via = st.selectbox("종류", VIA_KINDS, key="ev")
-        if st.button("+ 연결", use_container_width=True):
-            if add_edge(stt, a, b, via):
-                _rerun(st)
-        for e in list(stt.edges):
-            c1, c2 = st.columns([5, 1])
-            c1.text(f"{e['a']}:{stt.nodes[e['a']].role} — "
-                    f"{e['b']}:{stt.nodes[e['b']].role}  ({e['via']})")
-            if c2.button("✕", key=f"de_{e['a']}_{e['b']}"):
-                remove_edge(stt, e["a"], e["b"])
-                _rerun(st)
-
-    st.markdown("---")
-    st.markdown("**➌ 역할 지정** (기구🛁·면적 보고 욕실/화장실·안방 등 세분)")
-    cols = st.columns(4)
-    for i, (nid, n) in enumerate(list(stt.nodes.items())):
-        with cols[i % 4]:
-            fx = f" 🛁{','.join(n.fixtures)}" if n.fixtures else ""
-            ar = f" · {n.area_px:,.0f}px²" if n.area_px else ""
-            newr = st.selectbox(
-                f"{nid} ({n.base}){fx}{ar}", ROLES,
-                index=ROLES.index(n.role) if n.role in ROLES else ROLES.index("기타"),
-                key=f"role_{nid}")
-            if newr != n.role:
-                set_role(stt, nid, newr)
-            if n.source == "human" and st.button("삭제", key=f"rm_{nid}"):
-                remove_node(stt, nid)
-                _rerun(st)
-
-    st.markdown("---")
-    if st.button("🔎 위상 추출 미리보기 (SVG→그래프)"):
-        regions, doors, links = parse_svg(to_svg(stt, dr))
-        G = extract_topology(regions, doors, links)
-        nd = sum(1 for *_x, v in G.edges(data="via") if v == "door")
-        st.info(f"추출: 노드 {G.number_of_nodes()} · 엣지 {G.number_of_edges()} "
-                f"(문 {nd} · 수동 {G.number_of_edges() - nd})")
-
-    note = st.text_input("메모")
-    status = st.selectbox("상태", STATUSES, index=STATUSES.index("검증완료"))
-    if st.button("💾 저장 (SVG gold)", type="primary"):
-        p = save_svg(stt, dr, status=status, curator="admin", notes=note)
-        nreg = sum(1 for n in stt.nodes.values() if n.polygon is not None)
-        st.success(f"저장: {p.name} · 영역 {nreg}개")
+    if tool.startswith("👁"):
+        st.image(bg)
+        if st.button("🔎 위상 추출 미리보기 (SVG→그래프)"):
+            regions, doors, links = parse_svg(to_svg(stt, dr))
+            G = extract_topology(regions, doors, links)
+            ndd = sum(1 for *_x, v in G.edges(data="via") if v == "door")
+            st.info(f"노드 {G.number_of_nodes()} · 엣지 {G.number_of_edges()} "
+                    f"(문 {ndd} · 수동 {G.number_of_edges() - ndd})")
+    elif tool.startswith("🏷"):
+        st.image(bg)
+        nid = st.selectbox(
+            "노드 선택", list(stt.nodes),
+            format_func=lambda i: f"{_disp_id(i)} · {stt.nodes[i].role}"
+            + (f" · 🛁{','.join(stt.nodes[i].fixtures)}" if stt.nodes[i].fixtures else "")
+            + (f" · {stt.nodes[i].area_px:,.0f}px²" if stt.nodes[i].area_px else ""),
+            key=f"rsel_{unit_id}")
+        n = stt.nodes[nid]
+        rc1, rc2 = st.columns([3, 1])
+        newr = rc1.selectbox("역할", ROLES,
+                             index=ROLES.index(n.role) if n.role in ROLES else ROLES.index("기타"),
+                             key=f"rval_{nid}")
+        if newr != n.role:
+            set_role(stt, nid, newr)
+            write_svg(stt, dr)
+            _rerun(st)
+        if n.source == "human" and rc2.button("🗑 삭제", use_container_width=True):
+            remove_node(stt, nid)
+            write_svg(stt, dr)
+            _rerun(st)
+    else:
+        if _canvas is None:
+            st.warning("streamlit-drawable-canvas 미설치")
+            return
+        mode = ("rect" if tool.startswith("🟦")
+                else "polygon" if tool.startswith("✒️") else "line")
+        hint = {"rect": "드래그로 박스를 그린 뒤",
+                "polygon": "모서리를 클릭(마지막 시작점 더블클릭으로 닫기) 뒤",
+                "line": "방→방 선을 그은 뒤"}[mode]
+        st.caption(f"🖊 {hint} **[✓ 적용]**. 배경 반투명 박스=현재 영역.")
+        gen = bundle.setdefault("cv_gen", {}).get(unit_id, 0)
+        res = _canvas(fill_color="rgba(230,30,30,0.25)", stroke_color="#e01e1e",
+                      stroke_width=3, background_image=bg, drawing_mode=mode,
+                      height=dh, width=dw, update_streamlit=True,
+                      display_toolbar=True, key=f"cv_{unit_id}_{gen}")
+        if st.button("✓ 적용", type="primary"):
+            regs, lines = parse_canvas(res.json_data if res else None, mp)
+            nap = 0
+            for pts in regs:
+                if add_drawn_region(stt, cv_base, pts, dr) is not None:
+                    nap += 1
+            for p1, p2 in lines:
+                na, nb = _nearest_node(stt, p1), _nearest_node(stt, p2)
+                if na is not None and nb is not None and add_edge(stt, na, nb, cv_via):
+                    nap += 1
+            if nap:
+                write_svg(stt, dr)
+            bundle["cv_gen"][unit_id] = gen + 1
+            st.toast(f"적용 {nap}건")
+            _rerun(st)
+        if tool.startswith("🔗") and stt.edges:
+            st.caption("연결 삭제:")
+            for e in list(stt.edges):
+                c1, c2 = st.columns([6, 1])
+                c1.text(f"{_disp_id(e['a'])}:{stt.nodes[e['a']].role} — "
+                        f"{_disp_id(e['b'])}:{stt.nodes[e['b']].role} ({e['via']})")
+                if c2.button("✕", key=f"de_{e['a']}_{e['b']}"):
+                    remove_edge(stt, e["a"], e["b"])
+                    write_svg(stt, dr)
+                    _rerun(st)
 
 
 if __name__ == "__main__":

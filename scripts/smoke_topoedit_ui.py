@@ -25,13 +25,14 @@ def main() -> int:
             print("  ", e)
         return 1
     print(f"[title]      {[t.value for t in at.title]}")
-    print(f"[widgets]    selectbox={len(at.selectbox)} multiselect={len(at.multiselect)} "
-          f"button={len(at.button)} text_input={len(at.text_input)}")
+    print(f"[widgets]    selectbox={len(at.selectbox)} radio={len(at.radio)} "
+          f"button={len(at.button)}")
     print(f"[sidebar]    {[s.label for s in at.sidebar.selectbox]}")
-    # 핵심 위젯이 실제로 떴는지
-    assert at.title, "title 없음 — 화면 미렌더"
-    assert len(at.selectbox) >= 3, "편집 컨트롤(연결공간/엣지/역할) 미렌더"
-    print("✅ UI 스모크 PASS — 화면 예외 없이 렌더, 편집 위젯 정상")
+    # 핵심 위젯(도면/세대 선택 + 도구 모드)이 떴는지
+    assert at.title, "title 없음 - 화면 미렌더"
+    assert len(at.selectbox) >= 2, "도면/세대 선택 미렌더"
+    assert at.radio, "도구 모드 라디오 미렌더"
+    print("UI smoke PASS - 화면 예외 없이 렌더(보기 모드), 도구 라디오 정상")
     return 0
 
 
