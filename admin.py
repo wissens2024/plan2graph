@@ -273,14 +273,165 @@ def _record(**kw):
     review.record_decision(base)
 
 
+# ════════════════════════════════════════════════════════════════════════════
+# 🧩 위상 큐레이션 — extract2 자동추출을 원본 위에서 사람이 교정·검증 → gold 저장
+#   APT 전량 워크플로우(미검수/자동/검증완료/모호/제외). Phase0=표시·상태,
+#   Phase1=클릭 노드/엣지 편집(streamlit-image-coordinates 필요).
+# ════════════════════════════════════════════════════════════════════════════
+@st.cache_resource(max_entries=24, show_spinner="유닛 자동추출(extract2)...")
+def _gold_unit(sheet_id: str, unit_i: int):
+    """extract2.load_unit 캐시 — (dr, png, u_idx, G, n_units). G에 shapely poly 포함."""
+    from plan2graph import extract2
+    return extract2.load_unit(sheet_id, unit_i)
+
+
+def _curate_aihub():
+    import time as _time
+    from plan2graph import extract2, goldset
+
+    st.title("🧩 위상 큐레이션 (AI-Hub · APT)")
+    st.caption("자동추출(extract2)을 **원본 위에서** 사람이 교정·검증해 위상+기하를 최대 상세로 "
+               "gold 데이터셋에 담는다. 추출이 맞으면 [검증완료], 틀리면 교정 후 저장.")
+
+    units = goldset.load_index()
+    if not units:
+        st.warning("APT 유닛 인덱스가 없습니다. 서버에서 먼저:\n\n"
+                   "```\npython scripts/build_apt_index.py\n```")
+        return
+
+    led = goldset.load_ledger()
+    cnt = goldset.status_counts([u["unit_id"] for u in units])
+    done = cnt.get("검증완료", 0)
+    st.progress(done / max(1, len(units)),
+                text=f"검증완료 {done:,} / 전체 {len(units):,}  ·  "
+                     f"미검수 {cnt.get('미검수', 0):,} · 자동 {cnt.get('자동', 0):,} · "
+                     f"모호 {cnt.get('모호', 0):,} · 제외 {cnt.get('제외', 0):,}")
+
+    # ── 필터 + 네비게이션 ──
+    flt = st.sidebar.selectbox("상태 필터", ["전체"] + list(goldset.STATUSES), index=0)
+    pool = [u for u in units
+            if flt == "전체" or goldset.status_of(u["unit_id"], led) == flt]
+    if not pool:
+        st.info(f"'{flt}' 상태인 유닛이 없습니다.")
+        return
+    st.sidebar.caption(f"필터 결과: {len(pool):,}개 (방수 오름차순)")
+
+    if "cur_i" not in st.session_state:
+        st.session_state.cur_i = 0
+    st.session_state.cur_i = max(0, min(st.session_state.cur_i, len(pool) - 1))
+
+    c1, c2, c3 = st.sidebar.columns(3)
+    if c1.button("◀ 이전"):
+        st.session_state.cur_i = max(0, st.session_state.cur_i - 1)
+    if c2.button("다음 ▶"):
+        st.session_state.cur_i = min(len(pool) - 1, st.session_state.cur_i + 1)
+    if c3.button("⏭ 미검수"):
+        nxt = next((k for k in range(st.session_state.cur_i + 1, len(pool))
+                    if goldset.status_of(pool[k]["unit_id"], led) == "미검수"), None)
+        if nxt is not None:
+            st.session_state.cur_i = nxt
+    sel_uid = st.sidebar.selectbox(
+        "유닛 직접 선택", [u["unit_id"] for u in pool], index=st.session_state.cur_i,
+        format_func=lambda x: f"{x}  [{goldset.status_of(x, led)}]")
+    st.session_state.cur_i = [u["unit_id"] for u in pool].index(sel_uid)
+
+    u = pool[st.session_state.cur_i]
+    uid, sid, ui = u["unit_id"], u["sheet_id"], u["unit_i"]
+    st.markdown(f"### {uid}  ·  방 {u['n_rooms']}개  ·  "
+                f"상태 **{goldset.status_of(uid, led)}**  "
+                f"({st.session_state.cur_i + 1}/{len(pool)})")
+
+    # ── 자동추출 + 원본∥오버레이 ──
+    try:
+        dr, png, u_idx, G, n_units = _gold_unit(sid, ui)
+    except Exception as e:
+        st.error(f"추출 실패: {e}")
+        st.exception(e)
+        return
+    st.caption(f"유닛 {ui}/{n_units - 1} · 방노드 {len(u_idx)} · "
+               f"dr: rooms={len(dr.rooms)} doors={len(dr.doors)} "
+               f"windows={len(dr.windows)} objects={len(dr.objects)} texts={len(dr.texts)}")
+    if len(dr.objects) == 0:
+        st.warning("⚠ OBJ(기구) 0개 — 욕실/화장실·주방 역할 유도 신호 없음. "
+                   "이 시트는 OBJ 미병합(V2V 복구 대상)일 수 있음.")
+
+    st.pyplot(extract2.render_review(dr, png, G), clear_figure=True)
+
+    # ── 추출 결과 표(노드·엣지) ──
+    cc1, cc2 = st.columns(2)
+    with cc1:
+        st.markdown("**노드(공간)**")
+        st.dataframe([{"id": n, "base": G.nodes[n]["base"], "role": G.nodes[n]["role"],
+                       "면적㎡": G.nodes[n].get("area"),
+                       "기구": ",".join(G.nodes[n].get("fx", []))} for n in G],
+                     use_container_width=True, height=240)
+    with cc2:
+        st.markdown("**엣지(연결)**")
+        st.dataframe([{"a": G.nodes[a]["role"], "b": G.nodes[b]["role"],
+                       "via": d["via"]} for a, b, d in G.edges(data=True)],
+                     use_container_width=True, height=240)
+        bb = sum(1 for a, b in G.edges
+                 if G.nodes[a]["base"] == "침실" and G.nodes[b]["base"] == "침실")
+        st.caption(f"침실-침실 직접연결: **{bb}** (0이 정상 — 복도/전실 경유여야)")
+
+    st.info("✏️ 클릭 기반 노드/엣지 교정은 **Phase 1**(서버에 `streamlit-image-coordinates` "
+            "설치 후). 지금은 추출이 정확한 유닛을 [검증완료]로 gold 저장할 수 있습니다.")
+
+    # ── 결정(상태 + gold 저장) ──
+    note = st.text_input("메모(모호·교정필요 사유 등)", key=f"note_{uid}")
+    b1, b2, b3, b4 = st.columns(4)
+
+    def _save(status):
+        rec = goldset.build_record(uid, sid, ui, dr, G, house=u.get("house", "APT"),
+                                   status=status, curator="admin", notes=note,
+                                   verified_at=_time.strftime("%Y-%m-%d %H:%M:%S"))
+        goldset.save_record(rec)
+        goldset.set_status(uid, status, curator="admin", notes=note,
+                           at=_time.strftime("%Y-%m-%d %H:%M:%S"))
+
+    if b1.button("✅ 검증완료(저장)", type="primary"):
+        _save("검증완료")
+        st.session_state.cur_i = min(len(pool) - 1, st.session_state.cur_i + 1)
+        st.rerun()
+    if b2.button("🤔 모호(보류)"):
+        goldset.set_status(uid, "모호", curator="admin", notes=note,
+                           at=_time.strftime("%Y-%m-%d %H:%M:%S"))
+        st.rerun()
+    if b3.button("🚫 제외"):
+        goldset.set_status(uid, "제외", curator="admin", notes=note,
+                           at=_time.strftime("%Y-%m-%d %H:%M:%S"))
+        st.rerun()
+    if b4.button("💾 자동저장(미확정)"):
+        _save("자동")
+        st.toast("자동추출 레코드 저장(검증 전)")
+
+    existing = goldset.load_record(uid)
+    if existing:
+        with st.expander(f"▸ 저장된 gold 레코드 보기 ({existing['meta']['status']})"):
+            st.json({"meta": existing["meta"],
+                     "n_nodes": len(existing["nodes"]),
+                     "n_edges": len(existing["edges"]),
+                     "node0": existing["nodes"][0] if existing["nodes"] else None})
+
+
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
-st.sidebar.markdown("#### 🏗 Plan2Graph 관리자") 
-which = st.sidebar.radio("메뉴", ["🧮 종합 현황", "🏢 AI-Hub 검수",
+st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
+which = st.sidebar.radio("메뉴", ["🧮 종합 현황", "✏️ 위상 편집",
+                                 "🏢 AI-Hub 검수",
                                  "🏠 CubiCasa 검수", "📐 RPLAN 검수",
                                  "📏 scale 보정", "📜 법령 DB",
                                  "📈 결과 대시보드",
-                                 "📊 위상 모델 선정", "🏗 도면 생성"],
+                                 "🏗 도면 생성"],
                           index=0, label_visibility="collapsed")
+
+# ════════════════════════════════════════════════════════════════════════════
+# ✏️ 위상 편집(신규) — 원본 위에서 사람이 위상 직접 구축(자동추론 0) → gold
+#   기존 자동추출(extract2)·골드(goldset) 미사용. 자체 데이터 소스(독립).
+# ════════════════════════════════════════════════════════════════════════════
+if which.startswith("✏️"):
+    from plan2graph import topoedit
+    topoedit.render_editor()
+    st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
 # 🧮 검수 현황(종합) — AI-Hub·CubiCasa·RPLAN 변환 결과를 한 화면에서 비교
@@ -446,8 +597,10 @@ if which.startswith("🏢"):
         return _ix.label_index(sp)
 
     view = st.sidebar.radio(
-        "보기 모드", ["그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
-        index=0, help="그래프검수=원본∥그래프+결정(승인/격리/제외) · 나란히=원본vs오버레이 · 겹쳐 · 원본만")
+        "보기 모드", ["그래프검수(원본∥그래프)",
+                   "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
+        index=0, help="그래프검수=구버전 위상 검수 · 나란히/겹쳐/원본만=라벨 육안확인 · "
+                      "사람 위상 구축은 좌측 메뉴 ✏️ 위상 편집")
     if view.startswith("그래프검수"):    # ⚠격리/✅채택 흡수 — staging/aihub 그래프 검수·결정(ledger 기록)
         lblidx = _lblidx(split)
         items = []
@@ -642,159 +795,6 @@ if which.startswith("📐"):
                    lambda r, ov: _rpi.render(r, overlay=ov), _cap)
     _pager("pg_rplan", npages, "bot")
     st.stop()
-
-# ════════════════════════════════════════════════════════════════════════════
-# 📊 결과 대시보드 — 데이터셋·모델·지표 시각화 (설명/PPT용)
-# ════════════════════════════════════════════════════════════════════════════
-if which.startswith("📊"):
-    import json as _json
-    import random as _random
-    from collections import Counter as _Counter
-    from plan2graph import model_baseline as _mb
-    from plan2graph import review as _rv
-
-    REL = config.DATA_DIR / "releases"
-    # 완전한 release만(manifest+splits/test 보유) — 미완 스모크 빌드(v2 등) 제외해 크래시 방지
-    vers = sorted([p.name for p in REL.glob("v*") if p.is_dir()
-                   and (p / "manifest.json").exists()
-                   and (p / "splits" / "test.txt").exists()]) if REL.exists() else []
-    if not vers:
-        st.info("동결된 버전이 없습니다. `python src/plan2graph/release.py v0` 먼저 실행.")
-        st.stop()
-
-    st.title("📊 위상 모델 선정")
-    st.caption("📈 결과 대시보드의 비교를 종합해 **도면 생성에 쓸 최고 위상 구성을 선정**한다. "
-               "위상 모델은 끝이 아니라 도면을 만드는 **부품** — 선정 결과를 🏗로 넘긴다.")
-     
-
-    ver = vers[-1] if vers else None   # 기본(최신 릴리스) — 상세 예시용. 사이드바 버전선택·새로고침 제거.
-
-    def _mt(p):  # 파일 수정시각(캐시 무효화 키)
-        return p.stat().st_mtime if p.exists() else 0
-
-    @st.cache_data(show_spinner=False)
-    def _manifest(v, _k):
-        p = REL / v / "manifest.json"
-        return _json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
-
-    @st.cache_data(show_spinner=False)
-    def _evalr(v, _k):
-        p = REL / v / "eval.json"
-        return _json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
-
-    @st.cache_data(show_spinner="데이터셋 통계 집계...")
-    def _roomdist(v, _k):
-        c = _Counter()
-        for f in (REL / v / "graphs").glob("*.json"):
-            r = _json.loads(f.read_text(encoding="utf-8"))
-            for n in r["layout"]["nodes"]:
-                if n.get("type") and n["type"] != "exterior":
-                    c[n["type"]] += 1
-        return dict(c.most_common())
-
-    @st.cache_resource(show_spinner="모델 학습(통계 생성기)...")
-    def _model(v, _k):
-        return _mb.fit(_mb._load_split(v, "train"))
-
-    man = _manifest(ver, _mt(REL / ver / "manifest.json"))
-    ev = _evalr(ver, _mt(REL / ver / "eval.json"))
-
-    # 실험 원장(시드 집계) — §1·§3·§5 공용 단일 소스(dataset-version-scheme).
-    @st.cache_data(show_spinner="실험 원장 집계...")
-    def _agg(_k):
-        from plan2graph import experiments
-        return experiments.agg_summary()
-
-    _idx = ROOT / "runs" / "index.jsonl"
-    summ = _agg(_mt(_idx)) if _idx.exists() else {"eval": [], "generalization": []}
-    def _compose(v):   # 각 버전 manifest 라이브(하드코딩 금지 — doc/code/GUI 일치)
-        p = REL / v / "manifest.json"
-        return _manifest(v, _mt(p)) if p.exists() else None
-
-    def _pm(m, s):
-        return "—" if m is None else (f"{m:.3f}±{s:.3f}" if s else f"{m:.3f}")
-
-    # ── 1) 최고 구성 선정 → 도면 생성으로 ──
-    st.header("1. 최고 구성 선정")
-    st.success("**채택 구성(현재 최선): 클린 한국 데이터(v0) + 모델 용량 2배 + 규제 루프(+ type조건).**")
-    st.markdown(
-        "**📈 결과 대시보드**의 비교가 일관된 결론을 가리킨다:\n"
-        "- **데이터** — 클린 한국(v0)이 최고, 글로벌 증강은 (한국 타깃 기준) 무익.\n"
-        "- **방법** — 신경망 > 규칙기반, 규제 루프가 법규를 100%로 보장.\n"
-        "- **레버** — type조건·모델 용량이 소수 주거형태(DEH·ROW) 격차를 메움.\n\n"
-        "→ **이 구성으로 만든 위상**을 다음 단계 **🏗 도면 생성**의 입력(**부품**)으로 사용한다. "
-        "위상 모델 1개로 끝이 아니라, *도면이 잘 나오는 조합*을 🏗에서 이어 탐색한다.")
-    st.caption("성능 비교 수치·표는 → 📈 결과 대시보드(데이터 조합·방법·용량). 여기는 그 결론(선정)만.")
-
-    # ── 2) (상세) 실제 vs 생성 예시 ──
-    with st.expander("▸ 상세 — 실제 도면 vs AI 생성 (같은 program · 규칙기반 예시)"):
-        if "ex_seed" not in st.session_state:
-            st.session_state.ex_seed = 1
-        if st.button("🎲 다른 예시"):
-            st.session_state.ex_seed += 1
-        test = _mb._load_split(ver, "test")
-        if test:
-            rec = test[st.session_state.ex_seed % len(test)]
-            program = dict(_Counter(n["type"] for n in rec["layout"]["nodes"]
-                                    if isinstance(n["id"], int)))
-            st.caption(f"program: {program}")
-            gen = _mb.generate(_model(ver, _mt(REL / ver / "manifest.json")), program,
-                               _random.Random(st.session_state.ex_seed))
-            e1, e2 = st.columns(2)
-            with e1:
-                st.markdown("**실제 (데이터셋)**")
-                st.pyplot(_rv.render_graph_fig(_rv.record_to_graph(rec),
-                          title="real", node_size=1500, font_size=11, layout="kamada"),
-                          use_container_width=True)
-            with e2:
-                st.markdown("**AI 생성 (같은 program)**")
-                st.pyplot(_rv.render_graph_fig(gen, title="generated",
-                          node_size=1500, font_size=11, layout="kamada"),
-                          use_container_width=True)
-
-    # ── 5) (상세) 전체 매트릭스 — 시드·loop 전수 ──
-    with st.expander("▸ 상세 — 전체 매트릭스 (시드·loop 전수, 다양성·신규성 포함)"):
-        st.caption("핵심 비교는 📈 결과 대시보드. 여기는 **전수 원천**(데이터버전 × 생성기 × 규제루프 × 시드). "
-                   "단일 소스 = runs/index.jsonl. ⚠️ '데이터버전'은 사전학습축 라벨(ds_version) — "
-                   "코퍼스(v0 dual / v2 +V2V) 정확 구분은 §2.")
-
-        def _gen_label(r):
-            return f"{r['generator']}({r['arch']})" if r.get("arch") else r["generator"]
-
-        def _sort_key(r):
-            return (r.get("ds_version", "z"), 0 if r["generator"] == "규칙기반" else 1,
-                    r.get("arch", ""), str(r.get("loop", "")))
-
-        if summ["eval"]:
-            st.subheader("전체 test")
-            st.table([{"데이터버전": r["ds_version"], "생성기": _gen_label(r),
-                       "규제루프": r["loop"], "시드": r["seeds"],
-                       "인접L1↓": _pm(r["adj_L1_mean"], r["adj_L1_std"]),
-                       "무결성": f"{(r['integrity'] or 0)*100:.0f}%",
-                       "법규": f"{(r['legal'] or 0)*100:.0f}%",
-                       "다양성": f"{(r['diversity'] or 0)*100:.0f}%",
-                       "신규성": f"{(r['novelty'] or 0)*100:.0f}%"}
-                      for r in sorted(summ["eval"], key=_sort_key)])
-        if summ["generalization"]:
-            st.subheader("일반화 — seen / unseen program")
-            st.table([{"데이터버전": r["ds_version"], "생성기": _gen_label(r),
-                       "subset": r["subset"], "시드": r["seeds"],
-                       "인접L1↓": _pm(r["adj_L1_mean"], r["adj_L1_std"])}
-                      for r in sorted(summ["generalization"], key=_sort_key)])
-        if not summ["eval"]:
-            ab_path = REL / "eval_ab.json"
-            ab = _json.loads(ab_path.read_text(encoding="utf-8")).get("rows", []) \
-                if ab_path.exists() else []
-            if ab:
-                st.caption("실험 원장 없음 — eval_ab.json 스냅샷 표시")
-                st.table([{"버전": r["version"], "생성기": r["generator"], "규제루프": r["reg_loop"],
-                           "무결성": r["integrity"], "법규": r["legal"], "인접L1↓": r["adj_L1"],
-                           "다양성": r["diversity"], "신규성": r["novelty"]} for r in ab])
-            else:
-                st.info("비교 데이터 없음: `bash scripts/run_matrix.sh` 실행 후 표시됩니다.")
-
-    st.stop()
-
 # ════════════════════════════════════════════════════════════════════════════
 # 📈 결과 대시보드 — 데이터셋 조합별 성능 비교 (이전 구조 복원: 608eeaf)
 #   개념: 데이터셋을 합쳐 하나를 학습 → 어떤 조합이 최고인지 비교.
@@ -1183,45 +1183,58 @@ if which.startswith("🏗"):
 
     # ── 2) 최종 모델 구성 — 사전학습 × 파인튜닝 (데이터셋 자유 조합) ──
     st.header("2. 최종 모델 구성 — 사전학습 × 파인튜닝")
-    st.caption("**① 사전학습**(첫 학습)과 **② 파인튜닝**(두번째 학습)에 **데이터셋을 자유롭게 조합**. "
-               "그 조합의 모델이 없으면 **그 자리에서 백그라운드 학습** → 끝나면 최종 모델. "
-               "(어떤 조합이 의미있는지는 별개 판단 — 여기선 자유 구성)")
-    _DS = {  # 표시명 → combine 스펙(release, source)
-        "AI-Hub(클린)": ("v0", "aihub"),
-        "AI-Hub(전체)": ("v2", "aihub"),
-        "RPLAN(글로벌)": ("global_rplan", "rplan"),
-        "CubiCasa(글로벌)": ("v2", "cubicasa5k"),
+    st.caption("**① 사전학습 → ② 파인튜닝 → ③ 기법**을 고른다. 그 조합의 모델이 있으면 **선정**, "
+               "없으면 **백그라운드 2단계 학습**(끝나면 ③에서 생성). ①·② 라벨은 §1 데이터셋 테이블과 동일.")
+    _VL = {  # 버전 → 데이터 구성(§1 테이블과 동일)
+        "v0": "3,324도면→7,101세대 (클린·기준)",
+        "v1": "10,063도면→20,828세대",
+        "v2": "10,063도면→20,828세대+CubiCasa 3,028",
+        "v3": "10,063도면→20,828세대+RPLAN 80,371",
+        "v4": "10,063도면→20,828세대+CubiCasa 3,028+RPLAN 80,371",
+        "v5": "RPLAN 80,371",
+        "v6": "CubiCasa 3,028",
+        "v7": "RPLAN 80,371+CubiCasa 3,028",
     }
-    _CODE = {"AI-Hub(클린)": "aihubC", "AI-Hub(전체)": "aihubF",
-             "RPLAN(글로벌)": "rplan", "CubiCasa(글로벌)": "cubi"}
-    _cf1, _cf2 = st.columns(2)
-    _pre_sel = _cf1.multiselect("① 사전학습 데이터셋 (첫 학습 · 비우면 생략)", list(_DS), key="cfg_pre",
-                                help="여러 개 합쳐서 먼저 학습. 비우면 사전학습 없이 파인튜닝만")
-    _ft_sel = _cf2.multiselect("② 파인튜닝 데이터셋 (두번째 학습)", list(_DS),
-                               default=["AI-Hub(클린)"], key="cfg_ft",
-                               help="여러 개 합쳐서 이어 학습. 최소 1개")
-    _adv = st.radio("③ 기법", ["표준", "용량 2배"], horizontal=True, key="cfg_adv",
-                    help="용량2배=모델 파라미터 ×2")
+    _OPTS = ["없음", *_VL]
 
-    def _tag(sel):
-        return "_".join(sorted(_CODE[s] for s in sel)) if sel else "none"
+    def _fmt(o):
+        return o if o == "없음" else f"{o}:{_VL[o]}"
+    _cf1, _cf2, _cf3 = st.columns(3)
+    _pre = _cf1.selectbox("① 사전학습", _OPTS, index=0, format_func=_fmt, key="cfg_pre")
+    _ft = _cf2.selectbox("② 파인튜닝", _OPTS, index=1, format_func=_fmt, key="cfg_ft")
+    _adv = _cf3.selectbox("③ 기법", ["표준", "용량 2배"], index=0, key="cfg_adv")
 
-    def _spec(sel):
-        return ",".join(f"{_DS[s][0]}:{_DS[s][1]}" for s in sel)
-    _cap = "-cap2x" if _adv == "용량 2배" else ""
-    _rid = f"combo-pre_{_tag(_pre_sel)}-ft_{_tag(_ft_sel)}{_cap}-s42"
-    _desc = (f"사전학습[{'+'.join(_pre_sel) or '없음'}] → 파인튜닝[{'+'.join(_ft_sel) or '없음'}]"
-             + (" + 용량2배" if _cap else ""))
-    _ckpt = _ROOT / "runs" / _rid / "checkpoint.pt"
-    _exists = _ckpt.exists()
-    _olog = _ROOT / "logs" / f"ondemand-{_rid}.log"
-    if not _ft_sel:
-        st.warning("② 파인튜닝 데이터셋을 최소 1개 선택하세요.")
-        _exists = False
-    st.markdown(f"**→ 최종 모델: {_desc}**  ·  {'✅ 학습됨' if _exists else '⚠️ 미학습'}  "
-                f"<span style='color:gray;font-size:0.85em'>{_rid}</span>", unsafe_allow_html=True)
-    if _ft_sel and not _exists:
-        if _olog.exists():
+    from plan2graph import experiments as _exp
+    _ARCH = "set-transformer-v2"
+    _cap = _adv == "용량 2배"
+    _prv = None if _pre == "없음" else _pre
+    _ftv = None if _ft == "없음" else _ft
+    # 정규화: 한쪽만 고르면 그 데이터로 단일학습, 둘 다면 2단계(사전학습→파인튜닝)
+    if _prv and _ftv:
+        _version, _ptr = _ftv, _prv
+    elif _ftv:
+        _version, _ptr = _ftv, None
+    elif _prv:
+        _version, _ptr = _prv, None
+    else:
+        _version, _ptr = None, None
+    _ridver = (f"{_version}cap2x" if _cap else _version) if _version else None
+    _rid = _exp.make_run_id("neural", _ridver, _ptr, 42, _ARCH) if _ridver else None
+    _desc = f"사전학습[{_prv or '없음'}] → 파인튜닝[{_ftv or '없음'}]" + (" · 용량2배" if _cap else "")
+    _ckpt = (_ROOT / "runs" / _rid / "checkpoint.pt") if _rid else None
+    _exists = bool(_ckpt and _ckpt.exists())
+    _olog = (_ROOT / "logs" / f"ondemand-{_rid}.log") if _rid else None
+    if _version is None:
+        st.warning("①·② 중 최소 하나는 데이터셋을 고르세요. (둘 다 '없음'이면 학습할 데이터가 없음)")
+    else:
+        st.markdown(f"**→ 최종 모델: {_desc}**  ·  {'✅ 선정(학습됨)' if _exists else '⚠️ 미학습'}  "
+                    f"<span style='color:gray;font-size:0.85em'>{_rid}</span>",
+                    unsafe_allow_html=True)
+    if _version is not None and not _exists:
+        if _cap:
+            st.info("용량2배는 즉석 학습 미지원 — 기존 용량2배 모델이 있을 때만 선정됩니다. "
+                    "(표준으로 바꾸면 즉석 학습 가능)")
+        elif _olog.exists():
             _ll = _olog.read_text(errors="ignore").strip().splitlines()
             st.warning("🔄 학습 진행 중 (GPU1·백그라운드) — 완료되면 ✅로 바뀌고 ③에서 생성. "
                        f"최근: `{(_ll[-1] if _ll else '학습 시작/사전학습 단계…')[:130]}`")
@@ -1236,14 +1249,13 @@ if which.startswith("🏗"):
             if st.button("🛠 이 조합 학습 시작 (GPU1 · 백그라운드)"):
                 import subprocess as _sp
                 import sys as _sys
-                _pa = (f"--pretrain-spec '{_spec(_pre_sel)}' " if _pre_sel else "")
-                _capf = "--cap2x " if _cap else ""
+                _pa = (f"--pretrain {_ptr} --pretrain-epochs 50 " if _ptr else "")
                 _cmd = (f"cd '{_ROOT}' && CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src setsid nohup "
-                        f"{_sys.executable} -u -m plan2graph.train_combine --transfer "
-                        f"{_pa}--finetune-spec '{_spec(_ft_sel)}' {_capf}--run-id '{_rid}' "
+                        f"{_sys.executable} -u -m plan2graph.train_gen train "
+                        f"{_pa}--finetune {_version} "
                         f"--epochs 100 --seed 42 > 'logs/ondemand-{_rid}.log' 2>&1 &")
                 _sp.Popen(["bash", "-lc", _cmd])
-                st.success("학습 시작됨 — 데이터량에 따라 수 분~십수 분. "
+                st.success("학습 시작됨 — 데이터량에 따라 수 분~수십 분. "
                            "'상태 새로고침'으로 진행 확인, 완료되면 ③에서 생성.")
                 st.rerun()
 
@@ -1366,8 +1378,6 @@ if which.startswith("🏗"):
         "다음은 *좌표 도면 방법 고도화(§4) → 최종 도면 품질 평가(§5)*다. "
         "위상에서 검증된 원리(**클린 한국 데이터 · 충분한 모델 용량 · 규제 루프**)를 도면으로 잇는다.")
     st.stop()
-
-
 # ════════════════════════════════════════════════════════════════════════════
 # 📜 법령 DB — 최신화(관리자 클릭) + 법령/규정 조회
 # ════════════════════════════════════════════════════════════════════════════
