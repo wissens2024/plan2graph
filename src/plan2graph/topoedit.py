@@ -504,6 +504,20 @@ def _set_kfont() -> None:
                 continue
 
 
+def _poly_patch(poly, **kw):
+    """shapely Polygon(구멍 포함) → matplotlib PathPatch(holes 투명하게)."""
+    from matplotlib.path import Path as _MP
+    from matplotlib.patches import PathPatch
+    verts, codes = [], []
+    for ring in [poly.exterior, *poly.interiors]:
+        cs = list(ring.coords)
+        if len(cs) < 3:
+            continue
+        verts += cs
+        codes += [_MP.MOVETO] + [_MP.LINETO] * (len(cs) - 2) + [_MP.CLOSEPOLY]
+    return PathPatch(_MP(verts, codes), **kw)
+
+
 def render_figure(dr: Drawing, png: bytes | None, st: State,
                   highlight: int | None = None, figsize=(9, 9)):
     """원본 위에 현재 위상(방·연결공간·엣지·역할) 오버레이. 문 위치는 회색 참고점."""
@@ -522,15 +536,15 @@ def render_figure(dr: Drawing, png: bytes | None, st: State,
         if a and b:
             ax.plot([a.cx, b.cx], [a.cy, b.cy], color=ec.get(e["via"], "#111"),
                     lw=2.0, ls="--" if e["via"] == "corridor" else "-", zorder=4)
-    # 방 폴리곤
+    # 방 폴리곤 (구멍=carve된 연결공간 자리는 투명하게 보이도록 PathPatch)
     for n in st.nodes.values():
-        if n.polygon is not None:
+        if n.polygon is not None and n.polygon.geom_type == "Polygon":
             try:
-                xs, ys = n.polygon.exterior.xy
-                ax.fill(xs, ys, color=ROLE_COLOR.get(n.role, "#ccc"),
-                        alpha=0.65 if n.id == highlight else 0.4,
-                        ec="red" if n.id == highlight else "#333",
-                        lw=2.5 if n.id == highlight else 0.7, zorder=2)
+                ax.add_patch(_poly_patch(
+                    n.polygon, facecolor=ROLE_COLOR.get(n.role, "#ccc"),
+                    alpha=0.65 if n.id == highlight else 0.4,
+                    edgecolor="red" if n.id == highlight else "#333",
+                    lw=2.5 if n.id == highlight else 0.7, zorder=2))
             except Exception:
                 pass
     # 연결공간(폴리곤 없음) = 다이아몬드 마커
