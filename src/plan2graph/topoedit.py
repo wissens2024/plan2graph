@@ -795,11 +795,19 @@ def _patch_canvas_image_to_url() -> None:
         return
     if hasattr(_img, "image_to_url"):
         return
-    import base64
-    from PIL import Image as _PILImage
 
     def image_to_url(image, width=-1, clamp=False, channels="RGB",
                      output_format="PNG", image_id=""):
+        # 1순위: 새 streamlit 함수에 위임 → 정식 /media/ URL(캔버스 프런트가 로드).
+        try:
+            from streamlit.elements.lib.image_utils import image_to_url as _new
+            from streamlit.elements.lib.layout_utils import LayoutConfig
+            return _new(image, LayoutConfig(), clamp, channels, output_format, image_id)
+        except Exception:
+            pass
+        # 폴백: 데이터 URI(런타임 밖 등)
+        import base64
+        from PIL import Image as _PILImage
         im = image
         if not isinstance(im, _PILImage.Image):
             try:
