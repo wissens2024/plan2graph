@@ -1117,42 +1117,90 @@ def render_editor() -> None:
             panel.info(f"노드 {G.number_of_nodes()} · 엣지 {G.number_of_edges()} "
                        f"(문 {ndd}·수동 {G.number_of_edges() - ndd})")
     elif tool.startswith("🏷"):
-        with canvas_col:
-            st.image(bg)
-        # 자동 역할 제안(상단)
+        buf = bundle.setdefault("clk", {}).setdefault(
+            unit_id, {"pts": [], "last": None, "sel": None})
+        rsel = buf.get("role_sel")
+        if rsel is not None and rsel not in stt.nodes:
+            rsel = buf["role_sel"] = None
+        # 캔버스 — 동그라미(노드) 클릭으로 선택, 선택 노드 빨강 강조(연결과 동일 패턴)
+        if _img_coords is not None:
+            with canvas_col:
+                disp = bake_background(dr, png, stt, highlight=rsel)[0]
+                val = _img_coords(disp, key=f"ic_{unit_id}_role")
+            if (val and val.get("x") is not None
+                    and (val["x"], val["y"]) != buf.get("role_last")):
+                buf["role_last"] = (val["x"], val["y"])
+                node = _nearest_node(stt, _cv_to_orig(val["x"], val["y"], mp))
+                if node is not None:
+                    buf["role_sel"] = node
+                    buf["rs_synced"] = None          # 상단 selectbox 재동기화 유도
+                _rerun(st)
+        else:
+            with canvas_col:
+                st.image(bg)
+        # 상단: 선택 노드 역할 변경/삭제 (연결의 '선택 삭제'처럼). 역할변경은 on_change
+        # 콜백으로 — selectbox key 함정(외부 변경 되돌림) 회피. stt는 session_state 영속.
+        top_key = f"rtop_{unit_id}"
+        if rsel is not None:
+            n = stt.nodes[rsel]
+            if buf.get("rs_synced") != rsel:         # 선택 바뀜 → 위젯을 현재 역할로 동기화
+                st.session_state[top_key] = n.role
+                buf["rs_synced"] = rsel
+
+            def _apply_top_role(_nid=rsel):
+                set_role(stt, _nid, st.session_state[top_key])
+                write_svg(stt, dr)
+            head = f"**선택: {_disp_id(rsel)} · {n.role}**"
+            if n.area_px:
+                head += f" · {_area_label(n.area_px, dr)}"
+            panel.markdown(head)
+            cc1, cc2 = panel.columns([3, 1], vertical_alignment="bottom")
+            cc1.selectbox("역할 변경", ROLES, key=top_key, on_change=_apply_top_role)
+            if cc2.button("🗑", key=f"rtopdel_{unit_id}", use_container_width=True,
+                          help="이 노드 삭제(도형 자체가 틀렸을 때)"):
+                remove_node(stt, rsel)
+                buf["role_sel"] = None
+                write_svg(stt, dr)
+                _rerun(st)
+            panel.markdown("---")
+        else:
+            panel.info("도면의 **동그라미(노드) 클릭** 또는 아래 목록에서 선택 → 위에서 역할 변경")
+        # 자동 역할 제안
         sug = suggest_roles(stt, dr)
         if sug:
             if panel.button(f"🤖 자동 역할 제안 적용 ({len(sug)}개)",
                             use_container_width=True):
                 for k, v in sug.items():
                     set_role(stt, k, v)
+                buf["rs_synced"] = None              # 선택노드 역할 바뀌었을 수 있음
                 write_svg(stt, dr)
                 _rerun(st)
             panel.caption("제안(이름·기구·면적): "
                           + ", ".join(f"{_disp_id(k)}→{v}" for k, v in list(sug.items())[:10]))
         else:
             panel.caption("자동 제안 없음(신호와 이미 일치 / 신호 부족)")
-        # 노드 목록(연결처럼) — 행마다 역할 변경 / 🗑 삭제. id는 도면 동그라미 숫자와 일치.
-        panel.caption(f"노드 {len(stt.nodes)}개 — 역할 바꾸거나 🗑로 삭제(도형이 틀리면 삭제 후 다시 그리기):")
+        # 노드 목록 — 클릭해 선택(위에서 역할변경) / 🗑 삭제. id=도면 동그라미 숫자.
+        panel.caption(f"노드 {len(stt.nodes)}개 — 클릭해 선택(위에서 역할변경) / 🗑 삭제:")
         for nid in list(stt.nodes):
             n = stt.nodes[nid]
-            lab = _disp_id(nid)
+            lab = f"{_disp_id(nid)} · {n.role}"
             if n.area_px:
                 lab += f" · {_area_label(n.area_px, dr)}"
             if n.fixtures:
                 lab += f" · 🛁{','.join(n.fixtures)}"
-            c1, c2 = panel.columns([4, 1], vertical_alignment="bottom")
-            newr = c1.selectbox(
-                lab, ROLES,
-                index=ROLES.index(n.role) if n.role in ROLES else ROLES.index("기타"),
-                key=f"rl_{unit_id}_{nid}")
-            if newr != n.role:
-                set_role(stt, nid, newr)
-                write_svg(stt, dr)
+            is_sel = (nid == rsel)
+            c1, c2 = panel.columns([5, 1], vertical_alignment="center")
+            if c1.button(("🔹 " if is_sel else "") + lab,
+                         key=f"rpick_{unit_id}_{nid}", use_container_width=True,
+                         type="primary" if is_sel else "secondary"):
+                buf["role_sel"] = nid
+                buf["rs_synced"] = None
                 _rerun(st)
             if c2.button("🗑", key=f"rd_{unit_id}_{nid}", use_container_width=True,
-                         help="이 노드 삭제 — 도형 자체가 틀렸을 때(삭제 후 ✒️로 다시 그리기)"):
+                         help="이 노드 삭제 — 도형이 틀렸을 때(삭제 후 ✒️로 다시 그리기)"):
                 remove_node(stt, nid)
+                if rsel == nid:
+                    buf["role_sel"] = None
                 write_svg(stt, dr)
                 _rerun(st)
     elif tool.startswith("📏"):                            # 면적보정(scale)
