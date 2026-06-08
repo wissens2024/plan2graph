@@ -1189,7 +1189,6 @@ def render_editor() -> None:
             "id": _disp_id(nid),
             "역할": n.role,
             "면적": _area_label(n.area_px, dr) if n.area_px else "",
-            "기구": ",".join(n.fixtures) if n.fixtures else "",
         } for nid, n in stt.nodes.items()]
         panel.dataframe(pd.DataFrame(rrows), hide_index=True,
                         use_container_width=True,
