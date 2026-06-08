@@ -31,6 +31,46 @@ def _bfs_order(n, edges, area, ent):
     return order
 
 
+def role_area_priors(version="g0"):
+    """g0 실측에서 역할별 정규화 면적 중앙값 — 생성 시 방 크기 prior."""
+    import json
+    import statistics
+    import config
+    f = config.DATA_DIR / "releases" / version / "geom.jsonl"
+    acc = collections.defaultdict(list)
+    if f.exists():
+        for ln in f.read_text(encoding="utf-8").splitlines():
+            if not ln.strip():
+                continue
+            rooms = json.loads(ln).get("rooms", {})
+            amax = max((r.get("area_px", 0) or 0) for r in rooms.values()) or 1
+            for r in rooms.values():
+                acc[r["role"]].append((r.get("area_px", 0) or 0) / amax)
+    return {role: statistics.median(v) for role, v in acc.items() if v}
+
+
+_NWIN = {"거실": 1, "안방": 1, "침실": 1, "주방": 1}
+
+
+def program_to_rooms(program: dict, priors: dict):
+    """program {역할:개수} → rooms [(role, area_frac, nwin)] (g0 면적 prior)."""
+    rooms = []
+    for role, cnt in program.items():
+        for _ in range(int(cnt)):
+            rooms.append((role, priors.get(role, 0.05), _NWIN.get(role, 0)))
+    return rooms
+
+
+def convention_edges(rooms):
+    """관례 인접: 현관↔거실, 거실↔나머지(거실 허브 star). 인접 구조 시드."""
+    roles = [r[0] for r in rooms]
+    if not roles:
+        return []
+    hub = next((i for i, r in enumerate(roles) if r == "거실"), 0)
+    edges = [(hub, i) for i in range(len(roles)) if i != hub]
+    return edges
+
+
 def correct(rooms, edges, width=12.0, height=9.0):
     """rooms:[(role, area_frac, nwin)], edges:[(i,j)] → 겹침없는 박스 [cx,cy,w,h](0..1)."""
     n = len(rooms)

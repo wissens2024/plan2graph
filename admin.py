@@ -1384,6 +1384,36 @@ if which.startswith("🏗"):
             except Exception as e:  # noqa: BLE001
                 st.error(f"생성 실패: {e}")
 
+    # ── 3.5) 기하 도면 생성 (geo · 자기교정) — NL→방+g0면적→자기교정→도면 ──
+    st.header("🏠 기하 도면 생성 (geo · 자기교정)")
+    st.caption("NL → 방 구성 → **g0 실측 면적** → **자기교정(겹침0·외곽채움)** → 도면. "
+               "위상 모델 없이도 동작(관례 인접=거실 허브). 본 파이프라인: 위상→기하→검증→자기교정.")
+    gtext2 = st.text_input("요구(자연어)", "신혼부부 아파트 침실2 욕실1 거실 주방", key="geo_text")
+    if st.button("🏠 기하 도면 생성"):
+        try:
+            from plan2graph import text2graph as _t2g, geom_correct as _gc, geom_gen as _gg
+
+            @st.cache_data(show_spinner="g0 실측 면적 prior 집계(최초 1회)...")
+            def _priors():
+                return _gc.role_area_priors("g0")
+            prog = _t2g.parse(gtext2)["program"]
+            st.caption(f"방 구성(program): {prog}")
+            rooms = _gc.program_to_rooms(prog, _priors())
+            edges = _gc.convention_edges(rooms)
+            boxes = _gc.correct(rooms, edges)
+            v = _gc.verify(rooms, edges, boxes)
+            st.image(_gg.render(rooms, boxes),
+                     caption=f"자기교정 도면 — 방 {len(rooms)} · 인접실현 "
+                             f"{v['adj_rate']*100:.0f}% · 겹침 {v['n_overlap']}")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("방 수", len(rooms))
+            c2.metric("인접 실현율", f"{v['adj_rate']*100:.0f}%")
+            c3.metric("겹침", v["n_overlap"])
+            st.caption("g0(실측 21,613세대) 면적 prior + 관례 인접 → squarified 자기교정. "
+                       "인접 미실현 쌍은 위상 라우팅 대상(2층 자기교정).")
+        except Exception as e:  # noqa: BLE001
+            st.error(f"기하 생성 실패: {e}")
+
     # ── 4) 도면(geometry) 방법 — 위상→좌표 (로드맵) ──
     st.header("4. 도면(geometry) 방법 — 위상→좌표 (로드맵)")
     st.caption("위상 → 좌표 도면을 만드는 방법 후보. {위상 모델} × {도면 방법} × {정제 루프} 중 *최고 도면* 탐색.")
