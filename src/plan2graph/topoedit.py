@@ -1094,9 +1094,13 @@ def render_editor() -> None:
         states.pop(unit_id, None)
         _rerun(st)
 
-    # ── 도구(가로 라디오) — 이모지 없음, 순서: 보기·영역그리기·역할·연결·면적보정 ──
-    tool = st.radio("도구", ["보기", "영역그리기", "역할", "연결", "면적보정"],
-                    horizontal=True, key=f"tool_{unit_id}")
+    # ── 도구(가로 라디오, 이모지X). 면적보정은 축척 없을 때만 노출(있으면 면적 자동) ──
+    _tools = ["보기", "영역그리기", "역할", "연결"]
+    if not getattr(dr, "scale", None):
+        _tools.append("면적보정")
+    if st.session_state.get(f"tool_{unit_id}") not in _tools:
+        st.session_state[f"tool_{unit_id}"] = "보기"
+    tool = st.radio("도구", _tools, horizontal=True, key=f"tool_{unit_id}")
 
     bg, mp_xy, (dw, dh) = bake_background(dr, png, stt)
     if bg is None:
