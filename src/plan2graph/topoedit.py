@@ -1203,8 +1203,9 @@ def render_editor() -> None:
         panel.caption(
             f"현재 축척 {round(cur_mm, 2) if cur_mm else '미설정'} mm/px · "
             f"**전체 면적 {f'{_tot_m2:.0f}㎡' if _tot_m2 else f'{_tot:.0f}px²'}**")
-        panel.markdown("**실제 길이로 맞추기**\n\n실제 길이를 아는 선(예: 거실 가로벽, "
-                       "현관문 폭)의 **양 끝 두 점**을 도면에서 클릭 → 실제 길이(m) 입력 → 적용.")
+        panel.markdown("**실제 길이로 맞추기**\n\n도면 치수가 적힌 선(예: 거실 긴 벽)의 "
+                       "**양 끝 두 점**을 클릭 → 도면 치수(mm) 그대로 입력 → 적용.\n\n"
+                       "정확하려면 **긴 선**을 쓰세요(짧으면 클릭 오차가 크게 증폭).")
         if _img_coords is None:
             with canvas_col:
                 st.image(bg)
@@ -1226,21 +1227,26 @@ def render_editor() -> None:
             if len(spts) == 2:
                 px = math.dist(spts[0], spts[1])
                 panel.caption(f"두 점 거리 = **{px:.0f} px**")
-                real_m = panel.number_input("이 선의 실제 길이 (m)", min_value=0.0,
-                                            value=0.0, step=0.1, format="%.2f",
-                                            key=f"rlen_{unit_id}")
+                real_mm = panel.number_input(
+                    "도면 치수(mm) — 적힌 숫자 그대로 (예: 1500)", min_value=0.0,
+                    value=0.0, step=10.0, format="%.0f", key=f"rlen_{unit_id}")
+                if real_mm > 0 and px > 0:          # 적용 전 결과 미리보기
+                    _pm = real_mm / px
+                    _pt = _tot * (_pm / 1000.0) ** 2
+                    panel.caption(f"→ 적용 시: 축척 **{_pm:.2f} mm/px** · "
+                                  f"전체 면적 **{_pt:.0f}㎡** (맞는지 확인 후 적용)")
                 a1, a2 = panel.columns(2)
                 if a1.button("적용", use_container_width=True, key=f"asc_{unit_id}"):
-                    if real_m > 0 and px > 0:
+                    if real_mm > 0 and px > 0:
                         from plan2graph import scale_ocr
-                        mm_per_px = real_m * 1000.0 / px
+                        mm_per_px = real_mm / px
                         scale_ocr.update_scale_row(rp.plan_id, mm_per_px, "ok", "manual")
                         bundle["dr"].scale = mm_per_px / 1000.0
                         spts.clear()
                         st.toast(f"축척 {mm_per_px:.2f} mm/px 저장")
                         _rerun(st)
                     else:
-                        st.toast("실제 길이(m)를 입력하세요")
+                        st.toast("도면 치수(mm)를 입력하세요")
                 if a2.button("점 초기화", use_container_width=True, key=f"sclr_{unit_id}"):
                     spts.clear()
                     _rerun(st)
