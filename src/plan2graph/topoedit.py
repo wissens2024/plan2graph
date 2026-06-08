@@ -1182,17 +1182,18 @@ def render_editor() -> None:
         else:
             panel.caption("자동 제안 없음(신호와 이미 일치 / 신호 부족)")
         # 노드 목록 — 읽기전용 정보 테이블(우측 패널). 선택·변경은 도면 클릭→위에서.
+        #   높이는 행수에 맞춰 끝까지(내부 스크롤 없음).
         import pandas as pd
         panel.caption(f"노드 {len(stt.nodes)}개 — 도면에서 클릭해 선택 → 위에서 역할변경/삭제")
         rrows = [{
-            "선택": "▶" if nid == rsel else "",
             "id": _disp_id(nid),
             "역할": n.role,
             "면적": _area_label(n.area_px, dr) if n.area_px else "",
             "기구": ",".join(n.fixtures) if n.fixtures else "",
         } for nid, n in stt.nodes.items()]
         panel.dataframe(pd.DataFrame(rrows), hide_index=True,
-                        use_container_width=True)
+                        use_container_width=True,
+                        height=(len(rrows) + 1) * 35 + 3)
     elif tool == "면적보정":                                # 시트 축척(scale) 보정 — 1회
         with canvas_col:
             st.image(bg)
@@ -1296,9 +1297,7 @@ def render_editor() -> None:
                               f"위에서 삭제 (문=파랑 · 트임=주황)")
                 erows = []
                 for e in stt.edges:
-                    is_sel = esel is not None and {e["a"], e["b"]} == set(esel)
                     erows.append({
-                        "선택": "▶" if is_sel else "",
                         "A": f"{_disp_id(e['a'])} {stt.nodes[e['a']].role}",
                         "B": f"{_disp_id(e['b'])} {stt.nodes[e['b']].role}",
                         "종류": _VIA_LAB.get(e.get("via"), str(e.get("via") or "")),
@@ -1306,7 +1305,8 @@ def render_editor() -> None:
                 sty = pd.DataFrame(erows).style.map(   # 종류 글자색=도면 선색
                     lambda v: "color:#1565C0" if v == "문"
                     else ("color:#F2A900" if v == "트임" else ""), subset=["종류"])
-                panel.dataframe(sty, hide_index=True, use_container_width=True)
+                panel.dataframe(sty, hide_index=True, use_container_width=True,
+                                height=(len(erows) + 1) * 35 + 3)
         else:                                              # 영역 그리기(폴리곤)
             cv_base = panel.selectbox("그릴 공간 종류(=역할)", DRAW_BASES, key="cbase")
             panel.caption(f"여기서 고른 종류가 그대로 **역할**이 됨(나중에 역할에서 변경).\n\n"
