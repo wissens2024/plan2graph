@@ -1193,9 +1193,8 @@ def render_editor() -> None:
         panel.dataframe(pd.DataFrame(rrows), hide_index=True,
                         use_container_width=True,
                         height=(len(rrows) + 1) * 35 + 3)
-    elif tool == "면적보정":                                # 시트 축척(scale) 보정 — 1회
-        with canvas_col:
-            st.image(bg)
+    elif tool == "면적보정":                                # 축척 — 실제 길이로 보정(직관적)
+        import math
         info = sheet_scale_info(rp.plan_id)
         cur_mm = ((dr.scale * 1000) if getattr(dr, "scale", None)
                   else (info["mm_per_px"] if info else None))
@@ -1203,31 +1202,50 @@ def render_editor() -> None:
         _tot_m2 = (_tot * dr.scale * dr.scale) if getattr(dr, "scale", None) else None
         panel.caption(
             f"현재 축척 {round(cur_mm, 2) if cur_mm else '미설정'} mm/px · "
-            f"**전체 면적 {f'{_tot_m2:.0f}㎡' if _tot_m2 else f'{_tot:.0f}px²'}**\n\n"
-            f"이 전체 면적이 실제와 다르면 아래에서 mm/px를 조정(시트당 1회). "
-            f"자동검출 {info['confidence'] if info else '없음'}")
-        if panel.button("OCR 추정", use_container_width=True, key=f"ocr_{unit_id}"):
-            import types
-            from plan2graph import scale_ocr
-            with st.spinner("치수선 OCR 추정 중..."):
-                st.session_state[f"est_{unit_id}"] = scale_ocr.estimate_scale(
-                    types.SimpleNamespace(png_bytes=png, dr=dr))
-        est = st.session_state.get(f"est_{unit_id}")
-        if est:
-            panel.caption(f"OCR 추정 {est.get('scale_mm_per_px')} mm/px · "
-                          f"{est.get('confidence')} · 침실 {est.get('bedroom_med_m2')}㎡ "
-                          f"— 맞으면 아래에 넣고 적용")
-        new_mm = panel.number_input("mm/px 직접입력", min_value=0.0,
-                                    value=float(cur_mm) if cur_mm else 0.0,
-                                    step=0.1, format="%.4f", key=f"mm_{unit_id}")
-        if panel.button("적용", use_container_width=True, key=f"asc_{unit_id}"):
-            from plan2graph import scale_ocr
-            ok = new_mm > 0
-            scale_ocr.update_scale_row(rp.plan_id, new_mm if ok else None,
-                                       "ok" if ok else "quarantined", "manual")
-            bundle["dr"].scale = (new_mm / 1000.0) if ok else None
-            st.toast("축척 저장")
-            _rerun(st)
+            f"**전체 면적 {f'{_tot_m2:.0f}㎡' if _tot_m2 else f'{_tot:.0f}px²'}**")
+        panel.markdown("**실제 길이로 맞추기**\n\n실제 길이를 아는 선(예: 거실 가로벽, "
+                       "현관문 폭)의 **양 끝 두 점**을 도면에서 클릭 → 실제 길이(m) 입력 → 적용.")
+        if _img_coords is None:
+            with canvas_col:
+                st.image(bg)
+            panel.warning("이미지 클릭 컴포넌트 미설치 — 길이 보정 불가")
+        else:
+            sbuf = bundle.setdefault("clk", {}).setdefault(
+                unit_id, {"pts": [], "last": None, "sel": None})
+            spts = sbuf.setdefault("scale_pts", [])
+            with canvas_col:
+                disp = _overlay_clicks(bg, spts, mp, "polygon")
+                val = _img_coords(disp, key=f"ic_{unit_id}_scale")
+            if (val and val.get("x") is not None
+                    and (val["x"], val["y"]) != sbuf.get("scale_last")):
+                sbuf["scale_last"] = (val["x"], val["y"])
+                if len(spts) >= 2:                 # 3번째 클릭이면 새로 시작
+                    spts.clear()
+                spts.append(_cv_to_orig(val["x"], val["y"], mp))
+                _rerun(st)
+            if len(spts) == 2:
+                px = math.dist(spts[0], spts[1])
+                panel.caption(f"두 점 거리 = **{px:.0f} px**")
+                real_m = panel.number_input("이 선의 실제 길이 (m)", min_value=0.0,
+                                            value=0.0, step=0.1, format="%.2f",
+                                            key=f"rlen_{unit_id}")
+                a1, a2 = panel.columns(2)
+                if a1.button("적용", use_container_width=True, key=f"asc_{unit_id}"):
+                    if real_m > 0 and px > 0:
+                        from plan2graph import scale_ocr
+                        mm_per_px = real_m * 1000.0 / px
+                        scale_ocr.update_scale_row(rp.plan_id, mm_per_px, "ok", "manual")
+                        bundle["dr"].scale = mm_per_px / 1000.0
+                        spts.clear()
+                        st.toast(f"축척 {mm_per_px:.2f} mm/px 저장")
+                        _rerun(st)
+                    else:
+                        st.toast("실제 길이(m)를 입력하세요")
+                if a2.button("점 초기화", use_container_width=True, key=f"sclr_{unit_id}"):
+                    spts.clear()
+                    _rerun(st)
+            else:
+                panel.caption(f"클릭한 점 {len(spts)}/2")
     else:
         if _img_coords is None:
             st.warning("streamlit-image-coordinates 미설치")
