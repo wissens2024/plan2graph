@@ -1030,11 +1030,11 @@ def render_editor() -> None:
     except Exception:  # noqa: BLE001
         _img_coords = None
 
-    st.title("✏️ 위상 편집")
+    st.title("위상 편집")
     st.caption("원본 위에 영역(반투명 박스)을 그려 완전 기하 → 위상은 결정적 추출. "
                "그리기·연결·역할은 **자동 저장**. (좌측 앱 메뉴는 접어도 됨)")
 
-    with st.expander("⚙ 데이터 소스", expanded=False):
+    with st.expander("데이터 소스", expanded=False):
         src = st.text_input("라벨 디렉터리",
                             value=str(config.DATA_DIR / "raw" / "linked_demo"))
     try:
@@ -1086,58 +1086,47 @@ def render_editor() -> None:
         t3.metric("방·연결·엣지 · 면적", f"{nroom}·{nconn}·{len(stt.edges)} · {tot_m2:.0f}㎡")
     else:
         t3.metric("방 · 연결공간 · 엣지", f"{nroom} · {nconn} · {len(stt.edges)}")
-    if t4.button("💾 검증완료", use_container_width=True):
+    if t4.button("검증완료", use_container_width=True):
         save_svg(stt, dr, status="검증완료", curator="admin")
         st.toast("검증완료로 저장")
-    if t4.button("🗑 처음부터", use_container_width=True):
+    if t4.button("처음부터", use_container_width=True):
         delete_record(unit_id)
         states.pop(unit_id, None)
         _rerun(st)
 
-    # ── 축척(scale) 상태 — 시트당 1개·대부분 자동. 정상이면 한 줄, 없/의심일 때만 보정 ──
+    # ── 축척(scale) 상태 — 시트당 1개·대부분 자동. 보정은 [면적보정] 도구에서 ──
     info = sheet_scale_info(rp.plan_id)
     cur_mm = ((dr.scale * 1000) if getattr(dr, "scale", None)
               else (info["mm_per_px"] if info else None))
     bed = (info.get("bedroom_med_m2") if info else None)
     has_scale = bool(getattr(dr, "scale", None))
     suspicious = (not has_scale) or (bed is not None and not (4.0 <= bed <= 40.0))
-    if not suspicious:
-        st.caption(f"✅ 축척 **{round(cur_mm, 2)} mm/px** · 면적 ㎡ 적용중"
+    if has_scale and not suspicious:
+        st.caption(f"축척 {round(cur_mm, 2)} mm/px · 면적 ㎡ 적용중"
                    + (f" · 침실중앙 {bed:.0f}㎡" if bed else ""))
+    elif has_scale:
+        st.caption(f"축척 {round(cur_mm, 2)} mm/px · 침실면적 이상({bed:.0f}㎡) — "
+                   f"면적보정에서 확인")
     else:
-        ss1, ss2 = st.columns([5, 1])
-        if has_scale:
-            ss1.caption(f"⚠ 축척 {round(cur_mm, 2)} mm/px — 침실면적이 이상({bed:.0f}㎡)."
-                        f" 우측 [보정]에서 확인")
-        else:
-            ss1.caption("⚠ 축척 없음 — 면적이 px²로 표시됨. 우측 [보정]에서 1회 설정")
-        with ss2.popover("📏 보정", use_container_width=True):
-            st.caption(f"시트당 1회. 자동검출: {info['confidence'] if info else '없음'}")
-            if st.button("📍 OCR 추정", key=f"ocr_{unit_id}", use_container_width=True):
-                import types
-                from plan2graph import scale_ocr
-                with st.spinner("치수선 OCR 추정 중..."):
-                    st.session_state[f"est_{unit_id}"] = scale_ocr.estimate_scale(
-                        types.SimpleNamespace(png_bytes=png, dr=dr))
-            est = st.session_state.get(f"est_{unit_id}")
-            if est:
-                st.caption(f"OCR 추정 **{est.get('scale_mm_per_px')} mm/px** · "
-                           f"{est.get('confidence')} · 침실 {est.get('bedroom_med_m2')}㎡")
-            new_mm = st.number_input("mm/px 직접입력", min_value=0.0,
-                                     value=float(cur_mm) if cur_mm else 0.0,
-                                     step=0.1, format="%.4f", key=f"mm_{unit_id}")
-            if st.button("적용", key=f"asc_{unit_id}", use_container_width=True):
-                from plan2graph import scale_ocr
-                ok = new_mm > 0
-                scale_ocr.update_scale_row(rp.plan_id, new_mm if ok else None,
-                                           "ok" if ok else "quarantined", "manual")
-                bundle["dr"].scale = (new_mm / 1000.0) if ok else None
-                st.toast("축척 저장")
-                _rerun(st)
+        st.caption("축척 미설정 · 면적 px² — 면적보정에서 1회 설정")
 
-    # ── 도구(가로 라디오) — 상단 ──
-    tool = st.radio("도구", ["👁 보기", "✒️ 영역 그리기", "🔗 연결", "🏷 역할"],
-                    horizontal=True, key=f"tool_{unit_id}")
+    # ── 도구(버튼 행) — 면적보정은 축척 정상이면 비활성 ──
+    TOOLS = ["보기", "영역그리기", "역할", "연결", "면적보정"]
+    tkey = f"tool_{unit_id}"
+    if st.session_state.get(tkey) not in TOOLS:
+        st.session_state[tkey] = "보기"
+    tcols = st.columns(len(TOOLS))
+    for i, tname in enumerate(TOOLS):
+        disabled = (tname == "면적보정" and not suspicious)
+        if tcols[i].button(
+                tname, key=f"tb_{unit_id}_{tname}", use_container_width=True,
+                disabled=disabled,
+                type="primary" if st.session_state[tkey] == tname else "secondary"):
+            st.session_state[tkey] = tname
+            _rerun(st)
+    tool = st.session_state[tkey]
+    if tool == "면적보정" and not suspicious:     # 비활성인데 선택돼 있던 경우
+        tool = st.session_state[tkey] = "보기"
 
     bg, mp_xy, (dw, dh) = bake_background(dr, png, stt)
     if bg is None:
@@ -1148,16 +1137,16 @@ def render_editor() -> None:
     # ── 도면(좌, 크게) · 컨트롤(우 패널) ──
     canvas_col, panel = st.columns([4, 1])
 
-    if tool.startswith("👁"):
+    if tool == "보기":
         with canvas_col:
             st.image(bg)
-        if panel.button("🔎 위상 추출 미리보기", use_container_width=True):
+        if panel.button("위상 추출 미리보기", use_container_width=True):
             regions, doors, links = parse_svg(to_svg(stt, dr))
             G = extract_topology(regions, doors, links)
             ndd = sum(1 for *_x, v in G.edges(data="via") if v == "door")
             panel.info(f"노드 {G.number_of_nodes()} · 엣지 {G.number_of_edges()} "
                        f"(문 {ndd}·수동 {G.number_of_edges() - ndd})")
-    elif tool.startswith("🏷"):
+    elif tool == "역할":
         buf = bundle.setdefault("clk", {}).setdefault(
             unit_id, {"pts": [], "last": None, "sel": None})
         rsel = buf.get("role_sel")
@@ -1197,7 +1186,7 @@ def render_editor() -> None:
             panel.markdown(head)
             cc1, cc2 = panel.columns([3, 1], vertical_alignment="bottom")
             cc1.selectbox("역할 변경", ROLES, key=top_key, on_change=_apply_top_role)
-            if cc2.button("🗑", key=f"rtopdel_{unit_id}", use_container_width=True,
+            if cc2.button("삭제", key=f"rtopdel_{unit_id}", use_container_width=True,
                           help="이 노드 삭제(도형 자체가 틀렸을 때)"):
                 remove_node(stt, rsel)
                 buf["role_sel"] = None
@@ -1209,7 +1198,7 @@ def render_editor() -> None:
         # 자동 역할 제안
         sug = suggest_roles(stt, dr)
         if sug:
-            if panel.button(f"🤖 자동 역할 제안 적용 ({len(sug)}개)",
+            if panel.button(f"자동 역할 제안 적용 ({len(sug)}개)",
                             use_container_width=True):
                 for k, v in sug.items():
                     set_role(stt, k, v)
@@ -1220,11 +1209,11 @@ def render_editor() -> None:
                           + ", ".join(f"{_disp_id(k)}→{v}" for k, v in list(sug.items())[:10]))
         else:
             panel.caption("자동 제안 없음(신호와 이미 일치 / 신호 부족)")
-        # 노드 목록 — 읽기전용 정보 테이블(선택·변경·삭제는 도면 클릭→위에서). 🔹=선택중.
+        # 노드 목록 — 읽기전용 정보 테이블(선택·변경·삭제는 도면 클릭→위에서). ▶=선택중.
         import pandas as pd
         panel.caption(f"노드 {len(stt.nodes)}개 — 도면에서 클릭해 선택 → 위에서 역할변경/삭제")
         rrows = [{
-            "": "🔹" if nid == rsel else "",
+            "": "▶" if nid == rsel else "",
             "id": _disp_id(nid),
             "역할": n.role,
             "면적": _area_label(n.area_px, dr) if n.area_px else "",
@@ -1232,13 +1221,40 @@ def render_editor() -> None:
         } for nid, n in stt.nodes.items()]
         panel.dataframe(pd.DataFrame(rrows), hide_index=True,
                         use_container_width=True)
+    elif tool == "면적보정":                                # 시트 축척(scale) 보정 — 1회
+        with canvas_col:
+            st.image(bg)
+        panel.caption(f"시트당 1회 설정. 자동검출: {info['confidence'] if info else '없음'}"
+                      + (f" · 침실중앙 {bed:.0f}㎡" if bed else ""))
+        if panel.button("OCR 추정", use_container_width=True, key=f"ocr_{unit_id}"):
+            import types
+            from plan2graph import scale_ocr
+            with st.spinner("치수선 OCR 추정 중..."):
+                st.session_state[f"est_{unit_id}"] = scale_ocr.estimate_scale(
+                    types.SimpleNamespace(png_bytes=png, dr=dr))
+        est = st.session_state.get(f"est_{unit_id}")
+        if est:
+            panel.caption(f"OCR 추정 {est.get('scale_mm_per_px')} mm/px · "
+                          f"{est.get('confidence')} · 침실 {est.get('bedroom_med_m2')}㎡ "
+                          f"— 맞으면 아래에 넣고 적용")
+        new_mm = panel.number_input("mm/px 직접입력", min_value=0.0,
+                                    value=float(cur_mm) if cur_mm else 0.0,
+                                    step=0.1, format="%.4f", key=f"mm_{unit_id}")
+        if panel.button("적용", use_container_width=True, key=f"asc_{unit_id}"):
+            from plan2graph import scale_ocr
+            ok = new_mm > 0
+            scale_ocr.update_scale_row(rp.plan_id, new_mm if ok else None,
+                                       "ok" if ok else "quarantined", "manual")
+            bundle["dr"].scale = (new_mm / 1000.0) if ok else None
+            st.toast("축척 저장")
+            _rerun(st)
     else:
         if _img_coords is None:
             st.warning("streamlit-image-coordinates 미설치")
             return
         buf = bundle.setdefault("clk", {}).setdefault(
             unit_id, {"pts": [], "last": None, "sel": None})
-        if tool.startswith("🔗"):                          # 연결: 노드 → 노드(종류 자동조인)
+        if tool == "연결":                                 # 연결: 노드 → 노드(종류 자동조인)
             sel = buf.get("sel")
             if sel is not None and sel in stt.nodes:
                 panel.info(f"**{_disp_id(sel)} {stt.nodes[sel].role}** 선택됨 → "
@@ -1285,7 +1301,7 @@ def render_editor() -> None:
                 if esel:                            # 선 클릭으로 선택된 연결 → 큰 삭제 버튼
                     a, b = esel
                     if panel.button(
-                            f"🗑 선택 연결 삭제: {_disp_id(a)} {stt.nodes[a].role} – "
+                            f"선택 연결 삭제: {_disp_id(a)} {stt.nodes[a].role} – "
                             f"{_disp_id(b)} {stt.nodes[b].role}",
                             type="primary", use_container_width=True,
                             key=f"delsel_{unit_id}"):
@@ -1293,16 +1309,16 @@ def render_editor() -> None:
                         write_svg(stt, dr)
                         buf["edge_sel"] = None
                         _rerun(st)
-                # 읽기전용 정보 테이블(선택·삭제는 도면서 선 클릭→위에서). 🔹=선택중, 색=종류.
+                # 읽기전용 정보 테이블(선택·삭제는 도면서 선 클릭→위에서). ▶=선택중, 색=종류.
                 import pandas as pd
                 _VIA_LAB = {"door": "문", "open": "트임"}
                 panel.caption(f"연결 {len(stt.edges)}개 — 도면에서 선을 클릭해 선택 → "
-                              f"위에서 삭제 (🔵문 · 🟠트임)")
+                              f"위에서 삭제 (문=파랑 · 트임=주황)")
                 erows = []
                 for e in stt.edges:
                     is_sel = esel is not None and {e["a"], e["b"]} == set(esel)
                     erows.append({
-                        "": "🔹" if is_sel else "",
+                        "": "▶" if is_sel else "",
                         "A": f"{_disp_id(e['a'])} {stt.nodes[e['a']].role}",
                         "B": f"{_disp_id(e['b'])} {stt.nodes[e['b']].role}",
                         "종류": _VIA_LAB.get(e.get("via"), str(e.get("via") or "")),
@@ -1311,10 +1327,10 @@ def render_editor() -> None:
                     lambda v: "color:#1565C0" if v == "문"
                     else ("color:#F2A900" if v == "트임" else ""), subset=["종류"])
                 panel.dataframe(sty, hide_index=True, use_container_width=True)
-        else:                                              # ✒️ 영역 그리기(폴리곤)
+        else:                                              # 영역 그리기(폴리곤)
             cv_base = panel.selectbox("그릴 공간 종류(=역할)", DRAW_BASES, key="cbase")
-            panel.caption(f"여기서 고른 종류가 그대로 **역할**이 됨(나중에 🏷에서 변경).\n\n"
-                          f"영역 모서리들 클릭 후 **[✓ 완성]** (사각형=네 모서리)"
+            panel.caption(f"여기서 고른 종류가 그대로 **역할**이 됨(나중에 역할에서 변경).\n\n"
+                          f"영역 모서리들 클릭 후 **[완성]** (사각형=네 모서리)"
                           f"\n\n클릭점 {len(buf['pts'])}개")
             with canvas_col:
                 disp = _overlay_clicks(bg, buf["pts"], mp, "polygon")
@@ -1323,13 +1339,13 @@ def render_editor() -> None:
                 buf["last"] = (val["x"], val["y"])
                 buf["pts"].append(_cv_to_orig(val["x"], val["y"], mp))
                 _rerun(st)
-            if panel.button("✓ 완성", type="primary", use_container_width=True):
+            if panel.button("완성", type="primary", use_container_width=True):
                 if len(buf["pts"]) >= 3:
                     add_drawn_region(stt, cv_base, buf["pts"], dr)
                     write_svg(stt, dr)
                 buf["pts"] = []
                 _rerun(st)
-            if panel.button("↩ 클릭 취소", use_container_width=True):
+            if panel.button("클릭 취소", use_container_width=True):
                 buf["pts"] = []
                 _rerun(st)
 
