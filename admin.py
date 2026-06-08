@@ -423,7 +423,7 @@ st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
 _MENU = ["🧮 종합 현황", "✏️ 위상 편집",
          "🏢 AI-Hub 검수",
          "🏠 CubiCasa 검수", "📐 RPLAN 검수",
-         "📏 scale 보정", "📜 법령 DB",
+         "📜 법령 DB",
          "📈 결과 대시보드",
          "🏗 도면 생성"]
 try:  # 동그라미 없는 클릭형 메뉴(streamlit-option-menu). 미설치 시 라디오로 폴백.
