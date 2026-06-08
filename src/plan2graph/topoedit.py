@@ -1094,43 +1094,9 @@ def render_editor() -> None:
         states.pop(unit_id, None)
         _rerun(st)
 
-    # ── 축척(scale) 상태 — 시트당 1개·대부분 자동. 보정은 [면적보정] 도구에서 ──
-    info = sheet_scale_info(rp.plan_id)
-    cur_mm = ((dr.scale * 1000) if getattr(dr, "scale", None)
-              else (info["mm_per_px"] if info else None))
-    _bed_raw = (info.get("bedroom_med_m2") if info else None)
-    try:                                          # CSV값은 문자열 → float 안전변환
-        bed = float(_bed_raw) if _bed_raw not in (None, "", "—") else None
-    except (TypeError, ValueError):
-        bed = None
-    has_scale = bool(getattr(dr, "scale", None))
-    suspicious = (not has_scale) or (bed is not None and not (4.0 <= bed <= 40.0))
-    if has_scale and not suspicious:
-        st.caption(f"축척 {round(cur_mm, 2)} mm/px · 면적 ㎡ 적용중"
-                   + (f" · 침실중앙 {bed:.0f}㎡" if bed else ""))
-    elif has_scale:
-        st.caption(f"축척 {round(cur_mm, 2)} mm/px · 침실면적 이상({bed:.0f}㎡) — "
-                   f"면적보정에서 확인")
-    else:
-        st.caption("축척 미설정 · 면적 px² — 면적보정에서 1회 설정")
-
-    # ── 도구(버튼 행) — 면적보정은 축척 정상이면 비활성 ──
-    TOOLS = ["보기", "영역그리기", "역할", "연결", "면적보정"]
-    tkey = f"tool_{unit_id}"
-    if st.session_state.get(tkey) not in TOOLS:
-        st.session_state[tkey] = "보기"
-    tcols = st.columns(len(TOOLS))
-    for i, tname in enumerate(TOOLS):
-        disabled = (tname == "면적보정" and not suspicious)
-        if tcols[i].button(
-                tname, key=f"tb_{unit_id}_{tname}", use_container_width=True,
-                disabled=disabled,
-                type="primary" if st.session_state[tkey] == tname else "secondary"):
-            st.session_state[tkey] = tname
-            _rerun(st)
-    tool = st.session_state[tkey]
-    if tool == "면적보정" and not suspicious:     # 비활성인데 선택돼 있던 경우
-        tool = st.session_state[tkey] = "보기"
+    # ── 도구(가로 라디오) — 이모지 없음, 순서: 보기·영역그리기·역할·연결·면적보정 ──
+    tool = st.radio("도구", ["보기", "영역그리기", "역할", "연결", "면적보정"],
+                    horizontal=True, key=f"tool_{unit_id}")
 
     bg, mp_xy, (dw, dh) = bake_background(dr, png, stt)
     if bg is None:
@@ -1228,8 +1194,11 @@ def render_editor() -> None:
     elif tool == "면적보정":                                # 시트 축척(scale) 보정 — 1회
         with canvas_col:
             st.image(bg)
-        panel.caption(f"시트당 1회 설정. 자동검출: {info['confidence'] if info else '없음'}"
-                      + (f" · 침실중앙 {bed:.0f}㎡" if bed else ""))
+        info = sheet_scale_info(rp.plan_id)
+        cur_mm = ((dr.scale * 1000) if getattr(dr, "scale", None)
+                  else (info["mm_per_px"] if info else None))
+        panel.caption(f"시트당 1회 설정. 현재 {round(cur_mm, 2) if cur_mm else '미설정'} mm/px"
+                      f" · 자동검출 {info['confidence'] if info else '없음'}")
         if panel.button("OCR 추정", use_container_width=True, key=f"ocr_{unit_id}"):
             import types
             from plan2graph import scale_ocr
