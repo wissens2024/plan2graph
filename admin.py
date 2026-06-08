@@ -508,6 +508,36 @@ if which.startswith("🧮"):
         st.caption(f"사용 {d['use']:,} + 보정·복구 {d['fix']:,} + 제외 {d['excl']:,} = {d['total']:,} (=다운로드)")
         st.divider()
 
+    # ── 파이프라인 진행 상황(생성 도면) — 단계별 산출물을 실제 파일에서 읽어 상태 표시 ──
+    st.markdown("### 🧭 파이프라인 진행 상황 — 자연어 → 위상 → 기하 → 자기교정 → 도면")
+    st.caption("각 단계 **실제 산출물 파일**(manifest·run.json·checkpoint)에서 상태를 읽음 — "
+               "GUI만 봐도 어디까지 했는지 추적(코드·GUI 일치). ✅완료 · ⬜예정.")
+    _ROOTd = Path(__file__).resolve().parent
+    _g0m = config.DATA_DIR / "releases" / "g0" / "manifest.json"
+    _g0 = json.loads(_g0m.read_text(encoding="utf-8")) if _g0m.exists() else None
+    _grp = _ROOTd / "runs" / "geom_g0" / "run.json"
+    _gr = json.loads(_grp.read_text(encoding="utf-8")) if _grp.exists() else None
+    _ck = (_ROOTd / "runs" / "geom_g0" / "checkpoint.pt").exists()
+    _pre = any((_ROOTd / "runs").glob("geom_g0_pre-*")) if (_ROOTd / "runs").exists() else False
+    _stages = [
+        ("1. 기하 데이터(g0, 자동)",
+         (f"{_g0['n_plans']:,}도면 / {_g0['n_units']:,}세대" if _g0 else "—"),
+         "✅" if _g0 else "⬜", "scripts/build_geom.py → releases/g0"),
+        ("2. 기하 추출기(2층 스키마)", "geomgraph", "✅", "src/plan2graph/geomgraph.py"),
+        ("3. 기하 모델 학습",
+         (f"loss {_gr.get('loss', 0):.3f} · {_gr.get('epochs')}ep" if _gr else "미학습"),
+         "✅" if _ck else "⬜", "train_geom.py → runs/geom_g0"),
+        ("4. 자기교정(겹침0·외곽채움)", "geom_correct", "✅", "src/plan2graph/geom_correct.py"),
+        ("5. 도면 생성(GUI)", "도면생성 §기하", "✅", "🏗 도면 생성 메뉴"),
+        ("6. 2단계(글로벌 사전학습→g0)", ("학습됨" if _pre else "미적용"),
+         "✅" if _pre else "⬜", "train_geom --pretrain g_rplan"),
+        ("7. 문·창·복도 생성", "스키마 보유, 생성 예정", "⬜", "GEOMETRY_SCHEMA TODO"),
+        ("8. 인접실현↑ / 법규 검증", "treemap 50%대 → 개선 예정", "⬜", "자기교정 루프 고도화"),
+    ]
+    st.table([{"단계": s, "상태": stt, "산출물": a, "위치": loc}
+              for s, a, stt, loc in _stages])
+    st.divider()
+
     # ── 데이터셋 버전(생성 학습용) — releases/<버전>/manifest.json 에서 직접 읽음(단일 출처) ──
     st.markdown("### 📦 데이터셋 버전 (생성 학습용)")
     st.caption("releases/<버전>/manifest.json 에서 직접 읽음 — GUI·문서·코드가 같은 출처라 숫자 일치. "
