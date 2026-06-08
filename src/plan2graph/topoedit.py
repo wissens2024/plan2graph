@@ -44,7 +44,8 @@ CONNECTOR_BASES = ("복도", "전실")
 # 그리기로 신설 가능한 공간 종류 — 연결공간(복도·전실)뿐 아니라 빠지거나 잘못된 방도 직접 추가.
 DRAW_BASES = ("복도", "전실", "발코니", "다목적공간", "실외기실", "드레스룸", "파우더룸",
               "기타", "거실", "주방", "침실", "화장실", "현관")
-VIA_KINDS = ("door", "open")   # 문 / 트인 연결만. (corridor=복도 이미 노드, entrance=현관은 역할로 — 옛 자동추출 잔재 제거)
+VIA_KINDS = ("door", "open")   # via 도메인(자동 도출값). door=탐지된 문 사이, open=문 없음.
+#   사람이 고르지 않음 — derive_via가 문 테이블 조인으로 결정(corridor/entrance는 폐기).
 STATUSES = ("미검수", "검증완료", "모호", "제외")
 # 사람이 지정하는 역할(라벨 base에서 세분) — 욕실/화장실, 안방/침실, 전용 등
 ROLES = ("거실", "주방", "현관", "침실", "안방", "화장실", "욕실", "전용화장실",
@@ -298,6 +299,24 @@ def add_edge(st: State, a: int, b: int, via: str) -> bool:
             return True
     st.edges.append({"a": a, "b": b, "via": via, "source": "human"})
     return True
+
+
+def derive_via(st: State, dr: Drawing, a: int, b: int, gap: float = 60.0) -> str:
+    """노드 a-b 사이에 **탐지된 문**이 있으면 'door', 없으면 'open'으로 도출.
+    문(종류 포함)은 이미 탐지·표시돼 있으니 사람이 고르지 않는다(관계만 선언, 종류는 조인).
+    extract_topology의 문→엣지 로직과 동일 기준(문의 최근접 2영역 == {a,b})."""
+    from shapely.geometry import Point
+    regions = [(nid, n.polygon) for nid, n in st.nodes.items() if n.polygon is not None]
+    for d in getattr(dr, "doors", []):
+        if not d.centroid:
+            continue
+        p = Point(*d.centroid)
+        cand = sorted(((poly.distance(p), nid) for nid, poly in regions),
+                      key=lambda t: t[0])
+        cand = [nid for dist, nid in cand if dist <= gap][:2]
+        if len(cand) == 2 and set(cand) == {a, b}:
+            return "door"
+    return "open"
 
 
 def remove_edge(st: State, a: int, b: int) -> None:
@@ -1175,18 +1194,17 @@ def render_editor() -> None:
             return
         buf = bundle.setdefault("clk", {}).setdefault(
             unit_id, {"pts": [], "last": None, "sel": None})
-        if tool.startswith("🔗"):                          # 연결: 종류 → 노드 → 노드
-            cv_via = panel.radio(
-                "① 연결 종류", VIA_KINDS, horizontal=True, key="cvia",
-                format_func=lambda v: {"door": "문(door)", "open": "트임(open)"}.get(v, v))
+        if tool.startswith("🔗"):                          # 연결: 노드 → 노드(종류 자동조인)
             sel = buf.get("sel")
             if sel is not None and sel in stt.nodes:
                 panel.info(f"**{_disp_id(sel)} {stt.nodes[sel].role}** 선택됨 → "
-                           f"③ 연결할 노드 클릭 (취소: 같은 노드 다시 클릭)")
+                           f"② 연결할 노드 클릭 (취소: 같은 노드 다시 클릭)")
             else:
                 buf["sel"] = sel = None
-                panel.info("① 연결 종류(문/트임) 선택 → ② 노드(동그라미) 클릭 → "
-                           "③ 연결할 노드 클릭\n\n"
+                panel.info("① 노드(동그라미) 클릭 → ② 연결할 노드 클릭 "
+                           "(찍는 순서 무관)\n\n"
+                           "연결 종류(문/트임)는 **탐지된 문으로 자동 판별** "
+                           "— 두 노드 사이에 문이 있으면 door, 없으면 open\n\n"
                            "삭제: **연결선을 클릭**하면 선택(자홍색)→목록 강조→삭제 버튼")
             esel = buf.get("edge_sel")
             if esel and not any({e["a"], e["b"]} == set(esel) for e in stt.edges):
@@ -1215,7 +1233,7 @@ def render_editor() -> None:
                 else:
                     node = _nearest_node(stt, pt)
                     if node is not None and node != sel:
-                        add_edge(stt, sel, node, cv_via)
+                        add_edge(stt, sel, node, derive_via(stt, dr, sel, node))
                         write_svg(stt, dr)
                     buf["sel"] = None
                 _rerun(st)
@@ -1231,11 +1249,14 @@ def render_editor() -> None:
                         write_svg(stt, dr)
                         buf["edge_sel"] = None
                         _rerun(st)
-                panel.caption(f"연결 {len(stt.edges)}개 — 선을 클릭해 선택 / 🗑로 삭제:")
+                panel.caption(f"연결 {len(stt.edges)}개 — 종류는 탐지된 문으로 자동판별. "
+                              f"선을 클릭해 선택 / 🗑로 삭제:")
                 for e in list(stt.edges):
                     is_sel = esel is not None and {e["a"], e["b"]} == set(esel)
+                    vlab = {"door": "🚪문", "open": "↔트임"}.get(
+                        e.get("via"), str(e.get("via") or ""))
                     name = (f"{_disp_id(e['a'])} {stt.nodes[e['a']].role} – "
-                            f"{_disp_id(e['b'])} {stt.nodes[e['b']].role}")
+                            f"{_disp_id(e['b'])} {stt.nodes[e['b']].role} · {vlab}")
                     c1, c2 = panel.columns([5, 1], vertical_alignment="center")
                     c1.markdown(f"🔹 **{name}**" if is_sel else name)  # 이름 좌측정렬
                     if c2.button("🗑", key=f"de_{e['a']}_{e['b']}",   # 휴지통=맨 끝
