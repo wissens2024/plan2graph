@@ -1100,26 +1100,7 @@ def render_editor() -> None:
     elif tool.startswith("🏷"):
         with canvas_col:
             st.image(bg)
-        nid = panel.selectbox(
-            "노드 선택", list(stt.nodes),
-            format_func=lambda i: f"{_disp_id(i)} · {stt.nodes[i].role}"
-            + (f" · 🛁{','.join(stt.nodes[i].fixtures)}" if stt.nodes[i].fixtures else "")
-            + (f" · {_area_label(stt.nodes[i].area_px, dr)}" if stt.nodes[i].area_px else ""),
-            key=f"rsel_{unit_id}")
-        n = stt.nodes[nid]
-        newr = panel.selectbox(
-            "역할", ROLES,
-            index=ROLES.index(n.role) if n.role in ROLES else ROLES.index("기타"),
-            key=f"rval_{nid}")
-        if newr != n.role:
-            set_role(stt, nid, newr)
-            write_svg(stt, dr)
-            _rerun(st)
-        if panel.button("🗑 이 노드 삭제", use_container_width=True):
-            remove_node(stt, nid)
-            write_svg(stt, dr)
-            _rerun(st)
-        panel.markdown("---")
+        # 자동 역할 제안(상단)
         sug = suggest_roles(stt, dr)
         if sug:
             if panel.button(f"🤖 자동 역할 제안 적용 ({len(sug)}개)",
@@ -1132,6 +1113,29 @@ def render_editor() -> None:
                           + ", ".join(f"{_disp_id(k)}→{v}" for k, v in list(sug.items())[:10]))
         else:
             panel.caption("자동 제안 없음(신호와 이미 일치 / 신호 부족)")
+        # 노드 목록(연결처럼) — 행마다 역할 변경 / 🗑 삭제. id는 도면 동그라미 숫자와 일치.
+        panel.caption(f"노드 {len(stt.nodes)}개 — 역할 바꾸거나 🗑로 삭제(도형이 틀리면 삭제 후 다시 그리기):")
+        for nid in list(stt.nodes):
+            n = stt.nodes[nid]
+            lab = _disp_id(nid)
+            if n.area_px:
+                lab += f" · {_area_label(n.area_px, dr)}"
+            if n.fixtures:
+                lab += f" · 🛁{','.join(n.fixtures)}"
+            c1, c2 = panel.columns([4, 1], vertical_alignment="bottom")
+            newr = c1.selectbox(
+                lab, ROLES,
+                index=ROLES.index(n.role) if n.role in ROLES else ROLES.index("기타"),
+                key=f"rl_{unit_id}_{nid}")
+            if newr != n.role:
+                set_role(stt, nid, newr)
+                write_svg(stt, dr)
+                _rerun(st)
+            if c2.button("🗑", key=f"rd_{unit_id}_{nid}", use_container_width=True,
+                         help="이 노드 삭제 — 도형 자체가 틀렸을 때(삭제 후 ✒️로 다시 그리기)"):
+                remove_node(stt, nid)
+                write_svg(stt, dr)
+                _rerun(st)
     elif tool.startswith("📏"):                            # 면적보정(scale)
         with canvas_col:
             st.image(bg)
@@ -1238,8 +1242,9 @@ def render_editor() -> None:
                         buf["edge_sel"] = None
                         _rerun(st)
         else:                                              # ✒️ 영역 그리기(폴리곤)
-            cv_base = panel.selectbox("그릴 공간 종류", DRAW_BASES, key="cbase")
-            panel.caption(f"영역 모서리들 클릭 후 **[✓ 완성]** (사각형=네 모서리)"
+            cv_base = panel.selectbox("그릴 공간 종류(=역할)", DRAW_BASES, key="cbase")
+            panel.caption(f"여기서 고른 종류가 그대로 **역할**이 됨(나중에 🏷에서 변경).\n\n"
+                          f"영역 모서리들 클릭 후 **[✓ 완성]** (사각형=네 모서리)"
                           f"\n\n클릭점 {len(buf['pts'])}개")
             with canvas_col:
                 disp = _overlay_clicks(bg, buf["pts"], mp, "polygon")
