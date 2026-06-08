@@ -1098,7 +1098,11 @@ def render_editor() -> None:
     info = sheet_scale_info(rp.plan_id)
     cur_mm = ((dr.scale * 1000) if getattr(dr, "scale", None)
               else (info["mm_per_px"] if info else None))
-    bed = (info.get("bedroom_med_m2") if info else None)
+    _bed_raw = (info.get("bedroom_med_m2") if info else None)
+    try:                                          # CSV값은 문자열 → float 안전변환
+        bed = float(_bed_raw) if _bed_raw not in (None, "", "—") else None
+    except (TypeError, ValueError):
+        bed = None
     has_scale = bool(getattr(dr, "scale", None))
     suspicious = (not has_scale) or (bed is not None and not (4.0 <= bed <= 40.0))
     if has_scale and not suspicious:
