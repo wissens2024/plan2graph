@@ -1175,15 +1175,18 @@ def render_editor() -> None:
             return
         buf = bundle.setdefault("clk", {}).setdefault(
             unit_id, {"pts": [], "last": None, "sel": None})
-        if tool.startswith("🔗"):                          # 연결: 노드 → 노드
-            cv_via = panel.selectbox("연결 종류(via)", VIA_KINDS, key="cvia")
+        if tool.startswith("🔗"):                          # 연결: 종류 → 노드 → 노드
+            cv_via = panel.radio(
+                "① 연결 종류", VIA_KINDS, horizontal=True, key="cvia",
+                format_func=lambda v: {"door": "문(door)", "open": "트임(open)"}.get(v, v))
             sel = buf.get("sel")
             if sel is not None and sel in stt.nodes:
                 panel.info(f"**{_disp_id(sel)} {stt.nodes[sel].role}** 선택됨 → "
-                           f"연결할 노드 클릭 (취소: 같은 노드 다시 클릭)")
+                           f"③ 연결할 노드 클릭 (취소: 같은 노드 다시 클릭)")
             else:
                 buf["sel"] = sel = None
-                panel.info("① 노드(동그라미) 클릭 → ② 연결할 노드 클릭\n\n"
+                panel.info("① 연결 종류(문/트임) 선택 → ② 노드(동그라미) 클릭 → "
+                           "③ 연결할 노드 클릭\n\n"
                            "삭제: **연결선을 클릭**하면 선택(자홍색)→목록 강조→삭제 버튼")
             esel = buf.get("edge_sel")
             if esel and not any({e["a"], e["b"]} == set(esel) for e in stt.edges):
