@@ -420,13 +420,28 @@ def _curate_aihub():
 
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
 st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
-which = st.sidebar.radio("메뉴", ["🧮 종합 현황", "✏️ 위상 편집",
-                                 "🏢 AI-Hub 검수",
-                                 "🏠 CubiCasa 검수", "📐 RPLAN 검수",
-                                 "📏 scale 보정", "📜 법령 DB",
-                                 "📈 결과 대시보드",
-                                 "🏗 도면 생성"],
-                          index=0, label_visibility="collapsed")
+_MENU = ["🧮 종합 현황", "✏️ 위상 편집",
+         "🏢 AI-Hub 검수",
+         "🏠 CubiCasa 검수", "📐 RPLAN 검수",
+         "📏 scale 보정", "📜 법령 DB",
+         "📈 결과 대시보드",
+         "🏗 도면 생성"]
+try:  # 동그라미 없는 클릭형 메뉴(streamlit-option-menu). 미설치 시 라디오로 폴백.
+    from streamlit_option_menu import option_menu
+    with st.sidebar:
+        which = option_menu(
+            None, _MENU,
+            icons=["" for _ in _MENU],   # 라벨에 이미 이모지 → bootstrap 기본아이콘 숨김
+            default_index=0,
+            styles={
+                "container": {"padding": "0", "background-color": "transparent"},
+                "nav-link": {"font-size": "0.85rem", "padding": "4px 10px",
+                             "margin": "1px 0", "--hover-color": "#eef2ff"},
+                "nav-link-selected": {"background-color": "#4f46e5"},
+            },
+        )
+except ModuleNotFoundError:
+    which = st.sidebar.radio("메뉴", _MENU, index=0, label_visibility="collapsed")
 
 # ════════════════════════════════════════════════════════════════════════════
 # ✏️ 위상 편집(신규) — 원본 위에서 사람이 위상 직접 구축(자동추론 0) → gold

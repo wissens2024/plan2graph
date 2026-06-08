@@ -10,4 +10,5 @@ joblib>=1.3           # 전체 변환 병렬화 — Task 2-1
 tqdm>=4.65
 pytest>=7.0
 streamlit>=1.30        # 관리자 콘솔(격리/채택 검토·교정) — admin.py
+streamlit-option-menu>=0.3  # 사이드바 클릭형 메뉴(동그라미 없는 네비) — admin.py
 rapidocr-onnxruntime>=1.4  # 치수선 OCR 역산(scale) — scale_ocr.py (경량, torch 불요)
