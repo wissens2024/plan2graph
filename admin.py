@@ -430,7 +430,8 @@ try:  # 동그라미 없는 클릭형 메뉴(streamlit-option-menu). 미설치 �
     from streamlit_option_menu import option_menu
     with st.sidebar:
         which = option_menu(
-            None, _MENU,
+            None, _MENU, key="mainmenu",
+            manual_select=st.session_state.pop("_goto_idx", None),  # 다른 메뉴서 전환용
             icons=["" for _ in _MENU],   # 라벨에 이미 이모지 → bootstrap 기본아이콘 숨김
             default_index=0,
             styles={
@@ -663,6 +664,15 @@ if which.startswith("🏢"):
 
     st.markdown(f"### {cat} — **{len(sel):,}개**" +
                 (f"  ·  _렌더가능 {len(recs):,}_" if len(recs) != len(sel) else ""))
+    # ── 검수 → 위상편집 연결: 이 분류에서 도면 골라 편집기로 ──
+    if sel:
+        _eopts = [f"{r['house']}_FP_{r['fingerprint']}" for r in sel[:3000]]
+        _e1, _e2 = st.columns([4, 1])
+        _epick = _e1.selectbox("✏️ 편집할 도면 → 위상편집", _eopts, key="aihub_editpick")
+        if _e2.button("위상편집 열기", use_container_width=True):
+            st.session_state["topoedit_target"] = (_epick.split("_")[0], _epick)
+            st.session_state["_goto_idx"] = _MENU.index("✏️ 위상 편집")
+            st.rerun()
     @st.cache_data(show_spinner="라벨 인덱스 구성(최초 1회)...")
     def _lblidx(sp):
         return _ix.label_index(sp)

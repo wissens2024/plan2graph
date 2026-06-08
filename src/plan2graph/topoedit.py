@@ -1036,6 +1036,12 @@ def render_editor() -> None:
 
     import types as _types
     led = load_ledger()
+    # AI-Hub 검수에서 "위상편집 열기"로 넘어온 도면 — 소스·거주형태·도면 미리 지정
+    _tgt = st.session_state.pop("topoedit_target", None)
+    if _tgt:
+        st.session_state["te_srckind"] = "AI-Hub 코퍼스(실데이터)"
+        st.session_state["te_house"] = _tgt[0]
+        st.session_state["_te_plan_target"] = _tgt[1]
     # ── 데이터 소스: 실제 AI-Hub 코퍼스 | 샘플(demo) ──
     _srck = st.radio("데이터 소스", ["AI-Hub 코퍼스(실데이터)", "샘플(demo)"],
                      horizontal=True, key="te_srckind")
@@ -1079,7 +1085,9 @@ def render_editor() -> None:
 
     # ── 상단 바: 도면·세대·상태·액션 (사이드바 아님 → 메뉴 접어도 동작) ──
     t1, t2, t3, t4 = st.columns([3, 3, 3, 2])
-    sel = t1.selectbox(f"도면 ({len(ids):,})", ids)
+    _ptgt = st.session_state.pop("_te_plan_target", None)
+    _pidx = ids.index(_ptgt) if (_ptgt and _ptgt in ids) else 0
+    sel = t1.selectbox(f"도면 ({len(ids):,})", ids, index=_pidx)
     rp = _types.SimpleNamespace(plan_id=sel, house=sel.split("_")[0])
     skey = f"topoedit::{_src_tag}::{sel}"
     if skey not in st.session_state:
