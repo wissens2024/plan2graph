@@ -913,17 +913,27 @@ def _nearest_node(st: State, pt):
     return best
 
 
-def _nearest_edge(st: State, pt):
-    """원본좌표 pt에서 가장 가까운 연결선(엣지)과 그 거리(원본px). 선 클릭→삭제 선택용."""
-    from shapely.geometry import Point, LineString
-    p = Point(*pt)
+def _nearest_edge(st: State, pt, t_lo=0.1, t_hi=0.9):
+    """원본좌표 pt에서 가장 가까운 연결선(엣지)과 그 수직거리(원본px). 선 클릭→삭제 선택용.
+    선의 양 끝(노드 동그라미)은 제외 — 투영비 t가 [t_lo,t_hi](기본 중앙 80%)인 선만
+    후보. 동그라미 근처 클릭은 엣지가 아니라 노드선택(연결)으로 빠지게 한다."""
+    px, py = pt
     best, bd = None, 1e18
     for e in st.edges:
         a, b = st.nodes.get(e["a"]), st.nodes.get(e["b"])
-        if a and b:
-            d = LineString([(a.cx, a.cy), (b.cx, b.cy)]).distance(p)
-            if d < bd:
-                best, bd = e, d
+        if not (a and b):
+            continue
+        dx, dy = b.cx - a.cx, b.cy - a.cy
+        L2 = dx * dx + dy * dy
+        if L2 == 0:
+            continue
+        t = ((px - a.cx) * dx + (py - a.cy) * dy) / L2
+        if t < t_lo or t > t_hi:           # 양 끝(동그라미) 근처 → 엣지 후보 제외
+            continue
+        qx, qy = a.cx + t * dx, a.cy + t * dy
+        d = ((px - qx) ** 2 + (py - qy) ** 2) ** 0.5
+        if d < bd:
+            best, bd = e, d
     return best, bd
 
 
