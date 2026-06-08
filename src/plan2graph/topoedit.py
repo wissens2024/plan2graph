@@ -1249,16 +1249,24 @@ def render_editor() -> None:
                         write_svg(stt, dr)
                         buf["edge_sel"] = None
                         _rerun(st)
-                panel.caption(f"연결 {len(stt.edges)}개 — 종류는 탐지된 문으로 자동판별. "
-                              f"선을 클릭해 선택 / 🗑로 삭제:")
+                panel.caption(f"연결 {len(stt.edges)}개 — 색=종류(🔵파랑 문 · 🟠주황 트임, "
+                              f"도면 선색과 동일). 선을 클릭해 선택 / 🗑로 삭제:")
+                _VIA_HEX = {"door": "#1565C0", "open": "#F2A900"}   # bake_background _EC와 동일
+                _VIA_LAB = {"door": "문", "open": "트임"}
                 for e in list(stt.edges):
                     is_sel = esel is not None and {e["a"], e["b"]} == set(esel)
-                    vlab = {"door": "🚪문", "open": "↔트임"}.get(
-                        e.get("via"), str(e.get("via") or ""))
+                    via = e.get("via")
+                    col = _VIA_HEX.get(via, "#666")
+                    lab = _VIA_LAB.get(via, str(via or ""))
                     name = (f"{_disp_id(e['a'])} {stt.nodes[e['a']].role} – "
-                            f"{_disp_id(e['b'])} {stt.nodes[e['b']].role} · {vlab}")
+                            f"{_disp_id(e['b'])} {stt.nodes[e['b']].role} · {lab}")
+                    body = f"<b>{name}</b>" if is_sel else name
                     c1, c2 = panel.columns([5, 1], vertical_alignment="center")
-                    c1.markdown(f"🔹 **{name}**" if is_sel else name)  # 이름 좌측정렬
+                    c1.markdown(                       # ▌색띠=도면 선색, 글자도 같은 색
+                        f'<span style="color:{col};font-size:1.1em">▌</span>'
+                        f'{"🔹" if is_sel else ""}'
+                        f'<span style="color:{col}">{body}</span>',
+                        unsafe_allow_html=True)
                     if c2.button("🗑", key=f"de_{e['a']}_{e['b']}",   # 휴지통=맨 끝
                                  help="이 연결 삭제", use_container_width=True):
                         remove_edge(stt, e["a"], e["b"])
