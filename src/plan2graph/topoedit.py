@@ -1118,6 +1118,34 @@ def render_editor() -> None:
             ndd = sum(1 for *_x, v in G.edges(data="via") if v == "door")
             panel.info(f"노드 {G.number_of_nodes()} · 엣지 {G.number_of_edges()} "
                        f"(문 {ndd}·수동 {G.number_of_edges() - ndd})")
+        # 기하 그래프(geometry-rich) 미리보기 — 추출기 결과를 GUI로 확인
+        if panel.button("기하 그래프 미리보기", use_container_width=True):
+            st.session_state[f"geomprev_{unit_id}"] = not st.session_state.get(
+                f"geomprev_{unit_id}", False)
+        if st.session_state.get(f"geomprev_{unit_id}"):
+            import pandas as pd
+            from plan2graph import geomgraph as _gg
+            g = _gg.build(stt, dr)
+            st.caption(
+                f"기하 그래프 — 방 {g['n_rooms']} · 엣지 {g['n_edges']} · 문 {len(g['doors'])} · "
+                f"창 {len(g['windows'])} · 축척 {g['scale_mm_per_px']} mm/px "
+                f"(현관거리 None = 자동그래프서 현관 미연결 → 보정 필요)")
+            rrows = [{
+                "id": _disp_id(nid), "역할": r["role"], "면적㎡": r["area_m2"],
+                "종횡비": r["aspect_ratio"], "창": r["n_windows"],
+                "기구": ",".join(r["fixtures"]), "위계": r["privacy"],
+                "현관거리": r["dist_from_entrance"],
+            } for nid, r in g["rooms"].items()]
+            st.dataframe(pd.DataFrame(rrows), hide_index=True, use_container_width=True,
+                         height=(len(rrows) + 1) * 35 + 3)
+            erows = [{"A": _disp_id(e["from"]), "B": _disp_id(e["to"]), "via": e["via"],
+                      "위계전이": e["privacy_transition"],
+                      "문폭px": next((d["width_px"] for d in g["doors"]
+                                     if set(d["connects"]) == {e["from"], e["to"]}), None)}
+                     for e in g["edges"]]
+            if erows:
+                st.dataframe(pd.DataFrame(erows), hide_index=True, use_container_width=True,
+                             height=(len(erows) + 1) * 35 + 3)
     elif tool == "역할":
         buf = bundle.setdefault("clk", {}).setdefault(
             unit_id, {"pts": [], "last": None, "sel": None})
