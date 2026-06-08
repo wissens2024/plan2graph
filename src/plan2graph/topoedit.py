@@ -911,18 +911,6 @@ def _nearest_node(st: State, pt):
     return best
 
 
-def _node_dist(st: State, nid, pt):
-    """노드 nid 폴리곤과 pt(원본px)의 거리(폴리곤 없으면 중심거리)."""
-    from shapely.geometry import Point
-    n = st.nodes.get(nid)
-    if n is None:
-        return 1e18
-    p = Point(*pt)
-    if n.polygon is not None:
-        return n.polygon.distance(p)
-    return ((n.cx - pt[0]) ** 2 + (n.cy - pt[1]) ** 2) ** 0.5
-
-
 def _nearest_edge(st: State, pt):
     """원본좌표 pt에서 가장 가까운 연결선(엣지)과 그 거리(원본px). 선 클릭→삭제 선택용."""
     from shapely.geometry import Point, LineString
@@ -1191,18 +1179,19 @@ def render_editor() -> None:
                 buf["last"] = (val["x"], val["y"])
                 pt = _cv_to_orig(val["x"], val["y"], mp)
                 if sel is None:
-                    # 방 밖(폴리곤 사이)에서 선에 가까우면 그 연결선 선택(삭제용),
-                    # 방 안/노드 근처면 연결 시작. 표시 12px → 원본px 환산 임계.
-                    pick = 12.0 * (mp[2] / mp[4] if mp[4] else 1.0)
+                    # 연결선에 충분히 가까우면 그 엣지 선택(삭제용). 아파트는 방이
+                    # 붙어 있어 선이 방 위를 지나므로, 노드보다 '선 근접'을 우선.
+                    # 연결 시작은 선에서 떨어진 방 본체를 클릭. 표시 14px→원본px 환산.
+                    pick = 14.0 * (mp[2] / mp[4] if mp[4] else 1.0)
                     edge, ed = _nearest_edge(stt, pt)
-                    node = _nearest_node(stt, pt)
-                    nd = _node_dist(stt, node, pt) if node is not None else 1e18
-                    if edge is not None and ed <= pick and ed < nd:
+                    if edge is not None and ed <= pick:
                         buf["edge_sel"] = (edge["a"], edge["b"])
                         buf["sel"] = None
-                    elif node is not None:
-                        buf["sel"] = node
-                        buf["edge_sel"] = None
+                    else:
+                        node = _nearest_node(stt, pt)
+                        if node is not None:
+                            buf["sel"] = node
+                            buf["edge_sel"] = None
                 else:
                     node = _nearest_node(stt, pt)
                     if node is not None and node != sel:
