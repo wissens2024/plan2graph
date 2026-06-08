@@ -1428,6 +1428,32 @@ if which.startswith("🏗"):
     st.header("🏠 기하 도면 생성 (geo · 자기교정)")
     st.caption("NL → 방 구성 → **g0 실측 면적** → **자기교정(겹침0·외곽채움)** → 도면. "
                "위상 모델 없이도 동작(관례 인접=거실 허브). 본 파이프라인: 위상→기하→검증→자기교정.")
+
+    # 기하 모델 2단계 학습 (글로벌 사전학습 → g0 파인튜닝) — GUI 버튼·백그라운드(GPU1)
+    st.markdown("**기하 모델 2단계 학습** — 글로벌(g_global) 사전학습 → g0 파인튜닝")
+    _grid = "geom_g0_pre-g_global"
+    _grun = _ROOT / "runs" / _grid / "run.json"
+    _glog = _ROOT / "logs" / "geom_train.log"
+    if _grun.exists():
+        _gj = json.loads(_grun.read_text(encoding="utf-8"))
+        st.success(f"✅ 학습됨 — {_grid} (loss {_gj.get('loss', 0):.3f})")
+    elif _glog.exists():
+        _ll = _glog.read_text(errors="ignore").strip().splitlines()
+        st.warning(f"🔄 학습 중(GPU1·백그라운드) — 최근: `{(_ll[-1] if _ll else '시작…')[:120]}`")
+        if st.button("🔄 상태 새로고침", key="geom_tr_ref"):
+            st.rerun()
+    else:
+        if st.button("🛠 기하 2단계 학습 시작 (GPU1·백그라운드)", key="geom_tr_go"):
+            import subprocess as _sp
+            _cmd = (f"cd '{_ROOT}' && CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src setsid nohup "
+                    f"{sys.executable} -u -m plan2graph.train_geom "
+                    f"--pretrain g_global --finetune g0 --epochs 20 "
+                    f"> logs/geom_train.log 2>&1 &")
+            _sp.Popen(["bash", "-lc", _cmd])
+            st.success("학습 시작됨 — '상태 새로고침'으로 확인.")
+            st.rerun()
+    st.divider()
+
     gtext2 = st.text_input("요구(자연어)", "신혼부부 아파트 침실2 욕실1 거실 주방", key="geo_text")
     if st.button("🏠 기하 도면 생성"):
         try:
