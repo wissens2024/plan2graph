@@ -1034,27 +1034,56 @@ def render_editor() -> None:
     st.caption("원본 위에 영역(반투명 박스)을 그려 완전 기하 → 위상은 결정적 추출. "
                "그리기·연결·역할은 **자동 저장**. (좌측 앱 메뉴는 접어도 됨)")
 
-    with st.expander("데이터 소스", expanded=False):
-        src = st.text_input("라벨 디렉터리",
-                            value=str(config.DATA_DIR / "raw" / "linked_demo"))
-    try:
-        plans = scan_dir(src)
-    except Exception as e:  # noqa: BLE001
-        st.error(f"스캔 실패: {e}")
-        return
-    if not plans:
-        st.warning(f"도면 없음: {src}")
-        return
+    import types as _types
     led = load_ledger()
-    ids = [p.plan_id for p in plans]
+    # ── 데이터 소스: 실제 AI-Hub 코퍼스 | 샘플(demo) ──
+    _srck = st.radio("데이터 소스", ["AI-Hub 코퍼스(실데이터)", "샘플(demo)"],
+                     horizontal=True, key="te_srckind")
+    if _srck.startswith("AI-Hub"):
+        _hs = st.radio("거주형태", ["APT", "DEH", "ROW"], horizontal=True, key="te_house")
+
+        @st.cache_data(show_spinner="AI-Hub 코퍼스 인덱스(최초 1회, 수십초)...")
+        def _aihub_recs(h):
+            from plan2graph import aihub_source as _as
+            return {r["plan_id"]: r for r in _as.scan(house=h)}
+        try:
+            recs = _aihub_recs(_hs)
+        except Exception as e:  # noqa: BLE001
+            st.error(f"AI-Hub 코퍼스 스캔 실패: {e} (PLAN2GRAPH_RAW 확인)")
+            return
+        if not recs:
+            st.warning("AI-Hub 코퍼스에서 편집대상(SPA보유)을 못 찾았습니다.")
+            return
+        ids = list(recs)
+        from plan2graph import aihub_source as _ahs
+        def _loader(s):
+            return _ahs.load(recs[s])
+        _src_tag = "aihub"
+    else:
+        with st.expander("샘플 데이터 소스", expanded=False):
+            src = st.text_input("라벨 디렉터리",
+                                value=str(config.DATA_DIR / "raw" / "linked_demo"))
+        try:
+            plans = scan_dir(src)
+        except Exception as e:  # noqa: BLE001
+            st.error(f"스캔 실패: {e}")
+            return
+        if not plans:
+            st.warning(f"도면 없음: {src}")
+            return
+        ids = [p.plan_id for p in plans]
+        _pby = {p.plan_id: p for p in plans}
+        def _loader(s):
+            return load_plan(_pby[s])
+        _src_tag = "demo"
 
     # ── 상단 바: 도면·세대·상태·액션 (사이드바 아님 → 메뉴 접어도 동작) ──
     t1, t2, t3, t4 = st.columns([3, 3, 3, 2])
-    sel = t1.selectbox(f"도면 ({len(ids)})", ids)
-    rp = next(p for p in plans if p.plan_id == sel)
-    skey = f"topoedit::{sel}"
+    sel = t1.selectbox(f"도면 ({len(ids):,})", ids)
+    rp = _types.SimpleNamespace(plan_id=sel, house=sel.split("_")[0])
+    skey = f"topoedit::{_src_tag}::{sel}"
     if skey not in st.session_state:
-        dr0, png0 = load_plan(rp)
+        dr0, png0 = _loader(sel)
         st.session_state[skey] = {"dr": dr0, "png": png0,
                                   "units": segment_units(dr0), "states": {}}
     bundle = st.session_state[skey]
