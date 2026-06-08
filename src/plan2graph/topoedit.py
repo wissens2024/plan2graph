@@ -913,10 +913,11 @@ def _nearest_node(st: State, pt):
     return best
 
 
-def _nearest_edge(st: State, pt, t_lo=0.05, t_hi=0.95):
+def _nearest_edge(st: State, pt, t_lo=0.1, t_hi=0.9):
     """원본좌표 pt에서 가장 가까운 연결선(엣지)과 그 수직거리(원본px). 선 클릭→삭제 선택용.
-    선의 양 끝(노드 동그라미)은 제외 — 투영비 t가 [t_lo,t_hi](기본 중앙 90%)인 선만
-    후보. 동그라미 근처 클릭은 엣지가 아니라 노드선택(연결)으로 빠지게 한다."""
+    선의 양 끝(노드 동그라미)은 제외 — 투영비 t가 [t_lo,t_hi](기본 중앙 80%)인 선만
+    후보. 동그라미 근처 클릭은 엣지가 아니라 노드선택(연결)으로 빠지게 한다.
+    (5%는 짧은 선에서 끝 영역이 좁아 동그라미를 눌러도 선이 잡혀 10% 유지.)"""
     px, py = pt
     best, bd = None, 1e18
     for e in st.edges:
