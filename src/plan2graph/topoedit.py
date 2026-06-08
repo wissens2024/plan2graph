@@ -792,10 +792,11 @@ def crop_overlay_image(dr: Drawing, png: bytes, st: State, draw_pts,
 
 
 def bake_background(dr: Drawing, png: bytes, st: State, max_w: int = 900,
-                    margin: int = 90, highlight=None):
+                    margin: int = 90, highlight=None, highlight_edge=None):
     """캔버스 배경 = 원본 크롭 + 영역(반투명 색박스) + 연결선 + 노드(동그라미+id).
     반환 (PIL RGB, (x0,y0,native_w,native_h), (disp_w,disp_h)). 클릭→원본 좌표 매핑용.
-    highlight=강조할 노드 id(연결 시 선택된 A를 빨갛게)."""
+    highlight=강조할 노드 id(연결 시 선택된 A를 빨갛게).
+    highlight_edge=(a,b) 강조할 연결선(선 클릭으로 선택→자홍색 halo·삭제대상)."""
     from PIL import Image, ImageDraw
     if not png:
         return None, (0, 0, 0, 0), (0, 0)
@@ -836,10 +837,13 @@ def bake_background(dr: Drawing, png: bytes, st: State, max_w: int = 900,
     # 3) 연결선 — 동그라미 위에(via별 색·흰 테두리)
     _EC = {"door": (21, 101, 192, 255), "open": (242, 169, 0, 255),
            "corridor": (120, 120, 120, 255), "entrance": (200, 0, 0, 255)}
+    _hl_set = set(highlight_edge) if highlight_edge else None
     for e in st.edges:
         a, b = st.nodes.get(e["a"]), st.nodes.get(e["b"])
         if a and b:
             p1, p2 = (a.cx - x0, a.cy - y0), (b.cx - x0, b.cy - y0)
+            if _hl_set is not None and {e["a"], e["b"]} == _hl_set:
+                dd.line([p1, p2], fill=(255, 0, 255, 255), width=12)  # 선택 halo
             dd.line([p1, p2], fill=(255, 255, 255, 235), width=7)
             dd.line([p1, p2], fill=_EC.get(e.get("via"), (20, 20, 20, 255)), width=4)
     # 4) id·역할 글자 — 맨 위(연결선 위에 읽히게)
@@ -905,6 +909,32 @@ def _nearest_node(st: State, pt):
             if dd < bd:
                 best, bd = nid, dd
     return best
+
+
+def _node_dist(st: State, nid, pt):
+    """노드 nid 폴리곤과 pt(원본px)의 거리(폴리곤 없으면 중심거리)."""
+    from shapely.geometry import Point
+    n = st.nodes.get(nid)
+    if n is None:
+        return 1e18
+    p = Point(*pt)
+    if n.polygon is not None:
+        return n.polygon.distance(p)
+    return ((n.cx - pt[0]) ** 2 + (n.cy - pt[1]) ** 2) ** 0.5
+
+
+def _nearest_edge(st: State, pt):
+    """원본좌표 pt에서 가장 가까운 연결선(엣지)과 그 거리(원본px). 선 클릭→삭제 선택용."""
+    from shapely.geometry import Point, LineString
+    p = Point(*pt)
+    best, bd = None, 1e18
+    for e in st.edges:
+        a, b = st.nodes.get(e["a"]), st.nodes.get(e["b"])
+        if a and b:
+            d = LineString([(a.cx, a.cy), (b.cx, b.cy)]).distance(p)
+            if d < bd:
+                best, bd = e, d
+    return best, bd
 
 
 def _overlay_clicks(bg, pts, mp, mode):
@@ -1148,32 +1178,62 @@ def render_editor() -> None:
                            f"연결할 노드 클릭 (취소: 같은 노드 다시 클릭)")
             else:
                 buf["sel"] = sel = None
-                panel.info("① 노드(동그라미) 클릭 → ② 연결할 노드 클릭")
+                panel.info("① 노드(동그라미) 클릭 → ② 연결할 노드 클릭\n\n"
+                           "삭제: **연결선을 클릭**하면 선택(자홍색)→목록 강조→삭제 버튼")
+            esel = buf.get("edge_sel")
+            if esel and not any({e["a"], e["b"]} == set(esel) for e in stt.edges):
+                esel = buf["edge_sel"] = None      # 사라진 엣지 선택 정리
             with canvas_col:
-                disp = bake_background(dr, png, stt, highlight=sel)[0]
+                disp = bake_background(dr, png, stt, highlight=sel,
+                                       highlight_edge=esel)[0]
                 val = _img_coords(disp, key=f"ic_{unit_id}_line")
             if val and val.get("x") is not None and (val["x"], val["y"]) != buf["last"]:
                 buf["last"] = (val["x"], val["y"])
-                node = _nearest_node(stt, _cv_to_orig(val["x"], val["y"], mp))
-                if node is not None:
-                    if sel is None:
+                pt = _cv_to_orig(val["x"], val["y"], mp)
+                if sel is None:
+                    # 방 밖(폴리곤 사이)에서 선에 가까우면 그 연결선 선택(삭제용),
+                    # 방 안/노드 근처면 연결 시작. 표시 12px → 원본px 환산 임계.
+                    pick = 12.0 * (mp[2] / mp[4] if mp[4] else 1.0)
+                    edge, ed = _nearest_edge(stt, pt)
+                    node = _nearest_node(stt, pt)
+                    nd = _node_dist(stt, node, pt) if node is not None else 1e18
+                    if edge is not None and ed <= pick and ed < nd:
+                        buf["edge_sel"] = (edge["a"], edge["b"])
+                        buf["sel"] = None
+                    elif node is not None:
                         buf["sel"] = node
-                    elif node != sel:
+                        buf["edge_sel"] = None
+                else:
+                    node = _nearest_node(stt, pt)
+                    if node is not None and node != sel:
                         add_edge(stt, sel, node, cv_via)
                         write_svg(stt, dr)
-                        buf["sel"] = None
-                    else:
-                        buf["sel"] = None
+                    buf["sel"] = None
                 _rerun(st)
             if stt.edges:
-                panel.caption(f"연결 {len(stt.edges)}개 — ✕로 삭제:")
-                for e in list(stt.edges):
+                if esel:                            # 선 클릭으로 선택된 연결 → 큰 삭제 버튼
+                    a, b = esel
                     if panel.button(
-                            f"✕ {_disp_id(e['a'])} {stt.nodes[e['a']].role} – "
+                            f"🗑 선택 연결 삭제: {_disp_id(a)} {stt.nodes[a].role} – "
+                            f"{_disp_id(b)} {stt.nodes[b].role}",
+                            type="primary", use_container_width=True,
+                            key=f"delsel_{unit_id}"):
+                        remove_edge(stt, a, b)
+                        write_svg(stt, dr)
+                        buf["edge_sel"] = None
+                        _rerun(st)
+                panel.caption(f"연결 {len(stt.edges)}개 — 선을 클릭해 선택 / ✕로 삭제:")
+                for e in list(stt.edges):
+                    is_sel = esel is not None and {e["a"], e["b"]} == set(esel)
+                    if panel.button(
+                            f"{'● ' if is_sel else '✕ '}"
+                            f"{_disp_id(e['a'])} {stt.nodes[e['a']].role} – "
                             f"{_disp_id(e['b'])} {stt.nodes[e['b']].role}",
-                            key=f"de_{e['a']}_{e['b']}", use_container_width=True):
+                            key=f"de_{e['a']}_{e['b']}", use_container_width=True,
+                            type="primary" if is_sel else "secondary"):
                         remove_edge(stt, e["a"], e["b"])
                         write_svg(stt, dr)
+                        buf["edge_sel"] = None
                         _rerun(st)
         else:                                              # ✒️ 영역 그리기(폴리곤)
             cv_base = panel.selectbox("그릴 공간 종류", DRAW_BASES, key="cbase")
