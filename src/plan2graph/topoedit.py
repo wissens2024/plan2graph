@@ -1228,15 +1228,15 @@ def render_editor() -> None:
                         write_svg(stt, dr)
                         buf["edge_sel"] = None
                         _rerun(st)
-                panel.caption(f"연결 {len(stt.edges)}개 — 선을 클릭해 선택 / ✕로 삭제:")
+                panel.caption(f"연결 {len(stt.edges)}개 — 선을 클릭해 선택 / 🗑로 삭제:")
                 for e in list(stt.edges):
                     is_sel = esel is not None and {e["a"], e["b"]} == set(esel)
-                    if panel.button(
-                            f"{'● ' if is_sel else '✕ '}"
-                            f"{_disp_id(e['a'])} {stt.nodes[e['a']].role} – "
-                            f"{_disp_id(e['b'])} {stt.nodes[e['b']].role}",
-                            key=f"de_{e['a']}_{e['b']}", use_container_width=True,
-                            type="primary" if is_sel else "secondary"):
+                    name = (f"{_disp_id(e['a'])} {stt.nodes[e['a']].role} – "
+                            f"{_disp_id(e['b'])} {stt.nodes[e['b']].role}")
+                    c1, c2 = panel.columns([5, 1], vertical_alignment="center")
+                    c1.markdown(f"🔹 **{name}**" if is_sel else name)  # 이름 좌측정렬
+                    if c2.button("🗑", key=f"de_{e['a']}_{e['b']}",   # 휴지통=맨 끝
+                                 help="이 연결 삭제", use_container_width=True):
                         remove_edge(stt, e["a"], e["b"])
                         write_svg(stt, dr)
                         buf["edge_sel"] = None
