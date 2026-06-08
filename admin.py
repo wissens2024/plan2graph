@@ -507,6 +507,28 @@ if which.startswith("🧮"):
         c[2].metric("🚫 제외", f"{d['excl']:,}")
         st.caption(f"사용 {d['use']:,} + 보정·복구 {d['fix']:,} + 제외 {d['excl']:,} = {d['total']:,} (=다운로드)")
         st.divider()
+
+    # ── 데이터셋 버전(생성 학습용) — releases/<버전>/manifest.json 에서 직접 읽음(단일 출처) ──
+    st.markdown("### 📦 데이터셋 버전 (생성 학습용)")
+    st.caption("releases/<버전>/manifest.json 에서 직접 읽음 — GUI·문서·코드가 같은 출처라 숫자 일치. "
+               "T-라인=위상그래프(v0~) · G-라인=기하 2층 스키마(g0~).")
+    import glob as _glob
+    _vrows = []
+    for _mp in sorted(_glob.glob(str(config.DATA_DIR / "releases" / "*" / "manifest.json"))):
+        try:
+            _m = json.loads(Path(_mp).read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        _vrows.append({"버전": _m.get("version", Path(_mp).parent.name),
+                       "스키마": _m.get("schema", "?"),
+                       "출처": "자동" if _m.get("auto") else "보정포함",
+                       "주택형": ",".join(_m.get("houses", [])),
+                       "도면": _m.get("n_plans"), "세대": _m.get("n_units")})
+    if _vrows:
+        import pandas as _pd
+        st.dataframe(_pd.DataFrame(_vrows), hide_index=True, use_container_width=True)
+    else:
+        st.info("아직 빌드된 버전이 없습니다. (scripts/build_geom.py 로 생성)")
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
