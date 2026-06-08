@@ -1095,13 +1095,10 @@ def render_editor() -> None:
         states.pop(unit_id, None)
         _rerun(st)
 
-    # ── 도구(가로 라디오, 이모지X). 면적보정은 축척 없을 때만 노출(있으면 면적 자동) ──
-    _tools = ["보기", "영역그리기", "역할", "연결"]
-    if not getattr(dr, "scale", None):
-        _tools.append("면적보정")
-    if st.session_state.get(f"tool_{unit_id}") not in _tools:
-        st.session_state[f"tool_{unit_id}"] = "보기"
-    tool = st.radio("도구", _tools, horizontal=True, key=f"tool_{unit_id}")
+    # ── 도구(가로 라디오, 이모지X). 면적보정은 항상 접근 가능 — 축척이 틀려 전체 면적이
+    #    안 맞는 경우도 사용자가 들어가 고쳐야 하므로 숨기지 않는다(헤더 전체면적으로 판단). ──
+    tool = st.radio("도구", ["보기", "영역그리기", "역할", "연결", "면적보정"],
+                    horizontal=True, key=f"tool_{unit_id}")
 
     bg, mp_xy, (dw, dh) = bake_background(dr, png, stt)
     if bg is None:
@@ -1201,8 +1198,13 @@ def render_editor() -> None:
         info = sheet_scale_info(rp.plan_id)
         cur_mm = ((dr.scale * 1000) if getattr(dr, "scale", None)
                   else (info["mm_per_px"] if info else None))
-        panel.caption(f"시트당 1회 설정. 현재 {round(cur_mm, 2) if cur_mm else '미설정'} mm/px"
-                      f" · 자동검출 {info['confidence'] if info else '없음'}")
+        _tot = sum(n.area_px for n in stt.nodes.values() if n.polygon is not None)
+        _tot_m2 = (_tot * dr.scale * dr.scale) if getattr(dr, "scale", None) else None
+        panel.caption(
+            f"현재 축척 {round(cur_mm, 2) if cur_mm else '미설정'} mm/px · "
+            f"**전체 면적 {f'{_tot_m2:.0f}㎡' if _tot_m2 else f'{_tot:.0f}px²'}**\n\n"
+            f"이 전체 면적이 실제와 다르면 아래에서 mm/px를 조정(시트당 1회). "
+            f"자동검출 {info['confidence'] if info else '없음'}")
         if panel.button("OCR 추정", use_container_width=True, key=f"ocr_{unit_id}"):
             import types
             from plan2graph import scale_ocr
