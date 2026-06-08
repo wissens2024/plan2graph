@@ -1179,30 +1179,18 @@ def render_editor() -> None:
                           + ", ".join(f"{_disp_id(k)}→{v}" for k, v in list(sug.items())[:10]))
         else:
             panel.caption("자동 제안 없음(신호와 이미 일치 / 신호 부족)")
-        # 노드 목록 — 클릭해 선택(위에서 역할변경) / 🗑 삭제. id=도면 동그라미 숫자.
-        panel.caption(f"노드 {len(stt.nodes)}개 — 클릭해 선택(위에서 역할변경) / 🗑 삭제:")
-        for nid in list(stt.nodes):
-            n = stt.nodes[nid]
-            lab = f"{_disp_id(nid)} · {n.role}"
-            if n.area_px:
-                lab += f" · {_area_label(n.area_px, dr)}"
-            if n.fixtures:
-                lab += f" · 🛁{','.join(n.fixtures)}"
-            is_sel = (nid == rsel)
-            c1, c2 = panel.columns([5, 1], vertical_alignment="center")
-            if c1.button(("🔹 " if is_sel else "") + lab,
-                         key=f"rpick_{unit_id}_{nid}", use_container_width=True,
-                         type="primary" if is_sel else "secondary"):
-                buf["role_sel"] = nid
-                buf["rs_synced"] = None
-                _rerun(st)
-            if c2.button("🗑", key=f"rd_{unit_id}_{nid}", use_container_width=True,
-                         help="이 노드 삭제 — 도형이 틀렸을 때(삭제 후 ✒️로 다시 그리기)"):
-                remove_node(stt, nid)
-                if rsel == nid:
-                    buf["role_sel"] = None
-                write_svg(stt, dr)
-                _rerun(st)
+        # 노드 목록 — 읽기전용 정보 테이블(선택·변경·삭제는 도면 클릭→위에서). 🔹=선택중.
+        import pandas as pd
+        panel.caption(f"노드 {len(stt.nodes)}개 — 도면에서 클릭해 선택 → 위에서 역할변경/삭제")
+        rrows = [{
+            "": "🔹" if nid == rsel else "",
+            "id": _disp_id(nid),
+            "역할": n.role,
+            "면적": _area_label(n.area_px, dr) if n.area_px else "",
+            "기구": ",".join(n.fixtures) if n.fixtures else "",
+        } for nid, n in stt.nodes.items()]
+        panel.dataframe(pd.DataFrame(rrows), hide_index=True,
+                        use_container_width=True)
     elif tool.startswith("📏"):                            # 면적보정(scale)
         with canvas_col:
             st.image(bg)
@@ -1297,30 +1285,24 @@ def render_editor() -> None:
                         write_svg(stt, dr)
                         buf["edge_sel"] = None
                         _rerun(st)
-                panel.caption(f"연결 {len(stt.edges)}개 — 색=종류(🔵파랑 문 · 🟠주황 트임, "
-                              f"도면 선색과 동일). 선을 클릭해 선택 / 🗑로 삭제:")
-                _VIA_HEX = {"door": "#1565C0", "open": "#F2A900"}   # bake_background _EC와 동일
+                # 읽기전용 정보 테이블(선택·삭제는 도면서 선 클릭→위에서). 🔹=선택중, 색=종류.
+                import pandas as pd
                 _VIA_LAB = {"door": "문", "open": "트임"}
-                for e in list(stt.edges):
+                panel.caption(f"연결 {len(stt.edges)}개 — 도면에서 선을 클릭해 선택 → "
+                              f"위에서 삭제 (🔵문 · 🟠트임)")
+                erows = []
+                for e in stt.edges:
                     is_sel = esel is not None and {e["a"], e["b"]} == set(esel)
-                    via = e.get("via")
-                    col = _VIA_HEX.get(via, "#666")
-                    lab = _VIA_LAB.get(via, str(via or ""))
-                    name = (f"{_disp_id(e['a'])} {stt.nodes[e['a']].role} – "
-                            f"{_disp_id(e['b'])} {stt.nodes[e['b']].role} · {lab}")
-                    body = f"<b>{name}</b>" if is_sel else name
-                    c1, c2 = panel.columns([5, 1], vertical_alignment="center")
-                    c1.markdown(                       # ▌색띠=도면 선색, 글자도 같은 색
-                        f'<span style="color:{col};font-size:1.1em">▌</span>'
-                        f'{"🔹" if is_sel else ""}'
-                        f'<span style="color:{col}">{body}</span>',
-                        unsafe_allow_html=True)
-                    if c2.button("🗑", key=f"de_{e['a']}_{e['b']}",   # 휴지통=맨 끝
-                                 help="이 연결 삭제", use_container_width=True):
-                        remove_edge(stt, e["a"], e["b"])
-                        write_svg(stt, dr)
-                        buf["edge_sel"] = None
-                        _rerun(st)
+                    erows.append({
+                        "": "🔹" if is_sel else "",
+                        "A": f"{_disp_id(e['a'])} {stt.nodes[e['a']].role}",
+                        "B": f"{_disp_id(e['b'])} {stt.nodes[e['b']].role}",
+                        "종류": _VIA_LAB.get(e.get("via"), str(e.get("via") or "")),
+                    })
+                sty = pd.DataFrame(erows).style.map(   # 종류 글자색=도면 선색
+                    lambda v: "color:#1565C0" if v == "문"
+                    else ("color:#F2A900" if v == "트임" else ""), subset=["종류"])
+                panel.dataframe(sty, hide_index=True, use_container_width=True)
         else:                                              # ✒️ 영역 그리기(폴리곤)
             cv_base = panel.selectbox("그릴 공간 종류(=역할)", DRAW_BASES, key="cbase")
             panel.caption(f"여기서 고른 종류가 그대로 **역할**이 됨(나중에 🏷에서 변경).\n\n"
