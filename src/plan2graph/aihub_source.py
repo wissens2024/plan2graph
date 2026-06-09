@@ -13,11 +13,32 @@ from .coco import load_coco_bytes
 from .geometry import assemble_drawing
 
 
-def scan(split=("Training", "Validation"), house: str | None = None) -> list[dict]:
+def _extra_label_index(split, labels=("OBJ", "OCR")) -> dict:
+    """OBJ/OCR 라벨 zip 색인 {OBJ/OCR: {key: (zip, entry)}}.
+    `inspect_excluded.label_index`는 SPA/STR만 담고(그 함수는 GUI 오버레이가 공유하므로
+    OBJ/OCR 추가 시 렌더가 바뀜) → 여기서 동일 기계로 OBJ/OCR만 따로 색인(격리·무영향).
+    dual 도면 안에서 OBJ ~90%·OCR ~91% 링크(기구·역할명 신호 복원)."""
+    from pathlib import Path as _P
+    import config
+    sp = _ix._norm_splits(split)
+    zips = [z for z in _ix.discover_zips()
+            if z["content"] == "라벨" and z["split"] in sp]
+    idx: dict = {lt: {} for lt in labels}
+    for z, info in _ix.iter_zipinfos(zips):
+        m = _ix.parse_name(_P(info.filename).stem)
+        if m and m["label"] in idx and m["drawing"] == config.TARGET_DRAWING_TYPE:
+            idx[m["label"]][m["key"]] = (str(z["path"]), info.filename)
+    return idx
+
+
+def scan(split=("Training", "Validation"), house: str | None = None,
+         with_obj_ocr: bool = True) -> list[dict]:
     """편집 대상 목록(SPA 있는 도면만). 반환 [{plan_id, house, sig, png, labels}].
-    labels = {라벨종류: (zip, entry)} (COCO). png = (zip, entry) (원천)."""
+    labels = {라벨종류: (zip, entry)} (COCO). png = (zip, entry) (원천).
+    with_obj_ocr=True면 OBJ(기구)·OCR(이름)도 지문일치 시 병합(역할 유도 신호)."""
     idx = _ix.build_index(split)         # sig -> {label: {zip, entry, key, house}} (원천 PNG)
     lbl = _ix.label_index(split)         # {SPA/STR: {key: (zip, entry)}}          (라벨 COCO)
+    extra = _extra_label_index(split) if with_obj_ocr else {}   # {OBJ/OCR: {key: ...}}
     out = []
     for sig, d in idx.items():
         if "SPA" not in d:               # 방(SPA) 없으면 편집 불가
@@ -28,6 +49,9 @@ def scan(split=("Training", "Validation"), house: str | None = None) -> list[dic
         labels = {lt: lbl[lt][d[lt]["key"]]
                   for lt in ("SPA", "STR")
                   if lt in d and d[lt]["key"] in lbl.get(lt, {})}
+        for lt in ("OBJ", "OCR"):        # 지문(sig)일치 + 라벨 COCO 존재 시만 병합
+            if lt in d and d[lt]["key"] in extra.get(lt, {}):
+                labels[lt] = extra[lt][d[lt]["key"]]
         if "SPA" not in labels:          # SPA COCO 없으면 스킵
             continue
         out.append({"plan_id": f"{h}_FP_{sig}", "house": h, "sig": sig,

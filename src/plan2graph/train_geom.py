@@ -56,9 +56,11 @@ def _unit_example(g: dict):
                       (r.get("area_px", 0) or 0) / amax,
                       float(r.get("n_windows", 0) or 0)])
         boxes.append([cx, cy, bw, bh])
-    idmap = {nid: i for i, nid in enumerate(ids)}
-    adj = [(idmap[e["from"]], idmap[e["to"]]) for e in g.get("edges", [])
-           if e.get("from") in idmap and e.get("to") in idmap]
+    # id 정규화: jsonl 로드 시 rooms 키는 str, edge from/to는 int로 어긋난다
+    # (JSON object 키는 항상 문자열) → 둘 다 str로 맞춰야 인접이 살아 _adj_loss가 작동.
+    idmap = {str(nid): i for i, nid in enumerate(ids)}
+    adj = [(idmap[str(e["from"])], idmap[str(e["to"])]) for e in g.get("edges", [])
+           if str(e.get("from")) in idmap and str(e.get("to")) in idmap]
     return feats, boxes, adj
 
 

@@ -1,16 +1,22 @@
-"""geometry-rich graph 추출기 — docs/GEOMETRY_SCHEMA.md 구현.
+"""geometry-rich graph 추출기 — docs/GEOMETRY_SCHEMA.md 구현 (G-라인, schema g-0.3).
 
-위상편집 State(=사람 보정 Layer1) + Drawing(검출 원시) → Layer2 geometry-rich graph(JSON).
-파생 필드는 전부 여기서 계산(사람이 입력하지 않음). 자동 경로(사람보정 없음)는
-init_state(dr) 결과를 그대로 넣으면 된다 — 그래서 gold/auto가 같은 추출기를 공유한다.
+위상편집 State(=Layer1, 자동 init_state 또는 사람 보정) + Drawing(검출 원시)
+  → Layer2 geometry-rich graph(JSON). 파생 필드는 전부 여기서 계산(사람 입력 아님).
+자동 경로(사람보정 없음)는 topoedit.init_state(dr)를 그대로 넣으면 된다 — gold/auto가
+같은 추출기를 공유한다(프로그램이 1차 완전 SVG/그래프를 낸다는 원칙).
 
-채워지는 필드(현 단계):
-  room  : polygon, role, area_px/m2, aspect_ratio, centroid,
-          perimeter_px, exterior_len_px, has_window, n_windows, fixtures, privacy
-  door  : connects[a,b], via, width_px, is_entrance        (orientation=TODO)
-  window: room, bbox                                        (wall_seg/방위=TODO)
-  edge  : from,to,via, privacy_transition, dist_from_entrance
-  wall  : (TODO — 방 폴리곤 경계서 유도)
+이 추출기 = T-라인(schema.py, layout.nodes)과 절대 안 섞임(ADR-0002). 여기는 rooms 스키마.
+
+──────────────────────────────────────────────────────────────────────────────
+schema g-0.3 — GPT 제안 반영(벽·문방향·창귀속·외곽접촉) + 검증기/사유 + meta. 이전 0.2 대비:
+  room  : +bbox_px, centroid_norm, touches_exterior, wall_ids, door_ids, window_ids, base
+  wall  : 신규(방 폴리곤 공유변=interior / 외곽=exterior, openings) ← 이전 TODO
+  door  : +id, position, polygon, bbox_px, width_m, subtype, orientation(arc), on_wall ← orientation 이전 TODO
+  window: +id, belongs_to, position, width_px/m, on_wall, orientation_deg ← wall_seg/방위 이전 TODO
+  edge  : +door_id
+  top   : +schema_version, meta(status/reason — 회계용), walls, bbox_px, validation
+호환 보존: 방 dict 키=정수 node id, from/to/connects=정수(GUI _disp_id·집합비교 의존).
+  GUI(topoedit)·train_geom·geom_correct가 읽는 기존 키는 전부 유지하고 가산만 한다.
 """
 from __future__ import annotations
 
@@ -18,16 +24,27 @@ import math
 
 import networkx as nx
 
-# role → 동선 위계(KR_CONVENTIONS). connector=service.
+SCHEMA_VERSION = "g-0.3"
+
+# role → 동선 위계(KR_CONVENTIONS). connector·공용부=service. topoedit.ROLES 전부 커버
+#   (역할 누락 시 'other'로 떨어지던 구멍 메움 — 역할미상 사유는 validate가 별도 표시).
 PRIVACY = {
     "거실": "public", "주방": "public", "현관": "public", "엘리베이터홀": "public",
     "침실": "private", "안방": "private", "드레스룸": "private", "파우더룸": "private",
     "화장실": "private", "욕실": "private", "전용욕실": "private", "전용화장실": "private",
     "발코니": "service", "실외기실": "service", "복도": "service", "전실": "service",
-    "다목적공간": "service",
+    "다목적공간": "service", "계단실": "service", "엘리베이터": "service",
+    "구조물": "structure", "실외": "exterior",
 }
+CONNECTOR_ROLES = ("복도", "전실")
+# 단일세대 필수 5요소(역할 기준) — 결손 시 '필수공간없음' 사유(config.ESSENTIAL_ROOM_CLASSES와 대응)
+ESSENTIAL_ROLES = ("현관", "거실", "침실", "주방", "화장실")
+MIN_ROOMS = 5
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 기하 헬퍼 (순수 — shapely)
+# ─────────────────────────────────────────────────────────────────────────────
 def _aspect_ratio(poly) -> float:
     """최소회전사각형의 장변/단변(≥1). 길쭉할수록 큼."""
     try:
@@ -41,6 +58,12 @@ def _aspect_ratio(poly) -> float:
         return 0.0
 
 
+def _bbox(poly):
+    """[x, y, w, h] (정수 반올림)."""
+    x0, y0, x1, y1 = poly.bounds
+    return [round(x0, 1), round(y0, 1), round(x1 - x0, 1), round(y1 - y0, 1)]
+
+
 def _exterior_len(poly, others) -> float:
     """방 경계 중 다른 방과 공유하지 않는 길이(=외곽 접면). 근사."""
     try:
@@ -52,6 +75,145 @@ def _exterior_len(poly, others) -> float:
         return round(max(0.0, bnd.length - shared.length), 1)
     except Exception:  # noqa: BLE001
         return round(poly.exterior.length, 1)
+
+
+def _segments(poly):
+    """폴리곤 외곽 → 인접 꼭짓점 선분 [(p1, p2), ...]."""
+    cs = list(poly.exterior.coords)
+    return [(cs[i], cs[i + 1]) for i in range(len(cs) - 1)]
+
+
+def _seg_mid_ang(seg):
+    (x1, y1), (x2, y2) = seg
+    return ((x1 + x2) / 2, (y1 + y2) / 2), math.degrees(math.atan2(y2 - y1, x2 - x1)) % 180.0
+
+
+def _seg_close(s1, s2, tol=35.0, ang_tol=20.0) -> bool:
+    """두 선분이 같은 물리 벽의 두 반쪽인가 — 중점 근접 + 거의 평행."""
+    m1, a1 = _seg_mid_ang(s1)
+    m2, a2 = _seg_mid_ang(s2)
+    da = abs(a1 - a2)
+    da = min(da, 180 - da)
+    return math.dist(m1, m2) <= tol and da <= ang_tol
+
+
+def _derive_walls(rooms_xy, scale, tol=18.0, cover_frac=0.5):
+    """방 폴리곤 경계서 벽 유도(검출 안 함). 공유변=interior(두 방)·나머지=exterior(한 방).
+    근사: 사람/검출 폴리곤은 벽두께만큼 어긋나므로 buffer(tol)로 공유 판정·중점으로 병합.
+    반환 wall dict 리스트(openings는 build에서 문·창 매핑 후 채움)."""
+    from shapely.geometry import LineString
+    boundaries = [(nid, poly.exterior) for nid, poly in rooms_xy]
+    cands = []   # (type, rooms_key, LineString)
+    for nid, poly in rooms_xy:
+        for p1, p2 in _segments(poly):
+            seg = LineString([p1, p2])
+            if seg.length < 4:
+                continue
+            partner, cover = None, 0.0
+            for ojd, ob in boundaries:
+                if ojd == nid:
+                    continue
+                inter = seg.intersection(ob.buffer(tol))
+                c = inter.length if not inter.is_empty else 0.0
+                if c > cover:
+                    cover, partner = c, ojd
+            if partner is not None and cover >= cover_frac * seg.length:
+                cands.append(("interior", frozenset((nid, partner)), seg))
+            else:
+                cands.append(("exterior", (nid,), seg))
+    # interior 병합: 같은 방쌍의 두 반쪽(겹치는 선분)을 하나로(긴 쪽 대표)
+    walls, used = [], [False] * len(cands)
+    for i, (ty, rms, seg) in enumerate(cands):
+        if used[i]:
+            continue
+        used[i] = True
+        if ty == "interior":
+            grp = [seg]
+            for j in range(i + 1, len(cands)):
+                if used[j]:
+                    continue
+                ty2, rms2, seg2 = cands[j]
+                if ty2 == "interior" and rms2 == rms and _seg_close(
+                        (seg.coords[0], seg.coords[-1]), (seg2.coords[0], seg2.coords[-1])):
+                    grp.append(seg2)
+                    used[j] = True
+            rep = max(grp, key=lambda s: s.length)
+            walls.append(("interior", sorted(rms), rep))
+        else:
+            walls.append(("exterior", list(rms), seg))
+    out = []
+    for k, (ty, rms, seg) in enumerate(walls):
+        (x1, y1), (x2, y2) = seg.coords[0], seg.coords[-1]
+        out.append({
+            "id": f"w{k}", "type": ty,
+            "segment": [[round(x1, 1), round(y1, 1)], [round(x2, 1), round(y2, 1)]],
+            "length_px": round(seg.length, 1),
+            "length_m": (round(seg.length * scale, 2) if scale else None),
+            "rooms": rms, "openings": [],
+        })
+    return out
+
+
+def _seg_dist(segment, pt) -> float:
+    """벽 선분([[x1,y1],[x2,y2]])과 점(pt) 사이 거리."""
+    from shapely.geometry import LineString, Point
+    return LineString(segment).distance(Point(*pt))
+
+
+def _nearest_wall(walls, pt, prefer_rooms=None, gap=40.0):
+    """점 pt에 가장 가까운 벽 id(gap 이내). prefer_rooms 주면 그 방쌍 벽 우선(동률 깸)."""
+    best, bd = None, 1e18
+    for w in walls:
+        d = _seg_dist(w["segment"], pt)
+        if prefer_rooms is not None and set(w["rooms"]) == set(prefer_rooms):
+            d -= 1e6        # 같은 방쌍 벽 강한 우선
+        if d < bd:
+            best, bd = w, d
+    if best is None:
+        return None
+    real = _seg_dist(best["segment"], pt)
+    return best["id"] if real <= gap else None
+
+
+def _wall_normal_deg(segment) -> float:
+    """벽 선분 법선 방위(도, 상대값). 창 방향 근사 — 도면 방위(남향) 미상이라 상대."""
+    (x1, y1), (x2, y2) = segment
+    return round((math.degrees(math.atan2(y2 - y1, x2 - x1)) + 90.0) % 360.0, 1)
+
+
+def _door_orientation(poly):
+    """문 arc 폴리곤 → 여닫이 방향 {hinge, swing_dir_deg, radius_px, confidence}.
+    arc(부채꼴)는 hinge(원호 중심)서 호 위 점들이 등거리(R)인 성질로 hinge 추정.
+    bbox 사각형(검출 seg 없음)이면 정보 없음 → None(사람확인 플래그는 호출부가 처리)."""
+    if poly is None:
+        return None
+    import statistics
+    coords = list(poly.exterior.coords)[:-1]
+    if len(coords) < 5:          # 사각형(arc 아님)
+        return None
+    best = None                  # (cov, hinge, radius)
+    for h in coords:
+        ds = sorted(math.dist(h, c) for c in coords if c != h)
+        far = ds[len(ds) // 2:]
+        if not far:
+            continue
+        m = statistics.fmean(far)
+        sd = statistics.pstdev(far)
+        cov = sd / m if m > 1e-6 else 1e9
+        if best is None or cov < best[0]:
+            best = (cov, h, m)
+    if best is None or best[0] > 0.25:    # 등거리 아님 → arc로 못 봄
+        return None
+    cov, hinge, radius = best
+    far_pts = [c for c in coords if math.dist(hinge, c) > 0.6 * radius]
+    if not far_pts:
+        return None
+    fx = sum(p[0] for p in far_pts) / len(far_pts)
+    fy = sum(p[1] for p in far_pts) / len(far_pts)
+    ang = math.degrees(math.atan2(fy - hinge[1], fx - hinge[0])) % 360.0
+    return {"hinge": [round(hinge[0], 1), round(hinge[1], 1)],
+            "swing_dir_deg": round(ang, 1), "radius_px": round(radius, 1),
+            "confidence": "med" if cov < 0.18 else "low"}
 
 
 def _assign(dr, rooms_xy, attr, gap=40.0):
@@ -68,8 +230,16 @@ def _assign(dr, rooms_xy, attr, gap=40.0):
     return out
 
 
-def _door_width(dr, ca, cb, gap=80.0):
-    """엣지(두 방 중심 ca,cb) 사이 문의 폭(px). 가장 가까운 dr.door의 bbox 단변."""
+def _bbox_short(bbox):
+    """COCO [x,y,w,h] → 단변(문/창 폭). 없으면 None."""
+    if not bbox or len(bbox) != 4:
+        return None
+    _x, _y, w, h = bbox
+    return round(min(abs(w), abs(h)), 1)
+
+
+def _nearest_door(dr, ca, cb, gap=80.0):
+    """엣지(두 방 중심 ca,cb) 사이 가장 가까운 검출 문 Element."""
     mx, my = (ca[0] + cb[0]) / 2, (ca[1] + cb[1]) / 2
     best, bd = None, 1e18
     for d in dr.doors:
@@ -78,41 +248,60 @@ def _door_width(dr, ca, cb, gap=80.0):
         dd = math.dist(d.centroid, (mx, my))
         if dd < bd:
             best, bd = d, dd
-    if best is None or bd > gap or not best.bbox or len(best.bbox) != 4:
-        return None
-    _x, _y, w, h = best.bbox          # COCO [x,y,w,h] — 문 폭=단변
-    return round(min(abs(w), abs(h)), 1)
+    return best if (best is not None and bd <= gap) else None
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 본체
+# ─────────────────────────────────────────────────────────────────────────────
 def build(state, dr) -> dict:
-    """State(+dr) → geometry-rich graph dict (docs/GEOMETRY_SCHEMA.md)."""
+    """State(+dr) → geometry-rich graph dict (schema g-0.3, docs/GEOMETRY_SCHEMA.md)."""
     sc = getattr(dr, "scale", None)
     rooms_xy = [(nid, n.polygon) for nid, n in state.nodes.items() if n.polygon is not None]
     polys = [p for _, p in rooms_xy]
     win_by = _assign(dr, rooms_xy, "windows", gap=40.0)
     fix_by = _assign(dr, rooms_xy, "objects", gap=10.0)
+    walls = _derive_walls(rooms_xy, sc)
+
+    # 세대 외곽 bbox(정규화 좌표 기준)
+    if polys:
+        from shapely.ops import unary_union
+        ux0, uy0, ux1, uy1 = unary_union(polys).bounds
+    else:
+        ux0, uy0, ux1, uy1 = 0.0, 0.0, 1.0, 1.0
+    UW, UH = max(ux1 - ux0, 1.0), max(uy1 - uy0, 1.0)
 
     rooms = {}
     for i, (nid, poly) in enumerate(rooms_xy):
         n = state.nodes[nid]
         others = polys[:i] + polys[i + 1:]
         nwin = len(win_by.get(nid, []))
+        ext_len = _exterior_len(poly, others)
+        perim = poly.exterior.length
         rooms[nid] = {
+            "base": getattr(n, "base", n.role),
             "role": n.role,
+            "is_connector": n.role in CONNECTOR_ROLES or getattr(n, "base", "") in CONNECTOR_ROLES,
             "centroid": [round(n.cx, 1), round(n.cy, 1)],
+            "centroid_norm": [round((n.cx - ux0) / UW, 4), round((n.cy - uy0) / UH, 4)],
+            "bbox_px": _bbox(poly),
             "area_px": round(n.area_px, 1),
             "area_m2": (round(n.area_px * sc * sc, 2) if sc else None),
             "aspect_ratio": _aspect_ratio(poly),
-            "perimeter_px": round(poly.exterior.length, 1),
-            "exterior_len_px": _exterior_len(poly, others),
+            "perimeter_px": round(perim, 1),
+            "exterior_len_px": ext_len,
+            "touches_exterior": ext_len > 0.05 * perim,
             "has_window": nwin > 0,
             "n_windows": nwin,
             "fixtures": [o.class_name.replace("객체_", "") for o in fix_by.get(nid, [])],
             "privacy": PRIVACY.get(n.role, "other"),
+            "wall_ids": [w["id"] for w in walls if nid in w["rooms"]],
+            "door_ids": [],
+            "window_ids": [],
             "polygon": [[round(x, 1), round(y, 1)] for x, y in poly.exterior.coords],
         }
 
-    # 위상 그래프(거리 계산용) + 엣지 상세
+    # 위상 그래프(거리 계산용) + 엣지
     G = nx.Graph()
     G.add_nodes_from(rooms)
     edges = []
@@ -122,6 +311,7 @@ def build(state, dr) -> dict:
             continue
         G.add_edge(a, b)
         edges.append({"from": a, "to": b, "via": e.get("via"),
+                      "door_id": None,
                       "privacy_transition": f"{rooms[a]['privacy']}_to_{rooms[b]['privacy']}"})
 
     # 현관에서 BFS 거리
@@ -135,31 +325,130 @@ def build(state, dr) -> dict:
     for e in edges:
         e["dist_from_entrance"] = rooms[e["from"]].get("dist_from_entrance")
 
-    # door 상세(via=door 엣지에 폭·진입 표시)
+    # door 상세(via=door 엣지 ↔ 검출 문 기하 결합) — id·폭·여닫이·on_wall
     doors = []
-    for e in edges:
+    for ei, e in enumerate(edges):
         if e["via"] != "door":
             continue
         a, b = e["from"], e["to"]
-        doors.append({
-            "connects": [a, b],
-            "width_px": _door_width(dr, rooms[a]["centroid"], rooms[b]["centroid"]),
+        ca, cb = rooms[a]["centroid"], rooms[b]["centroid"]
+        d = _nearest_door(dr, ca, cb)
+        pos = ([round((ca[0] + cb[0]) / 2, 1), round((ca[1] + cb[1]) / 2, 1)]
+               if d is None or not d.centroid
+               else [round(d.centroid[0], 1), round(d.centroid[1], 1)])
+        wpx = _bbox_short(d.bbox) if d is not None else None
+        did = f"d{len(doors)}"
+        on_wall = _nearest_wall(walls, pos, prefer_rooms=(a, b))
+        door = {
+            "id": did, "connects": [a, b], "via": "door", "position": pos,
+            "polygon": ([[round(x, 1), round(y, 1)] for x, y in d.polygon.exterior.coords]
+                        if d is not None and d.polygon is not None else None),
+            "bbox_px": (d.bbox if d is not None else None),
+            "width_px": wpx,
+            "width_m": (round(wpx * sc, 2) if (wpx and sc) else None),
+            "subtype": (d.subtype if d is not None else None),
+            "orientation": (_door_orientation(d.polygon) if d is not None else None),
+            "needs_orientation_review": (d is None or d.polygon is None
+                                         or _door_orientation(d.polygon) is None),
+            "on_wall": on_wall,
             "is_entrance": rooms[a]["role"] == "현관" or rooms[b]["role"] == "현관",
-            # "orientation": TODO(arc 폴리곤서 스윙)
-        })
+        }
+        doors.append(door)
+        e["door_id"] = did
+        rooms[a]["door_ids"].append(did)
+        rooms[b]["door_ids"].append(did)
+        if on_wall:
+            for w in walls:
+                if w["id"] == on_wall:
+                    w["openings"].append(did)
 
+    # window 상세 — 방 귀속·on_wall(외벽)·방위
     windows = []
     for nid, ws in win_by.items():
         for w in ws:
-            windows.append({"room": nid, "bbox": [round(v, 1) for v in (w.bbox or [])]})
+            wid = f"win{len(windows)}"
+            pos = ([round(w.centroid[0], 1), round(w.centroid[1], 1)] if w.centroid else None)
+            on_wall = _nearest_wall(walls, pos, prefer_rooms=(nid,)) if pos else None
+            seg = next((wl["segment"] for wl in walls if wl["id"] == on_wall), None)
+            wpx = _bbox_short(w.bbox)
+            windows.append({
+                "id": wid, "belongs_to": nid, "position": pos,
+                "bbox_px": w.bbox,
+                "width_px": wpx, "width_m": (round(wpx * sc, 2) if (wpx and sc) else None),
+                "on_wall": on_wall,
+                "orientation_deg": (_wall_normal_deg(seg) if seg else None),
+            })
+            rooms[nid]["window_ids"].append(wid)
+            if on_wall:
+                for wl in walls:
+                    if wl["id"] == on_wall:
+                        wl["openings"].append(wid)
 
-    return {
+    g = {
+        "schema_version": SCHEMA_VERSION,
         "plan_id": state.plan_id, "house": state.house,
         "scale_mm_per_px": round(sc * 1000, 4) if sc else None,
+        "bbox_px": [round(ux0, 1), round(uy0, 1), round(UW, 1), round(UH, 1)],
         "n_rooms": len(rooms), "n_edges": len(edges),
-        "rooms": rooms, "edges": edges, "doors": doors, "windows": windows,
-        # "walls": TODO(방 폴리곤 경계서 유도 — 공유변=내벽/외곽=외벽)
+        "n_walls": len(walls), "n_doors": len(doors), "n_windows": len(windows),
+        "rooms": rooms, "edges": edges, "walls": walls, "doors": doors, "windows": windows,
     }
+    g["validation"] = validate(g)
+    v = g["validation"]
+    g["meta"] = {
+        "schema_version": SCHEMA_VERSION,
+        "house_type": state.house,
+        "scale_mm_per_px": g["scale_mm_per_px"],
+        "status": "success" if v["passed"] else "quarantine",
+        "reason": ",".join(v["reasons"]),
+        "n_rooms": len(rooms), "n_edges": len(edges),
+        "n_walls": len(walls), "n_doors": len(doors), "n_windows": len(windows),
+    }
+    return g
+
+
+def validate(g: dict) -> dict:
+    """G-라인 스키마 검증(T-라인 rules.validate의 G판). 회계 사유코드 산출.
+    hard(→quarantine): 면적없음·위상단절·방부족·필수공간없음. soft(→warning): 역할미상·문폭없음·현관없음.
+    반환 {passed, reasons:[hard코드], warnings:[soft코드]}."""
+    rooms = g.get("rooms", {})
+    edges = g.get("edges", [])
+    reasons, warnings = [], []
+
+    if any((r.get("area_px") or 0) <= 0 or not r.get("polygon") for r in rooms.values()):
+        reasons.append("면적없음")
+    if len(rooms) < MIN_ROOMS:
+        reasons.append("방부족")
+
+    roles = {r.get("role") for r in rooms.values()}
+    if not all(any(es == ro for ro in roles) for es in ESSENTIAL_ROLES):
+        missing = [es for es in ESSENTIAL_ROLES if es not in roles]
+        if missing:
+            reasons.append("필수공간없음")
+
+    # 위상단절 — 폴리곤 방들이 한 덩어리로 연결되는가(엣지 기준)
+    if rooms:
+        G = nx.Graph()
+        G.add_nodes_from(rooms)
+        for e in edges:
+            if e["from"] in rooms and e["to"] in rooms:
+                G.add_edge(e["from"], e["to"])
+        if nx.number_of_nodes(G) and nx.number_connected_components(G) > 1:
+            reasons.append("위상단절")
+
+    # soft
+    if any(r.get("privacy") == "other" or r.get("role") in (None, "기타") for r in rooms.values()):
+        warnings.append("역할미상")
+    if not any(r.get("role") == "현관" for r in rooms.values()):
+        warnings.append("현관없음")
+    if any(d.get("via") == "door" and d.get("width_px") is None for d in g.get("doors", [])):
+        warnings.append("문폭없음")
+    for e in edges:
+        if e.get("via") not in ("door", "open"):
+            warnings.append("via미상")
+            break
+
+    return {"passed": len(reasons) == 0, "reasons": reasons, "warnings": warnings}
 
 
 if __name__ == "__main__":
@@ -180,9 +469,13 @@ if __name__ == "__main__":
         st = T.init_state(dr, rp.plan_id, rp.house, units[0])
         g = build(st, dr)
         print(f"{g['plan_id']} house={g['house']} rooms={g['n_rooms']} edges={g['n_edges']} "
-              f"doors={len(g['doors'])} windows={len(g['windows'])} scale={g['scale_mm_per_px']}")
+              f"walls={g['n_walls']} doors={g['n_doors']} windows={g['n_windows']} "
+              f"scale={g['scale_mm_per_px']} status={g['meta']['status']} "
+              f"reason={g['meta']['reason']}")
         sample = next(iter(g["rooms"].values()))
         print("  room[0]:", {k: sample[k] for k in
-              ("role", "area_m2", "aspect_ratio", "has_window", "n_windows",
-               "fixtures", "privacy", "dist_from_entrance")})
+              ("role", "area_m2", "aspect_ratio", "touches_exterior", "has_window",
+               "n_windows", "fixtures", "privacy", "wall_ids", "dist_from_entrance")})
+        if g["doors"]:
+            print("  door[0]:", g["doors"][0])
         break
