@@ -74,8 +74,8 @@ def tier_of(source_tag: str | None, default: int = 1) -> int:
 # 전환기엔 코드가 양쪽을 다 인식해 데이터 이동 전에도 안 깨진다(DATASET_DESIGN §9).
 _LEGACY_GRAPHS = {
     "aihub":      config.PROCESSED_DIR / "graphs",
-    "cubicasa5k": config.DATA_DIR / "releases" / "global_cubicasa" / "graphs",
-    "rplan":      config.DATA_DIR / "releases" / "global_rplan" / "graphs",
+    "cubicasa5k": config.release_dir("global_cubicasa") / "graphs",
+    "rplan":      config.release_dir("global_rplan") / "graphs",
 }
 # AI-Hub 큐/원장은 현재 processed/ 직하. 글로벌은 staging 전까지 큐 없음.
 _LEGACY_QUEUE_ROOT = {"aihub": config.PROCESSED_DIR}

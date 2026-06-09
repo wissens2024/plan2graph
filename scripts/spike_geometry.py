@@ -133,7 +133,7 @@ def render(G, owner, W, H, out, title):
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
-    gdir = config.DATA_DIR / "releases" / "v0" / "graphs"
+    gdir = config.release_dir("v0") / "graphs"
     files = sorted(gdir.glob("*.json"))
     # 방 5~8개 단일세대 몇 장 샘플(결정적)
     picks = []

@@ -63,7 +63,7 @@ def _unit_example(g: dict):
 
 
 def load_units(version: str):
-    f = config.DATA_DIR / "releases" / version / "geom.jsonl"
+    f = config.release_dir(version) / "geom.jsonl"
     out = []
     if not f.exists():
         return out
@@ -155,7 +155,7 @@ def train(pretrain, finetune, epochs=30, lr=1e-3, batch_size=64, seed=42):
             last = {"stage": name, "ep": ep, "loss": tl / max(nb, 1)}
 
     rid = f"geom_{finetune}" + (f"_pre-{pretrain}" if pretrain else "")
-    out = RUNS / rid
+    out = config.run_write_dir(rid)
     out.mkdir(parents=True, exist_ok=True)
     torch.save({"state": net.state_dict(), "roles": ROLES, "maxr": MAXR}, out / "checkpoint.pt")
     (out / "run.json").write_text(json.dumps(

@@ -32,7 +32,7 @@ def main():
     from plan2graph import aihub_source as A, topoedit as T, geomgraph as G
 
     houses = [a.house] if a.house else ["APT", "DEH", "ROW"]
-    out_dir = config.DATA_DIR / "releases" / a.version
+    out_dir = config.release_write_dir(a.version)
     out_dir.mkdir(parents=True, exist_ok=True)
     outf = out_dir / "geom.jsonl"
 

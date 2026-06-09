@@ -44,8 +44,8 @@ FP = config.TARGET_DRAWING_TYPE
 SRC = "aihub"
 OUT = config.DATA_DIR / "staging" / SRC
 GRAPHS_OUT = OUT / "graphs"
-V0 = config.DATA_DIR / "releases" / "v0" / "graphs"
-V2 = config.DATA_DIR / "releases" / "v2" / "graphs"
+V0 = config.release_dir("v0") / "graphs"
+V2 = config.release_dir("v2") / "graphs"
 
 
 def scan_sources():

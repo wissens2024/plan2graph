@@ -36,7 +36,7 @@ def role_area_priors(version="g0"):
     import json
     import statistics
     import config
-    f = config.DATA_DIR / "releases" / version / "geom.jsonl"
+    f = config.release_dir(version) / "geom.jsonl"
     acc = collections.defaultdict(list)
     if f.exists():
         for ln in f.read_text(encoding="utf-8").splitlines():
@@ -131,7 +131,7 @@ if __name__ == "__main__":   # g0 한 세대의 위상으로 자기교정→렌�
     import config
     from plan2graph import geom_gen
 
-    line = (config.DATA_DIR / "releases" / "g0" / "geom.jsonl").read_text(
+    line = (config.release_dir("g0") / "geom.jsonl").read_text(
         encoding="utf-8").splitlines()
     g = json.loads(line[3])
     ids = list(g["rooms"])

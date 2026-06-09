@@ -27,7 +27,7 @@ CONNECT = ("door", "open", "balcony")
 
 def select_drawings(n: int = 20, version: str = "v0") -> list[dict]:
     """깨끗한 단일세대(현관1, scale 우선) 그래프 N개 — 결정적 선택."""
-    rel = config.DATA_DIR / "releases" / version / "graphs"
+    rel = config.release_dir(version) / "graphs"
     files = sorted(rel.glob("*.json"))
     picked = []
     for f in files:

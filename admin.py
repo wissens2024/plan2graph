@@ -514,12 +514,12 @@ if which.startswith("🧮"):
     st.caption("각 단계 **실제 산출물 파일**(manifest·run.json·checkpoint)에서 상태를 읽음 — "
                "GUI만 봐도 어디까지 했는지 추적(코드·GUI 일치). ✅완료 · ⬜예정.")
     _ROOTd = Path(__file__).resolve().parent
-    _g0m = config.DATA_DIR / "releases" / "g0" / "manifest.json"
+    _g0m = config.release_dir("g0") / "manifest.json"
     _g0 = json.loads(_g0m.read_text(encoding="utf-8")) if _g0m.exists() else None
-    _grp = _ROOTd / "runs" / "geom_g0" / "run.json"
+    _grp = config.run_dir("geom_g0") / "run.json"
     _gr = json.loads(_grp.read_text(encoding="utf-8")) if _grp.exists() else None
-    _ck = (_ROOTd / "runs" / "geom_g0" / "checkpoint.pt").exists()
-    _pre = any((_ROOTd / "runs").glob("geom_g0_pre-*")) if (_ROOTd / "runs").exists() else False
+    _ck = (config.run_dir("geom_g0") / "checkpoint.pt").exists()
+    _pre = bool(config.iter_runs("geom_g0_pre-*"))
     _stages = [
         ("1. 기하 데이터(g0, 자동)",
          (f"{_g0['n_plans']:,}도면 / {_g0['n_units']:,}세대" if _g0 else "—"),
@@ -545,12 +545,13 @@ if which.startswith("🧮"):
                "T-라인=위상그래프(v0~) · G-라인=기하 2층 스키마(g0~).")
     import glob as _glob
     _vrows = []
-    for _mp in sorted(_glob.glob(str(config.DATA_DIR / "releases" / "*" / "manifest.json"))):
+    for _v, _line, _rp in config.list_releases():
         try:
-            _m = json.loads(Path(_mp).read_text(encoding="utf-8"))
+            _m = json.loads((_rp / "manifest.json").read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001
             continue
-        _vrows.append({"버전": _m.get("version", Path(_mp).parent.name),
+        _vrows.append({"버전": _m.get("version", _v),
+                       "라인": "T-라인" if _line == "tline" else "G-라인",
                        "스키마": _m.get("schema", "?"),
                        "출처": "자동" if _m.get("auto") else "보정포함",
                        "주택형": ",".join(_m.get("houses", [])),
@@ -888,10 +889,9 @@ if which.startswith("📈"):
     from plan2graph import model_baseline as _mb
     from plan2graph import review as _rv
 
-    REL = config.DATA_DIR / "releases"
-    vers = sorted([p.name for p in REL.glob("v*") if p.is_dir()
-                   and (p / "manifest.json").exists()
-                   and (p / "splits" / "test.txt").exists()]) if REL.exists() else []
+    vers = sorted(_v for _v, _line, _rp in config.list_releases()
+                  if _line == "tline" and (_rp / "splits" / "test.txt").exists())
+    REL = config.RELEASES_DIR              # 최상위 releases 폴더(라인 무관 파일용)
     if not vers:
         st.info("동결된 버전이 없습니다. `python src/plan2graph/release.py v0` 먼저 실행.")
         st.stop()
@@ -905,18 +905,18 @@ if which.startswith("📈"):
 
     @st.cache_data(show_spinner=False)
     def _manifest(v, _k):
-        p = REL / v / "manifest.json"
+        p = config.release_dir(v) / "manifest.json"
         return _json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
 
     @st.cache_data(show_spinner=False)
     def _evalr(v, _k):
-        p = REL / v / "eval.json"
+        p = config.release_dir(v) / "eval.json"
         return _json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
 
     @st.cache_data(show_spinner="데이터셋 통계 집계...")
     def _roomdist(v, _k):
         c = _Counter()
-        for f in (REL / v / "graphs").glob("*.json"):
+        for f in (config.release_dir(v) / "graphs").glob("*.json"):
             r = _json.loads(f.read_text(encoding="utf-8"))
             for n in r["layout"]["nodes"]:
                 if n.get("type") and n["type"] != "exterior":
@@ -927,8 +927,8 @@ if which.startswith("📈"):
     def _model(v, _k):
         return _mb.fit(_mb._load_split(v, "train"))
 
-    man = _manifest(ver, _mt(REL / ver / "manifest.json"))
-    ev = _evalr(ver, _mt(REL / ver / "eval.json"))
+    man = _manifest(ver, _mt(config.release_dir(ver) / "manifest.json"))
+    ev = _evalr(ver, _mt(config.release_dir(ver) / "eval.json"))
 
     @st.cache_data(show_spinner="실험 원장 집계...")
     def _agg(_k):
@@ -937,7 +937,7 @@ if which.startswith("📈"):
 
     _idx = ROOT / "runs" / "index.jsonl"
     summ = _agg(_mt(_idx)) if _idx.exists() else {"eval": [], "generalization": []}
-    _v0man = _manifest("v0", _mt(REL / "v0" / "manifest.json"))
+    _v0man = _manifest("v0", _mt(config.release_dir("v0") / "manifest.json"))
     _AIHUB = _v0man.get("n_graphs")
     _ai = f"AI-Hub {_AIHUB:,}" if _AIHUB else "AI-Hub"
 
@@ -1021,7 +1021,7 @@ if which.startswith("📈"):
                    f"x축=통합 한글. **막대에 마우스 올리면 출처별 실제 원 라벨**(AI-Hub 한글 / RPLAN·CubiCasa 영문). "
                    f"총 노드: {_tot}. (`scripts/roomdist_by_source.py` 스냅샷)")
     else:
-        st.bar_chart(_roomdist(ver, _mt(REL / ver / "manifest.json")))
+        st.bar_chart(_roomdist(ver, _mt(config.release_dir(ver) / "manifest.json")))
         st.caption("출처별 분포는 `python scripts/roomdist_by_source.py` 실행 후 표시.")
 
     with st.expander("▸ 방 종류 — 소스별 원 분류명 매핑 (AI-Hub / RPLAN / CubiCasa → 통합)"):
@@ -1067,7 +1067,7 @@ if which.startswith("📈"):
     @st.cache_data(show_spinner="목표치(인접분포) 집계...")
     def _adj_target(v, _k):   # 실제 도면의 방-쌍 연결 빈도 → 확률(eval_gen._metrics의 P_real과 동일 정의)
         pairs = _Counter()
-        for f in (REL / v / "graphs").glob("*.json"):
+        for f in (config.release_dir(v) / "graphs").glob("*.json"):
             r = _json.loads(f.read_text(encoding="utf-8"))
             nt = {n["id"]: n["type"] for n in r["layout"]["nodes"] if isinstance(n["id"], int)}
             for e in r["layout"]["edges"]:
@@ -1080,7 +1080,7 @@ if which.startswith("📈"):
         return [(f"{a}–{b}", c / tot) for (a, b), c in pairs.most_common(15)]
 
     st.markdown("**② 목표치 — 실제 도면의 방-쌍 연결 확률 P_real** (AI-Hub v0, 통행연결 상위 15쌍)")
-    _adj = _adj_target("v0", _mt(REL / "v0" / "manifest.json")) if (REL / "v0" / "graphs").exists() else []
+    _adj = _adj_target("v0", _mt(config.release_dir("v0") / "manifest.json")) if (config.release_dir("v0") / "graphs").exists() else []
     if _adj:
         st.table([{"방-쌍": k, "목표 연결확률": f"{v*100:.1f}%"} for k, v in _adj])
         st.caption("생성모델이 맞춰야 할 목표(= §3 adj_L1의 P_real). 거실이 상위에 반복 → 한국 집은 거실 허브 구조.")
@@ -1145,7 +1145,7 @@ if which.startswith("📈"):
         program = dict(_Counter(n["type"] for n in rec["layout"]["nodes"]
                                 if isinstance(n["id"], int)))
         st.caption(f"program: {program}")
-        gen = _mb.generate(_model(ver, _mt(REL / ver / "manifest.json")), program,
+        gen = _mb.generate(_model(ver, _mt(config.release_dir(ver) / "manifest.json")), program,
                            _random.Random(st.session_state.ex_seed_dash))
         e1, e2 = st.columns(2)
         with e1:
@@ -1302,7 +1302,7 @@ if which.startswith("🏗"):
     _ridver = (f"{_version}cap2x" if _cap else _version) if _version else None
     _rid = _exp.make_run_id("neural", _ridver, _ptr, 42, _ARCH) if _ridver else None
     _desc = f"사전학습[{_prv or '없음'}] → 파인튜닝[{_ftv or '없음'}]" + (" · 용량2배" if _cap else "")
-    _ckpt = (_ROOT / "runs" / _rid / "checkpoint.pt") if _rid else None
+    _ckpt = (config.run_dir(_rid) / "checkpoint.pt") if _rid else None
     _exists = bool(_ckpt and _ckpt.exists())
     _olog = (_ROOT / "logs" / f"ondemand-{_rid}.log") if _rid else None
     if _version is None:
@@ -1431,16 +1431,16 @@ if which.startswith("🏗"):
 
     # 기하 모델 2단계 학습 — 데이터셋 콤보(releases에서 직접 읽음)에서 골라 학습/파인튜닝
     st.markdown("**기하 모델 2단계 학습** — 데이터셋을 골라 ① 사전학습 → ② 파인튜닝")
-    import glob as _gglob
-    _gvers = []  # 기하(G-라인) 데이터셋: schema=="geometry"
-    for _mp in sorted(_gglob.glob(str(config.DATA_DIR / "releases" / "*" / "manifest.json"))):
+    _gvers = []  # 기하(G-라인) 데이터셋
+    for _v, _line, _rp in config.list_releases():
+        if _line != "gline":
+            continue
         try:
-            _m = json.loads(Path(_mp).read_text(encoding="utf-8"))
+            _m = json.loads((_rp / "manifest.json").read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001
             continue
-        if _m.get("schema") == "geometry":
-            _gvers.append((_m.get("version", Path(_mp).parent.name),
-                           _m.get("n_units"), ",".join(_m.get("houses", []))))
+        _gvers.append((_m.get("version", _v),
+                       _m.get("n_units"), ",".join(_m.get("houses", []))))
     if not _gvers:
         st.info("기하 데이터셋(G-라인)이 아직 없습니다. (scripts/build_geom.py / build_geom_global.py 로 빌드)")
     else:
@@ -1457,7 +1457,7 @@ if which.startswith("🏗"):
         _gep = _gp3.number_input("에폭", 1, 200, 20, key="geom_ep")
         _gprv = None if _gpre == "없음" else _gpre
         _grid = f"geom_{_gft}" + (f"_pre-{_gprv}" if _gprv else "")
-        _grun = _ROOT / "runs" / _grid / "run.json"
+        _grun = config.run_dir(_grid) / "run.json"
         _glog = _ROOT / "logs" / f"train_{_grid}.log"
         st.caption(f"→ 모델: `{_grid}`")
         if _grun.exists():

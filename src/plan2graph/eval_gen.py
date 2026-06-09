@@ -268,12 +268,12 @@ def run(versions: list[str], n_test: int | None = None,
         seed: int | None = None) -> Path:
     rows = []
     for v in versions:
-        if not (config.DATA_DIR / "releases" / v).exists():
+        if not config.release_dir(v).exists():
             print(f"  [없음] {v}")
             continue
         print(f"평가: {v}")
         rows += evaluate_version(v, n_test, seed)
-    out = config.DATA_DIR / "releases" / "eval_ab.json"
+    out = config.RELEASES_DIR / "eval_ab.json"
     out.write_text(json.dumps({"rows": rows}, ensure_ascii=False, indent=2),
                    encoding="utf-8")
     # 표 출력

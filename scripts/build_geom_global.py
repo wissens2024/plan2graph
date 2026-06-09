@@ -52,9 +52,9 @@ def main():
     ap.add_argument("--version", default="g_global")
     a = ap.parse_args()
     import config
-    rel = config.DATA_DIR / "releases"
-    srcs = [rel / "global_rplan" / "graphs", rel / "global_cubicasa" / "graphs"]
-    out_dir = rel / a.version
+    srcs = [config.release_dir("global_rplan") / "graphs",
+            config.release_dir("global_cubicasa") / "graphs"]
+    out_dir = config.release_write_dir(a.version)
     out_dir.mkdir(parents=True, exist_ok=True)
     outf = out_dir / "geom.jsonl"
     n = skip = 0

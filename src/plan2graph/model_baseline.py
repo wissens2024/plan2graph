@@ -31,7 +31,7 @@ CONNECT_VIAS = ("door", "open", "balcony")
 
 
 def _load_split(version: str, split: str) -> list[dict]:
-    rel = config.DATA_DIR / "releases" / version
+    rel = config.release_dir(version)
     ids = (rel / "splits" / f"{split}.txt").read_text(encoding="utf-8").split()
     out = []
     for gid in ids:
@@ -238,7 +238,7 @@ if __name__ == "__main__":
     res["top_adjacency"] = [{"pair": f"{a}~{b}", "p": round(p, 3)}
                             for (a, b), p in sorted(model["p_adj"].items(),
                                                     key=lambda x: -x[1])[:12]]
-    out = config.DATA_DIR / "releases" / ver / "eval.json"
+    out = config.release_dir(ver) / "eval.json"
     out.write_text(json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({k: v for k, v in res.items() if k != "top_adjacency"},
                      ensure_ascii=False, indent=2))

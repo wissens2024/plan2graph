@@ -103,7 +103,7 @@ def freeze(version: str, recipe: dict | None = None) -> dict:
     recipe = load_recipe(version, recipe)
     test_from = set(recipe.get("test_from", []))
 
-    out = RELEASES / version
+    out = config.release_write_dir(version)
     if out.exists():
         shutil.rmtree(out)
     (out / "graphs").mkdir(parents=True)

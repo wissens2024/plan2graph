@@ -63,7 +63,7 @@ def env_provenance() -> dict:
 
 def data_provenance(version: str) -> dict:
     """데이터 핀: manifest 해시 + split 크기·해시 → '어떤 데이터였나' 고정."""
-    rel = config.DATA_DIR / "releases" / version
+    rel = config.release_dir(version)
     prov = {"version": version, "manifest_sha": None}
     man = rel / "manifest.json"
     if man.exists():

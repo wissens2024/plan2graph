@@ -11,16 +11,16 @@ from .train_geom import MAXR, PAD, ROLE_IX, RUNS, _model
 
 
 def available_runs() -> list[str]:
-    if not RUNS.exists():
-        return []
-    return sorted(p.name for p in RUNS.iterdir()
-                  if p.name.startswith("geom_") and (p / "checkpoint.pt").exists())
+    import config
+    return sorted(p.name for p in config.iter_runs("geom*")
+                  if (p / "checkpoint.pt").exists())
 
 
 def load(run_id: str):
     import torch
+    import config
     net = _model()
-    ckpt = torch.load(RUNS / run_id / "checkpoint.pt", map_location="cpu")
+    ckpt = torch.load(config.run_dir(run_id) / "checkpoint.pt", map_location="cpu")
     net.load_state_dict(ckpt["state"])
     net.eval()
     return net

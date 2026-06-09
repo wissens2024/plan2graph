@@ -47,6 +47,91 @@ PROCESSED_DIR = DATA_DIR / "processed"  # (레거시, 은퇴) — staging/aihub�
 INVENTORY_CSV = INTERIM_DIR / "inventory.csv"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 라인별 분리 (ADR-0002): releases·runs를 T-라인/G-라인 하위폴더로 격리.
+#   리졸버는 라인 하위폴더(tline/gline)를 먼저 찾고, 없으면 옛 flat 경로로 폴백.
+#   → 데이터 물리 이전 전에는 flat로 동작(무변화), 이전 후엔 자동으로 새 위치 사용.
+# ─────────────────────────────────────────────────────────────────────────────
+RELEASES_DIR = DATA_DIR / "releases"
+RUNS_DIR = PROJECT_ROOT / "runs"
+DATASET_LINES = ("tline", "gline")        # T=위상(자동 detection→그래프), G=위상+기하(SVG→추출)
+
+
+def dataset_line(version: str) -> str:
+    """버전명 → 라인. 이미 이전됐으면 그 위치, 아니면 내용(geom.jsonl)·이름으로 추정."""
+    v = str(version)
+    if (RELEASES_DIR / "gline" / v).exists():
+        return "gline"
+    if (RELEASES_DIR / "tline" / v).exists():
+        return "tline"
+    if (RELEASES_DIR / v / "geom.jsonl").exists():     # 미이전 flat: 기하 데이터셋
+        return "gline"
+    if v.startswith("g") and not v.startswith("global"):
+        return "gline"
+    return "tline"
+
+
+def release_dir(version: str) -> Path:
+    """버전 데이터 폴더 경로. 라인 하위폴더 우선 → 없으면 옛 flat 폴백(안 깨짐)."""
+    for line in DATASET_LINES:
+        p = RELEASES_DIR / line / version
+        if p.exists():
+            return p
+    return RELEASES_DIR / version                       # 옛 flat
+
+
+def run_dir(run_id: str) -> Path:
+    """런(모델) 폴더 경로. 라인 하위폴더 우선 → 없으면 옛 flat 폴백."""
+    for line in DATASET_LINES:
+        p = RUNS_DIR / line / run_id
+        if p.exists():
+            return p
+    return RUNS_DIR / run_id                            # 옛 flat
+
+
+def release_write_dir(version: str) -> Path:
+    """새 릴리스를 만들 폴더(라인 자동 결정) — 빌더·freeze가 사용."""
+    return RELEASES_DIR / dataset_line(version) / version
+
+
+def list_releases():
+    """모든 릴리스 (version, line, path). 라인 하위폴더 + 옛 flat 스캔(manifest.json 보유만)."""
+    out = {}
+    for line in DATASET_LINES:
+        d = RELEASES_DIR / line
+        if d.is_dir():
+            for p in sorted(d.iterdir()):
+                if p.is_dir() and (p / "manifest.json").exists():
+                    out[p.name] = (p.name, line, p)
+    if RELEASES_DIR.is_dir():                              # 미이전 flat(라인 폴더에 없는 것만)
+        for p in sorted(RELEASES_DIR.iterdir()):
+            if (p.is_dir() and p.name not in DATASET_LINES
+                    and p.name not in out and (p / "manifest.json").exists()):
+                out[p.name] = (p.name, dataset_line(p.name), p)
+    return list(out.values())
+
+
+def run_line(run_id: str) -> str:
+    """런 id → 라인. 기하 모델(geom*)=gline, 그 외(gen* 등)=tline."""
+    return "gline" if str(run_id).startswith("geom") else "tline"
+
+
+def run_write_dir(run_id: str) -> Path:
+    """새 런(모델) 저장 폴더(라인 자동)."""
+    return RUNS_DIR / run_line(run_id) / run_id
+
+
+def iter_runs(pattern: str = "*"):
+    """런 폴더들 — 라인 하위폴더 + 옛 flat (admin 진행보드 glob용)."""
+    seen, res = set(), []
+    for base in [RUNS_DIR / l for l in DATASET_LINES] + [RUNS_DIR]:
+        if base.is_dir():
+            for p in sorted(base.glob(pattern)):
+                if p.is_dir() and p.name not in DATASET_LINES and p.name not in seen:
+                    seen.add(p.name)
+                    res.append(p)
+    return res
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 파일명 규칙: {주택3자}_{도면2자}_{라벨3자}_{9자리}.png|json
 # ─────────────────────────────────────────────────────────────────────────────
 HOUSE_TYPES = ("APT", "DEH", "ROW")        # 아파트 / 단독주택 / 연립다세대
