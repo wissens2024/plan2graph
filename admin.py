@@ -693,15 +693,6 @@ if which.startswith("🏢"):
 
     st.markdown(f"### {cat} — **{len(sel):,}개**" +
                 (f"  ·  _렌더가능 {len(recs):,}_" if len(recs) != len(sel) else ""))
-    # ── 검수 → 위상편집 연결: 이 분류에서 도면 골라 편집기로 ──
-    if sel:
-        _eopts = [f"{r['house']}_FP_{r['fingerprint']}" for r in sel[:3000]]
-        _e1, _e2 = st.columns([4, 1])
-        _epick = _e1.selectbox("편집할 도면 → G 보정(위상편집)", _eopts, key="aihub_editpick")
-        if _e2.button("→ G 보정 열기", use_container_width=True):
-            st.session_state["topoedit_target"] = (_epick.split("_")[0], _epick)
-            st.session_state["_goto_idx"] = _MENU.index("🧩 AI-Hub 검수 (G)")
-            st.rerun()
     @st.cache_data(show_spinner="라벨 인덱스 구성(최초 1회)...")
     def _lblidx(sp):
         return _ix.label_index(sp)
