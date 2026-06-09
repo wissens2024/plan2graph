@@ -420,12 +420,12 @@ def _curate_aihub():
 
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
 st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
-_MENU = ["🧮 종합 현황", "✏️ 위상 편집",
-         "🏢 AI-Hub 검수",
-         "🏠 CubiCasa 검수", "📐 RPLAN 검수",
-         "📜 법령 DB",
-         "📈 결과 대시보드",
-         "🏗 도면 생성"]
+_MENU = ["🧮 종합 현황",
+         "🏢 AI-Hub 검수", "🏠 CubiCasa 검수", "📐 RPLAN 검수",
+         "📘 T-라인",
+         "✏️ 위상 편집", "📗 G-라인",
+         "⚖️ 성능 비교",
+         "📜 법령 DB"]
 try:  # 동그라미 없는 클릭형 메뉴(streamlit-option-menu). 미설치 시 라디오로 폴백.
     from streamlit_option_menu import option_menu
     with st.sidebar:
@@ -882,7 +882,7 @@ if which.startswith("📐"):
 #   개념: 데이터셋을 합쳐 하나를 학습 → 어떤 조합이 최고인지 비교.
 #   데이터버전 매핑: 없음→v0 · +CubiCasa→v2 · +RPLAN→v3 · +결합→v4 (experiments._PRETRAIN_VER).
 # ════════════════════════════════════════════════════════════════════════════
-if which.startswith("📈"):
+if which.startswith("📘"):
     import json as _json
     import random as _random
     from collections import Counter as _Counter
@@ -895,7 +895,7 @@ if which.startswith("📈"):
     if not vers:
         st.info("동결된 버전이 없습니다. `python src/plan2graph/release.py v0` 먼저 실행.")
         st.stop()
-    st.title("📈 결과 대시보드")
+    st.title("📘 T-라인 — 데이터셋 · 위상모델 · 평가")
     st.caption("**데이터셋 조합별 성능 비교** — 데이터를 합쳐 하나를 학습했을 때 어떤 조합이 최고인지 한눈에. "
                "test는 AI-Hub 동결분으로 전 버전 공유(비교 기준 고정).")
     ver = vers[-1]
@@ -1246,11 +1246,13 @@ if which.startswith("📈"):
 # ════════════════════════════════════════════════════════════════════════════
 # 🏗 도면 생성 (시연) — 자연어 → 위상 도면 + 자기교정 근거
 # ════════════════════════════════════════════════════════════════════════════
-if which.startswith("🏗"):
+if which.startswith("📗"):
     from pathlib import Path as _Path
     from plan2graph import review as _rv
     _ROOT = _Path(__file__).resolve().parent
-    st.title("🏗 도면 생성 — 위상에서 무결 도면으로")
+    st.title("📗 G-라인 — 데이터셋 · 위상/기하모델 · 도면생성")
+    st.warning("⚠️ 구성 중(ADR-0002 ②): 아래 §2·§3은 **T-라인 생성**이라 다음 단계에서 📘 T-라인으로 옮깁니다. "
+               "G-라인 고유는 §기하(맨 아래).")
     st.caption("위상 모델(부품)을 골라 → 좌표 도면을 만들고 → 검사·재생성으로 무결화. "
                "**최종 목표는 *잘 나온 도면***. 어떤 방법 조합이 최고 도면을 만드는지 탐색한다.")
 
@@ -1549,6 +1551,12 @@ if which.startswith("🏗"):
 # ════════════════════════════════════════════════════════════════════════════
 # 📜 법령 DB — 최신화(관리자 클릭) + 법령/규정 조회
 # ════════════════════════════════════════════════════════════════════════════
+if which.startswith("⚖️"):
+    st.title("⚖️ 성능 비교 — T-라인 vs G-라인 도면 품질")
+    st.caption("최종 잣대: 누가 더 품질 높은 도면을 만드나. T(규칙기반 treemap) vs G(학습 기하모델).")
+    st.info("준비 중 — 같은 자연어 요구로 T·G 도면을 생성해 나란히 비교하는 화면을 붙입니다(ADR-0002 ③).")
+    st.stop()
+
 if which.startswith("📜"):
     import json as _json
     st.header("📜 법령 DB 관리")
