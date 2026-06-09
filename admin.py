@@ -420,10 +420,11 @@ def _curate_aihub():
 
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
 st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
-_MENU = ["🧮 종합 현황", "🌐 글로벌 (공용)",
-         "📘 T-라인", "✏️ 위상 편집", "📗 G-라인",
+_MENU = ["🧮 종합 현황",
+         "🏢 AI-Hub 검수 (T)", "🏠 CubiCasa 검수", "📐 RPLAN 검수",
+         "📈 T-라인 결과", "📘 T-라인 도면생성",
+         "🧩 AI-Hub 검수 (G)", "📗 G-라인 도면생성",
          "⚖️ 성능 비교",
-         "🏢 AI-Hub 검수", "🏠 CubiCasa 검수", "📐 RPLAN 검수",
          "📜 법령 DB"]
 try:  # 동그라미 없는 클릭형 메뉴(streamlit-option-menu). 미설치 시 라디오로 폴백.
     from streamlit_option_menu import option_menu
@@ -447,8 +448,21 @@ except ModuleNotFoundError:
 # ✏️ 위상 편집(신규) — 원본 위에서 사람이 위상 직접 구축(자동추론 0) → gold
 #   기존 자동추출(extract2)·골드(goldset) 미사용. 자체 데이터 소스(독립).
 # ════════════════════════════════════════════════════════════════════════════
-if which.startswith("✏️"):
+if which.startswith("🧩"):
     from plan2graph import topoedit
+    st.title("🧩 AI-Hub 검수 (G) — 위상+기하 보정")
+    _g0m_g = config.release_dir("g0") / "manifest.json"
+    _used_g = (json.loads(_g0m_g.read_text(encoding="utf-8")).get("n_units", 0)
+               if _g0m_g.exists() else 0)
+    _recdir_g = config.DATA_DIR / "staging" / "topo_human" / "records"
+    _corr_g = len(list(_recdir_g.glob("*.svg"))) if _recdir_g.exists() else 0
+    _cg = st.columns(3)
+    _cg[0].metric("사용 (자동 g0)", f"{_used_g:,}")
+    _cg[1].metric("보정 (위상편집 SVG)", f"{_corr_g:,}")
+    _cg[2].metric("제외", "—")
+    st.caption("롤링 증분: **사용** 데이터로 학습→계속 사용→위상편집으로 보정해 늘면 재학습/이어쓰기. "
+               "보정 = 아래 편집기에서 도면 골라 위상+기하 직접 교정.")
+    st.divider()
     topoedit.render_editor()
     st.stop()
 
@@ -565,24 +579,27 @@ if which.startswith("🧮"):
 # ════════════════════════════════════════════════════════════════════════════
 # 🏢 배제 도면 검수 — 그래프 대상에서 빠진 평면도를 실제 PNG로 육안 검증
 # ════════════════════════════════════════════════════════════════════════════
-if which.startswith("🌐"):
-    st.title("🌐 글로벌 (공용) — 사전학습 원천")
-    st.caption("CubiCasa5k · RPLAN. 두 라인의 **사전학습 후보**. 검수 없음 — 쓰거나/안 쓰거나. "
-               "빌드 데이터셋: T=global_* / G=g_global.")
-    st.markdown(
-        "**구조(이사 중)**\n"
-        "- CubiCasa5k · RPLAN **원천 현황 + 사용/미사용** 토글 (검수 없음)\n"
-        "- 두 라인 학습에서 **사전학습 후보**로 노출 (역할은 각 라인 학습에서 GUI로 결정)")
-    st.info("🚧 구성 중 — CubiCasa·RPLAN 현황·사용여부를 여기로 모읍니다. "
-            "현재 상세는 🏠 CubiCasa 검수 · 📐 RPLAN 검수 메뉴에 있습니다(이사 예정).")
-    st.stop()
-
 if which.startswith("🏢"):
     import io as _io
     from PIL import Image as _PImage
     from plan2graph import inspect_excluded as _ix
 
-    st.title("🏢 AI-Hub 도면 검수")
+    st.title("🏢 AI-Hub 검수 (T) — 자동변환 그래프")
+    _aim_t = config.DATA_DIR / "staging" / "aihub" / "manifest.jsonl"
+    if _aim_t.exists():
+        @st.cache_data(show_spinner=False)
+        def _aih_disp_t(_sz):
+            from collections import Counter as _Ctr
+            return dict(_Ctr(json.loads(_l)["disposition"]
+                             for _l in _aim_t.read_text(encoding="utf-8").splitlines() if _l.strip()))
+        _dt = _aih_disp_t(_aim_t.stat().st_size)
+        _ct = st.columns(3)
+        _ct[0].metric("✅ 사용", f"{_dt.get('use', 0):,}")
+        _ct[1].metric("🛠 보정 필요", f"{_dt.get('fix', 0):,}")
+        _ct[2].metric("🚫 제외", f"{_dt.get('excl', 0):,}")
+        st.caption("변환 완성도 레버(자동): ② 기하룰(개방통로·발코니·문매칭) · ③ 임계(간격·비율) · "
+                   "④ 무결성 기준(R1~R5) · ① 검출 재학습(V2V/STR) · 라벨 합집합 재변환 → 보정필요를 사용으로.")
+        st.divider()
     st.caption("AI-Hub 도면을 원본 PNG로 확인 — 채택분(dual)·제외분(부분/완전배제) 사유 육안 검증.")
     if not config.RAW_SOURCE_ROOT.is_dir():
         st.error(f"원본 RAW 없음: {config.RAW_SOURCE_ROOT}\n"
@@ -680,10 +697,10 @@ if which.startswith("🏢"):
     if sel:
         _eopts = [f"{r['house']}_FP_{r['fingerprint']}" for r in sel[:3000]]
         _e1, _e2 = st.columns([4, 1])
-        _epick = _e1.selectbox("✏️ 편집할 도면 → 위상편집", _eopts, key="aihub_editpick")
-        if _e2.button("위상편집 열기", use_container_width=True):
+        _epick = _e1.selectbox("편집할 도면 → G 보정(위상편집)", _eopts, key="aihub_editpick")
+        if _e2.button("→ G 보정 열기", use_container_width=True):
             st.session_state["topoedit_target"] = (_epick.split("_")[0], _epick)
-            st.session_state["_goto_idx"] = _MENU.index("✏️ 위상 편집")
+            st.session_state["_goto_idx"] = _MENU.index("🧩 AI-Hub 검수 (G)")
             st.rerun()
     @st.cache_data(show_spinner="라벨 인덱스 구성(최초 1회)...")
     def _lblidx(sp):
@@ -693,7 +710,7 @@ if which.startswith("🏢"):
         "보기 모드", ["그래프검수(원본∥그래프)",
                    "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
         index=0, help="그래프검수=구버전 위상 검수 · 나란히/겹쳐/원본만=라벨 육안확인 · "
-                      "사람 위상 구축은 좌측 메뉴 ✏️ 위상 편집")
+                      "사람 위상 구축은 좌측 메뉴 🧩 AI-Hub 검수 (G)")
     if view.startswith("그래프검수"):    # ⚠격리/✅채택 흡수 — staging/aihub 그래프 검수·결정(ledger 기록)
         lblidx = _lblidx(split)
         items = []
@@ -893,7 +910,7 @@ if which.startswith("📐"):
 #   개념: 데이터셋을 합쳐 하나를 학습 → 어떤 조합이 최고인지 비교.
 #   데이터버전 매핑: 없음→v0 · +CubiCasa→v2 · +RPLAN→v3 · +결합→v4 (experiments._PRETRAIN_VER).
 # ════════════════════════════════════════════════════════════════════════════
-if which.startswith("📘"):
+if which.startswith("📈"):
     import json as _json
     import random as _random
     from collections import Counter as _Counter
@@ -906,12 +923,7 @@ if which.startswith("📘"):
     if not vers:
         st.info("동결된 버전이 없습니다. `python src/plan2graph/release.py v0` 먼저 실행.")
         st.stop()
-    st.title("📘 T-라인 — 데이터셋 · 위상모델 · 평가")
-    st.markdown(
-        "**구조** — ① 데이터셋(v*·global_*) · ② **AI-Hub 변환검수**(사용/보정/제외, "
-        "재변환=룰·임계·재검출) · ③ 학습(데이터셋 순서 또는 기존모델) · ④ 도면생성(treemap) · ⑤ 평가")
-    st.info("🚧 이사 중 — 아래는 현재 **⑤ 평가·① 데이터셋** 내용입니다. ②③④(검수·학습·생성)는 "
-            "다음 단계에서 이 페이지로 모읍니다(현재는 🏢 AI-Hub 검수 / 📗 일부에 있음).")
+    st.title("📈 T-라인 결과 — 데이터셋 · 위상모델 성능")
     st.caption("**데이터셋 조합별 성능 비교** — 데이터를 합쳐 하나를 학습했을 때 어떤 조합이 최고인지 한눈에. "
                "test는 AI-Hub 동결분으로 전 버전 공유(비교 기준 고정).")
     ver = vers[-1]
@@ -1262,16 +1274,11 @@ if which.startswith("📘"):
 # ════════════════════════════════════════════════════════════════════════════
 # 🏗 도면 생성 (시연) — 자연어 → 위상 도면 + 자기교정 근거
 # ════════════════════════════════════════════════════════════════════════════
-if which.startswith("📗"):
+if which.startswith("📘"):
     from pathlib import Path as _Path
     from plan2graph import review as _rv
     _ROOT = _Path(__file__).resolve().parent
-    st.title("📗 G-라인 — 데이터셋 · 위상/기하모델 · 도면생성")
-    st.markdown(
-        "**구조** — ① 데이터셋(g*) · ② **AI-Hub 검수·보정**(사용/보정중/제외, 보정=✏️위상편집·롤링 증분학습) · "
-        "③ 학습(데이터셋 순서 또는 기존모델) · ④ 도면생성(학습 기하모델)")
-    st.warning("🚧 이사 중 — 아래 §2·§3은 **T-라인 생성**이라 다음 단계에서 📘로 옮깁니다. "
-               "G-라인 고유는 §기하(맨 아래). ②검수·보정(사용/보정/제외)도 다음 단계에서 여기 붙입니다.")
+    st.title("📘 T-라인 도면생성 — 자연어→위상→treemap")
     st.caption("위상 모델(부품)을 골라 → 좌표 도면을 만들고 → 검사·재생성으로 무결화. "
                "**최종 목표는 *잘 나온 도면***. 어떤 방법 조합이 최고 도면을 만드는지 탐색한다.")
 
@@ -1445,13 +1452,53 @@ if which.startswith("📗"):
             except Exception as e:  # noqa: BLE001
                 st.error(f"생성 실패: {e}")
 
-    # ── 3.5) 기하 도면 생성 (geo · 자기교정) — NL→방+g0면적→자기교정→도면 ──
-    st.header("🏠 기하 도면 생성 (geo · 자기교정)")
+    # ── 4) 도면(geometry) 방법 — 위상→좌표 (로드맵) ──
+    st.header("4. 도면(geometry) 방법 — 위상→좌표 (로드맵)")
+    st.caption("위상 → 좌표 도면을 만드는 방법 후보. {위상 모델} × {도면 방법} × {정제 루프} 중 *최고 도면* 탐색.")
+    st.table([
+        {"방법": "규칙기반 기하 배치", "설명": "위상에 좌표·벽 채움(squarified treemap·면적비)",
+         "상태": "✅ 구현 — §3에서 시연(1세대)"},
+        {"방법": "좌표 회귀 GNN", "설명": "위상+제약 → 좌표 직접 예측", "상태": "예정"},
+        {"방법": "Layout diffusion", "설명": "위상 조건 생성형 도면", "상태": "예정"},
+        {"방법": "Constrained RL", "설명": "면적·법규·동선 보상 최적화", "상태": "예정(원설계 Phase-3)"},
+        {"방법": "Self-Correction 루프", "설명": "그린다→검사→다시 그린다(위상 규제루프의 geometry 확장)",
+         "상태": "위상 적용 / geometry 예정"},
+    ])
+
+    # ── 5) 최종 도면 평가 — '잘 나온 도면'의 기준 ──
+    st.header("5. 최종 도면 평가 — '잘 나온 도면'의 기준")
+    st.markdown(
+        "**최종 도면 품질**로 {위상 모델 × 도면 방법 × 정제 루프} 조합을 판정한다:\n"
+        "- **위상 인접 실현율** — 위상 연결이 도면에서 실제 인접(문)으로 구현된 비율 "
+        "(✅ §3에서 측정 중)\n"
+        "- **면적 정확도** — 생성 면적 vs 요구·실제 (실측 scale 확보 후)\n"
+        "- **법규 준수** — 채광·면적비 등 geometry 규제 검증 (위상 규제루프의 좌표 확장)\n"
+        "- **동선·기능성** — 현관→거실→방 경로, 방 비율의 합리성\n"
+        "- **시각 품질** — 실제 도면과의 유사도 / 전문가 평가\n\n"
+        "현재 1세대(treemap)는 *인접 실현율*만 측정. 나머지 지표는 좌표 정밀화(§4 고급 방법)와 "
+        "실측 scale 확보 후 활성화 → 이 기준에서 최고인 조합을 찾는 것이 목표.")
+
+    # ── 6) 요약 ──
+    st.header("6. 요약")
+    st.markdown(
+        "위상은 **부품**, 목표는 **잘 나온 도면**이다. 현재 *자연어 → 위상 생성 → 자기교정 → "
+        "좌표 도면(1세대)*까지 한 화면에서 동작한다. 모델은 §2에서 *사전학습 × 파인튜닝*으로 "
+        "자유 조합(없으면 즉석 학습)하고, §3에서 그 모델로 위상·도면을 만든다. "
+        "다음은 *좌표 도면 방법 고도화(§4) → 최종 도면 품질 평가(§5)*다. "
+        "위상에서 검증된 원리(**클린 한국 데이터 · 충분한 모델 용량 · 규제 루프**)를 도면으로 잇는다.")
+    st.stop()
+# ════════════════════════════════════════════════════════════════════════════
+# 📜 법령 DB — 최신화(관리자 클릭) + 법령/규정 조회
+# ════════════════════════════════════════════════════════════════════════════
+if which.startswith("📗"):
+    from pathlib import Path as _Path
+    _ROOT = _Path(__file__).resolve().parent
+    st.title("📗 G-라인 도면생성 — 자연어→위상→학습 기하모델")
     st.caption("NL → 방 구성 → **g0 실측 면적** → **자기교정(겹침0·외곽채움)** → 도면. "
                "위상 모델 없이도 동작(관례 인접=거실 허브). 본 파이프라인: 위상→기하→검증→자기교정.")
 
-    # 기하 모델 2단계 학습 — 데이터셋 콤보(releases에서 직접 읽음)에서 골라 학습/파인튜닝
-    st.markdown("**기하 모델 2단계 학습** — 데이터셋을 골라 ① 사전학습 → ② 파인튜닝")
+    # 기하 모델 학습 — G-라인 데이터셋을 순서대로(사전학습→파인튜닝) 또는 기존 모델 사용
+    st.markdown("**기하 모델 학습** — 데이터셋을 순서대로(① 사전학습 → ② 파인튜닝) 또는 기존 모델 사용")
     _gvers = []  # 기하(G-라인) 데이터셋
     for _v, _line, _rp in config.list_releases():
         if _line != "gline":
@@ -1531,45 +1578,8 @@ if which.startswith("📗"):
                        "인접 미실현 쌍은 위상 라우팅 대상(2층 자기교정).")
         except Exception as e:  # noqa: BLE001
             st.error(f"기하 생성 실패: {e}")
-
-    # ── 4) 도면(geometry) 방법 — 위상→좌표 (로드맵) ──
-    st.header("4. 도면(geometry) 방법 — 위상→좌표 (로드맵)")
-    st.caption("위상 → 좌표 도면을 만드는 방법 후보. {위상 모델} × {도면 방법} × {정제 루프} 중 *최고 도면* 탐색.")
-    st.table([
-        {"방법": "규칙기반 기하 배치", "설명": "위상에 좌표·벽 채움(squarified treemap·면적비)",
-         "상태": "✅ 구현 — §3에서 시연(1세대)"},
-        {"방법": "좌표 회귀 GNN", "설명": "위상+제약 → 좌표 직접 예측", "상태": "예정"},
-        {"방법": "Layout diffusion", "설명": "위상 조건 생성형 도면", "상태": "예정"},
-        {"방법": "Constrained RL", "설명": "면적·법규·동선 보상 최적화", "상태": "예정(원설계 Phase-3)"},
-        {"방법": "Self-Correction 루프", "설명": "그린다→검사→다시 그린다(위상 규제루프의 geometry 확장)",
-         "상태": "위상 적용 / geometry 예정"},
-    ])
-
-    # ── 5) 최종 도면 평가 — '잘 나온 도면'의 기준 ──
-    st.header("5. 최종 도면 평가 — '잘 나온 도면'의 기준")
-    st.markdown(
-        "**최종 도면 품질**로 {위상 모델 × 도면 방법 × 정제 루프} 조합을 판정한다:\n"
-        "- **위상 인접 실현율** — 위상 연결이 도면에서 실제 인접(문)으로 구현된 비율 "
-        "(✅ §3에서 측정 중)\n"
-        "- **면적 정확도** — 생성 면적 vs 요구·실제 (실측 scale 확보 후)\n"
-        "- **법규 준수** — 채광·면적비 등 geometry 규제 검증 (위상 규제루프의 좌표 확장)\n"
-        "- **동선·기능성** — 현관→거실→방 경로, 방 비율의 합리성\n"
-        "- **시각 품질** — 실제 도면과의 유사도 / 전문가 평가\n\n"
-        "현재 1세대(treemap)는 *인접 실현율*만 측정. 나머지 지표는 좌표 정밀화(§4 고급 방법)와 "
-        "실측 scale 확보 후 활성화 → 이 기준에서 최고인 조합을 찾는 것이 목표.")
-
-    # ── 6) 요약 ──
-    st.header("6. 요약")
-    st.markdown(
-        "위상은 **부품**, 목표는 **잘 나온 도면**이다. 현재 *자연어 → 위상 생성 → 자기교정 → "
-        "좌표 도면(1세대)*까지 한 화면에서 동작한다. 모델은 §2에서 *사전학습 × 파인튜닝*으로 "
-        "자유 조합(없으면 즉석 학습)하고, §3에서 그 모델로 위상·도면을 만든다. "
-        "다음은 *좌표 도면 방법 고도화(§4) → 최종 도면 품질 평가(§5)*다. "
-        "위상에서 검증된 원리(**클린 한국 데이터 · 충분한 모델 용량 · 규제 루프**)를 도면으로 잇는다.")
     st.stop()
-# ════════════════════════════════════════════════════════════════════════════
-# 📜 법령 DB — 최신화(관리자 클릭) + 법령/규정 조회
-# ════════════════════════════════════════════════════════════════════════════
+
 if which.startswith("⚖️"):
     st.title("⚖️ 성능 비교 — T-라인 vs G-라인 도면 품질")
     st.caption("최종 잣대: 누가 더 품질 높은 도면을 만드나. T(규칙기반 treemap) vs G(학습 기하모델).")
