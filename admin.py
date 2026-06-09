@@ -1429,29 +1429,60 @@ if which.startswith("🏗"):
     st.caption("NL → 방 구성 → **g0 실측 면적** → **자기교정(겹침0·외곽채움)** → 도면. "
                "위상 모델 없이도 동작(관례 인접=거실 허브). 본 파이프라인: 위상→기하→검증→자기교정.")
 
-    # 기하 모델 2단계 학습 (글로벌 사전학습 → g0 파인튜닝) — GUI 버튼·백그라운드(GPU1)
-    st.markdown("**기하 모델 2단계 학습** — 글로벌(g_global) 사전학습 → g0 파인튜닝")
-    _grid = "geom_g0_pre-g_global"
-    _grun = _ROOT / "runs" / _grid / "run.json"
-    _glog = _ROOT / "logs" / "geom_train.log"
-    if _grun.exists():
-        _gj = json.loads(_grun.read_text(encoding="utf-8"))
-        st.success(f"✅ 학습됨 — {_grid} (loss {_gj.get('loss', 0):.3f})")
-    elif _glog.exists():
-        _ll = _glog.read_text(errors="ignore").strip().splitlines()
-        st.warning(f"🔄 학습 중(GPU1·백그라운드) — 최근: `{(_ll[-1] if _ll else '시작…')[:120]}`")
-        if st.button("🔄 상태 새로고침", key="geom_tr_ref"):
-            st.rerun()
+    # 기하 모델 2단계 학습 — 데이터셋 콤보(releases에서 직접 읽음)에서 골라 학습/파인튜닝
+    st.markdown("**기하 모델 2단계 학습** — 데이터셋을 골라 ① 사전학습 → ② 파인튜닝")
+    import glob as _gglob
+    _gvers = []  # 기하(G-라인) 데이터셋: schema=="geometry"
+    for _mp in sorted(_gglob.glob(str(config.DATA_DIR / "releases" / "*" / "manifest.json"))):
+        try:
+            _m = json.loads(Path(_mp).read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        if _m.get("schema") == "geometry":
+            _gvers.append((_m.get("version", Path(_mp).parent.name),
+                           _m.get("n_units"), ",".join(_m.get("houses", []))))
+    if not _gvers:
+        st.info("기하 데이터셋(G-라인)이 아직 없습니다. (scripts/build_geom.py / build_geom_global.py 로 빌드)")
     else:
-        if st.button("🛠 기하 2단계 학습 시작 (GPU1·백그라운드)", key="geom_tr_go"):
-            import subprocess as _sp
-            _cmd = (f"cd '{_ROOT}' && CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src setsid nohup "
-                    f"{sys.executable} -u -m plan2graph.train_geom "
-                    f"--pretrain g_global --finetune g0 --epochs 20 "
-                    f"> logs/geom_train.log 2>&1 &")
-            _sp.Popen(["bash", "-lc", _cmd])
-            st.success("학습 시작됨 — '상태 새로고침'으로 확인.")
-            st.rerun()
+        _gmap = {v: f"{v} ({u:,}세대·{h})" if u else v for v, u, h in _gvers}
+        _gnames = [v for v, _, _ in _gvers]
+        _gp1, _gp2, _gp3 = st.columns(3)
+        _pre_opts = ["없음", *_gnames]
+        _pidx = _pre_opts.index("g_global") if "g_global" in _pre_opts else 0
+        _fidx = _gnames.index("g0") if "g0" in _gnames else 0
+        _gpre = _gp1.selectbox("① 사전학습", _pre_opts, index=_pidx,
+                               format_func=lambda o: o if o == "없음" else _gmap[o], key="geom_pre")
+        _gft = _gp2.selectbox("② 파인튜닝", _gnames, index=_fidx,
+                              format_func=lambda o: _gmap[o], key="geom_ft")
+        _gep = _gp3.number_input("에폭", 1, 200, 20, key="geom_ep")
+        _gprv = None if _gpre == "없음" else _gpre
+        _grid = f"geom_{_gft}" + (f"_pre-{_gprv}" if _gprv else "")
+        _grun = _ROOT / "runs" / _grid / "run.json"
+        _glog = _ROOT / "logs" / f"train_{_grid}.log"
+        st.caption(f"→ 모델: `{_grid}`")
+        if _grun.exists():
+            _gj = json.loads(_grun.read_text(encoding="utf-8"))
+            st.success(f"✅ 학습됨 — {_grid} (loss {_gj.get('loss', 0):.3f})")
+            if st.button("↻ 다시 학습", key="geom_tr_re"):
+                _glog.unlink(missing_ok=True)
+                _grun.unlink(missing_ok=True)
+                st.rerun()
+        elif _glog.exists():
+            _ll = _glog.read_text(errors="ignore").strip().splitlines()
+            st.warning(f"🔄 학습 중(GPU1·백그라운드) — 최근: `{(_ll[-1] if _ll else '시작…')[:120]}`")
+            if st.button("🔄 상태 새로고침", key="geom_tr_ref"):
+                st.rerun()
+        else:
+            if st.button("🛠 기하 학습 시작 (GPU1·백그라운드)", key="geom_tr_go"):
+                import subprocess as _sp
+                _pa = f"--pretrain {_gprv} " if _gprv else ""
+                _cmd = (f"cd '{_ROOT}' && CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src setsid nohup "
+                        f"{sys.executable} -u -m plan2graph.train_geom "
+                        f"{_pa}--finetune {_gft} --epochs {int(_gep)} "
+                        f"> 'logs/train_{_grid}.log' 2>&1 &")
+                _sp.Popen(["bash", "-lc", _cmd])
+                st.success(f"학습 시작됨 — {_grid} · '상태 새로고침'으로 확인.")
+                st.rerun()
     st.divider()
 
     gtext2 = st.text_input("요구(자연어)", "신혼부부 아파트 침실2 욕실1 거실 주방", key="geo_text")
