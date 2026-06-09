@@ -246,7 +246,7 @@ def _bbox_short(bbox):
 
 
 def _nearest_door(dr, ca, cb, gap=80.0):
-    """엣지(두 방 중심 ca,cb) 사이 가장 가까운 검출 문 Element."""
+    """엣지(두 방 중심 ca,cb) 사이 가장 가까운 검출 문 Element(폴백용)."""
     mx, my = (ca[0] + cb[0]) / 2, (ca[1] + cb[1]) / 2
     best, bd = None, 1e18
     for d in dr.doors:
@@ -256,6 +256,26 @@ def _nearest_door(dr, ca, cb, gap=80.0):
         if dd < bd:
             best, bd = d, dd
     return best if (best is not None and bd <= gap) else None
+
+
+def _door_for_edge(dr, walls, a, b, gap=50.0):
+    """엣지(방 a,b)의 검출 문 + on_wall — a,b **공유 내벽 위** 최근접 문을 찾는다.
+    방 중심 중점이 아니라 실제 벽 기준이라 문폭·여닫이 측정률이 크게 오른다(문은 벽 위에 있음).
+    공유벽 없으면 (None, None) → 호출부가 중점 폴백."""
+    from shapely.geometry import LineString, Point
+    shared = [w for w in walls if set(w["rooms"]) == {a, b}]
+    best_d, best_w, bd = None, None, 1e18
+    for w in shared:
+        seg = LineString(w["segment"])
+        for d in dr.doors:
+            if not d.centroid:
+                continue
+            dist = seg.distance(Point(*d.centroid))
+            if dist < bd:
+                bd, best_d, best_w = dist, d, w
+    if best_d is not None and bd <= gap:
+        return best_d, best_w
+    return None, (shared[0] if shared else None)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -339,13 +359,16 @@ def build(state, dr) -> dict:
             continue
         a, b = e["from"], e["to"]
         ca, cb = rooms[a]["centroid"], rooms[b]["centroid"]
-        d = _nearest_door(dr, ca, cb)
+        d, dwall = _door_for_edge(dr, walls, a, b)       # 공유벽 위 문(측정률↑)
+        if d is None:
+            d = _nearest_door(dr, ca, cb)                # 폴백: 중심 중점 최근접
         pos = ([round((ca[0] + cb[0]) / 2, 1), round((ca[1] + cb[1]) / 2, 1)]
                if d is None or not d.centroid
                else [round(d.centroid[0], 1), round(d.centroid[1], 1)])
         wpx = _bbox_short(d.bbox) if d is not None else None
         did = f"d{len(doors)}"
-        on_wall = _nearest_wall(walls, pos, prefer_rooms=(a, b))
+        on_wall = (dwall["id"] if dwall is not None
+                   else _nearest_wall(walls, pos, prefer_rooms=(a, b)))
         door = {
             "id": did, "connects": [a, b], "via": "door", "position": pos,
             "polygon": ([[round(x, 1), round(y, 1)] for x, y in d.polygon.exterior.coords]

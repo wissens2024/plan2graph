@@ -144,15 +144,22 @@ def build_corpus(source: str = "dir", src_dir: Path | None = None,
             (GRAPHS_DIR / f"{st.plan_id}.json").write_text(
                 json.dumps(g, ensure_ascii=False), encoding="utf-8")
             n_units += 1
+    use, fix, excl = disp.get("use", 0), disp.get("fix", 0), disp.get("excl", 0)
     man = {
         "schema_version": GG.SCHEMA_VERSION, "corrected": False,
         "source": source, "source_dir": (str(src_dir) if source == "dir" else None),
         "house": house or "ALL",
         "open_min_ratio": config.OPEN_MIN_RATIO, "open_max_gap_px": config.OPEN_MAX_GAP_PX,
         "n_plans": n_plans, "n_units": n_units,
-        "disposition": dict(disp),               # use/fix/excl
-        "excl_reasons": dict(reasons.most_common()),
-        "fix_warnings": dict(warns.most_common()),
+        # ── 자동 분류(T-라인 구조) + 보정 회계([[gline-correction-not-verification]]) ──
+        "분류_자동": {"사용": use, "보정필요": fix, "제외": excl},
+        "사용가능_현재_자동": use,                 # 사람 손 없이 바로 사용가능
+        "사용가능_상한_전부보정시": use + fix,      # 제외 빼고 모두 보정완료 가정(= n_units - 제외)
+        "증량여지_보정필요→보정완료": fix,          # ⭐사람 보정이 키우는 건 이것뿐(사용→보정완료는 +0)
+        "제외_보증불가": excl,
+        "보정완료_사람": 0,                        # 자동 베이스라인은 0. 이후 ledger(사람)서 증가
+        "제외_사유": dict(reasons.most_common()),
+        "보정필요_경고": dict(warns.most_common()),
         "built_sec": round(time.time() - t0, 1),
     }
     MANIFEST.write_text(json.dumps(man, ensure_ascii=False, indent=2), encoding="utf-8")
