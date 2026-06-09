@@ -37,8 +37,15 @@ PRIVACY = {
     "구조물": "structure", "실외": "exterior",
 }
 CONNECTOR_ROLES = ("복도", "전실")
-# 단일세대 필수 5요소(역할 기준) — 결손 시 '필수공간없음' 사유(config.ESSENTIAL_ROOM_CLASSES와 대응)
-ESSENTIAL_ROLES = ("현관", "거실", "침실", "주방", "화장실")
+# 단일세대 필수 5요소 — **역할 패밀리**로 본다(세분역할 흡수). suggest_roles가 화장실→욕실/
+# 전용욕실, 침실→안방 등으로 세분하므로 정확매칭이면 거짓 '필수공간없음'이 대량 발생(검증 버그).
+ESSENTIAL_FAMILIES = {
+    "현관": {"현관"},
+    "거실": {"거실"},
+    "침실": {"침실", "안방"},
+    "주방": {"주방"},
+    "화장실": {"화장실", "욕실", "전용욕실", "전용화장실"},
+}
 MIN_ROOMS = 5
 
 
@@ -421,10 +428,8 @@ def validate(g: dict) -> dict:
         reasons.append("방부족")
 
     roles = {r.get("role") for r in rooms.values()}
-    if not all(any(es == ro for ro in roles) for es in ESSENTIAL_ROLES):
-        missing = [es for es in ESSENTIAL_ROLES if es not in roles]
-        if missing:
-            reasons.append("필수공간없음")
+    if any(not (roles & fam) for fam in ESSENTIAL_FAMILIES.values()):
+        reasons.append("필수공간없음")
 
     # 위상단절 — 폴리곤 방들이 한 덩어리로 연결되는가(엣지 기준)
     if rooms:
