@@ -458,24 +458,25 @@ if __name__ == "__main__":
     for _p in (str(_root), str(_root / "src")):
         if _p not in sys.path:
             sys.path.insert(0, _p)
-    import config
     from plan2graph import topoedit as T
+    from plan2graph import aihub_source as A   # 정식 소스(zip 코퍼스, 서버 115). linked_demo 폐기.
 
-    for rp in T.scan_dir(config.DATA_DIR / "raw" / "linked_demo"):
-        dr, _ = T.load_plan(rp)
-        units = T.segment_units(dr)
-        if not units:
-            continue
-        st = T.init_state(dr, rp.plan_id, rp.house, units[0])
-        g = build(st, dr)
-        print(f"{g['plan_id']} house={g['house']} rooms={g['n_rooms']} edges={g['n_edges']} "
-              f"walls={g['n_walls']} doors={g['n_doors']} windows={g['n_windows']} "
-              f"scale={g['scale_mm_per_px']} status={g['meta']['status']} "
-              f"reason={g['meta']['reason']}")
-        sample = next(iter(g["rooms"].values()))
-        print("  room[0]:", {k: sample[k] for k in
-              ("role", "area_m2", "aspect_ratio", "touches_exterior", "has_window",
-               "n_windows", "fixtures", "privacy", "wall_ids", "dist_from_entrance")})
-        if g["doors"]:
-            print("  door[0]:", g["doors"][0])
-        break
+    recs = [r for r in A.scan(house="APT") if "STR" in r["labels"]]
+    if not recs:
+        print("코퍼스 없음 — 서버 115(raw zip)에서 실행. 정식 빌드: "
+              "scripts/build_gline_auto.py --source aihub")
+        raise SystemExit
+    dr, _ = A.load(recs[0])
+    units = T.segment_units(dr)
+    st = T.init_state(dr, recs[0]["plan_id"], recs[0]["house"], units[0] if units else None)
+    g = build(st, dr)
+    print(f"{g['plan_id']} house={g['house']} rooms={g['n_rooms']} edges={g['n_edges']} "
+          f"walls={g['n_walls']} doors={g['n_doors']} windows={g['n_windows']} "
+          f"scale={g['scale_mm_per_px']} status={g['meta']['status']} "
+          f"reason={g['meta']['reason']}")
+    sample = next(iter(g["rooms"].values()))
+    print("  room[0]:", {k: sample[k] for k in
+          ("role", "area_m2", "aspect_ratio", "touches_exterior", "has_window",
+           "n_windows", "fixtures", "privacy", "wall_ids", "dist_from_entrance")})
+    if g["doors"]:
+        print("  door[0]:", g["doors"][0])

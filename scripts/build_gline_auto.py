@@ -167,9 +167,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", choices=("aihub", "dir"), default="dir",
                     help="aihub=zip 코퍼스(115 실데이터) · dir=linked 디렉터리(로컬 스모크)")
-    ap.add_argument("dir", nargs="?",
-                    default=str(config.DATA_DIR / "raw" / "linked_demo"),
-                    help="dir 소스일 때 코퍼스 디렉터리(linked 포맷). 기본=로컬 스모크")
+    ap.add_argument("dir", nargs="?", default=None,
+                    help="dir 소스일 때 코퍼스 디렉터리(linked 포맷). 정식 빌드는 --source aihub")
     ap.add_argument("--house", default=None, help="APT|DEH|ROW (생략=전부)")
     ap.add_argument("--limit", type=int, default=None, help="도면 수 상한(테스트)")
     # 위상 자동 추론 파라미터 튜닝(T-라인 open_passages) — 가용률 극대화용
@@ -182,9 +181,9 @@ if __name__ == "__main__":
         config.OPEN_MIN_RATIO = a.open_min_ratio      # build_graph가 호출 시점에 읽음
     if a.open_max_gap is not None:
         config.OPEN_MAX_GAP_PX = a.open_max_gap
-    if a.source == "dir" and a.dir.endswith("linked_demo"):
-        print("⚠ [스모크 데이터] linked_demo = 개발용 샘플 1건. "
-              "정식 코퍼스 빌드는 `--source aihub`(115 zip).\n")
-    man = build_corpus(source=a.source, src_dir=Path(a.dir), house=a.house, limit=a.limit)
+    if a.source == "dir" and not a.dir:
+        ap.error("--source dir 는 코퍼스 디렉터리 인자가 필요합니다. 정식 빌드는 --source aihub(115 zip).")
+    man = build_corpus(source=a.source, src_dir=Path(a.dir) if a.dir else None,
+                       house=a.house, limit=a.limit)
     print(json.dumps(man, ensure_ascii=False, indent=2))
     print(f"\n→ {GRAPHS_DIR}  ({man['n_units']} units, {man['disposition']})")
