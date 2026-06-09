@@ -473,7 +473,7 @@ if which.startswith("🧩"):
                f"(그 자리에서 위상+기하 그래프 생성·저장). 자동 후보(g0) {_cands:,}세대는 검증 전 = 사용 아님. "
                "빌드·학습은 검수가 아니라 G-라인 도면생성에서.")
     st.divider()
-    topoedit.render_editor()
+    topoedit.render_editor(show_title=False)
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════

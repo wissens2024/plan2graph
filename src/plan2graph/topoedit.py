@@ -1060,14 +1060,15 @@ def _draw_buf(bundle, unit_id):
         unit_id, {"active": False, "base": "복도", "pts": [], "last": None})
 
 
-def render_editor() -> None:
+def render_editor(show_title: bool = True) -> None:
     import streamlit as st
     try:                                  # drawable-canvas는 streamlit 1.58 프런트 비호환(배경 404)
         from streamlit_image_coordinates import streamlit_image_coordinates as _img_coords
     except Exception:  # noqa: BLE001
         _img_coords = None
 
-    st.title("위상 편집")
+    if show_title:                        # admin '🧩 AI-Hub 검수 (G)' 래퍼가 이미 제목 표시 → 중복 방지
+        st.title("위상 편집")
     st.caption("원본 위에 영역(반투명 박스)을 그려 완전 기하 → 위상은 결정적 추출. "
                "그리기·연결·역할은 **자동 저장**. (좌측 앱 메뉴는 접어도 됨)")
 
@@ -1121,11 +1122,15 @@ def render_editor() -> None:
 
     _allids = ids
     _catcnt = _Ctr(_plan_cat(p) for p in _allids)
+    # 카테고리 라벨 — T(AI-Hub 검수 T)와 동일한 이모지·버킷 vocabulary로 통일.
+    # (값은 _plan_cat의 bare key 유지 → 필터 로직 불변, 표시만 정렬)
+    _CATEMO = {"전체": "📋 전체", "미검수": "🆕 미검수", "보정중": "🛠 보정중",
+               "검증완료(사용)": "✅ 사용(검증완료)", "제외": "🚫 제외"}
     _catf = c_cat.selectbox(
         "분류", ["전체", "미검수", "보정중", "검증완료(사용)", "제외"],
         key="te_catf",
-        format_func=lambda c: (f"전체 ({len(_allids):,})" if c == "전체"
-                               else f"{c} ({_catcnt.get(c, 0):,})"))
+        format_func=lambda c: (f"{_CATEMO['전체']} ({len(_allids):,})" if c == "전체"
+                               else f"{_CATEMO.get(c, c)} ({_catcnt.get(c, 0):,})"))
     if _catf != "전체":
         ids = [p for p in _allids if _plan_cat(p) == _catf]
     if not ids:
