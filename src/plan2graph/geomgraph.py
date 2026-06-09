@@ -431,14 +431,18 @@ def validate(g: dict) -> dict:
     if any(not (roles & fam) for fam in ESSENTIAL_FAMILIES.values()):
         reasons.append("필수공간없음")
 
-    # 위상단절 — 폴리곤 방들이 한 덩어리로 연결되는가(엣지 기준)
+    # 위상단절 — 폴리곤 방들이 한 덩어리로 연결되는가(엣지 기준).
+    # id를 str로 정규화: JSON 로드 시 rooms 키(str)↔edge from/to(int)가 어긋나
+    # 전부 비연결로 오판되던 버그 방지(메모리 int·JSON str 양쪽 강건).
     if rooms:
+        rkeys = {str(k) for k in rooms}
         G = nx.Graph()
-        G.add_nodes_from(rooms)
+        G.add_nodes_from(rkeys)
         for e in edges:
-            if e["from"] in rooms and e["to"] in rooms:
-                G.add_edge(e["from"], e["to"])
-        if nx.number_of_nodes(G) and nx.number_connected_components(G) > 1:
+            a, b = str(e["from"]), str(e["to"])
+            if a in rkeys and b in rkeys:
+                G.add_edge(a, b)
+        if G.number_of_nodes() and nx.number_connected_components(G) > 1:
             reasons.append("위상단절")
 
     # soft
