@@ -462,6 +462,25 @@ if which.startswith("🧩"):
     _cg[2].metric("제외", "—")
     st.caption("롤링 증분: **사용** 데이터로 학습→계속 사용→위상편집으로 보정해 늘면 재학습/이어쓰기. "
                "보정 = 아래 편집기에서 도면 골라 위상+기하 직접 교정.")
+    with st.expander("🧩 보정분으로 G 데이터셋 빌드 (보정 → 사용 데이터 증가)", expanded=False):
+        _bld_ver = st.text_input("빌드할 G 버전명", "g1", key="gbuild_ver",
+                                 help="base(g0 자동) + 현재 보정 SVG 합쳐 이 버전으로 빌드(보정이 덮어씀)")
+        _blog = config.PROJECT_ROOT / "logs" / f"build_{_bld_ver}.log"
+        if _blog.exists():
+            _bl = _blog.read_text(errors="ignore").strip().splitlines()
+            st.caption(f"빌드 로그: `{(_bl[-1] if _bl else '…')[:120]}`")
+            if st.button("🔄 상태 새로고침", key="gbuild_ref"):
+                st.rerun()
+        if st.button(f"🧩 빌드 실행 — g0 + 보정 {_corr_g} → {_bld_ver}", key="gbuild_go"):
+            import subprocess as _sp
+            _cmd = (f"cd '{config.PROJECT_ROOT}' && PYTHONPATH=src setsid nohup "
+                    f"{sys.executable} -u scripts/build_geom_corrected.py "
+                    f"--base g0 --version {_bld_ver} > logs/build_{_bld_ver}.log 2>&1 &")
+            _sp.Popen(["bash", "-lc", _cmd])
+            st.success(f"{_bld_ver} 빌드 시작(백그라운드) — base g0 + 보정 {_corr_g}개. "
+                       "끝나면 📦 데이터셋·⚖️ 비교에 등장.")
+        st.caption(f"보정 SVG가 base(g0)를 덮어써 '사용' 데이터를 키움 → 같은 잣대로 "
+                   f"**g0 ↔ {_bld_ver} 비교**(보정 효과). 학습은 당신 판단.")
     st.divider()
     topoedit.render_editor()
     st.stop()
