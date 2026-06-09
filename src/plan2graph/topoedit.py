@@ -1073,52 +1073,64 @@ def render_editor() -> None:
 
     import types as _types
     led = load_ledger()
-    # AI-Hub 검수에서 "위상편집 열기"로 넘어온 도면 — 소스·거주형태·도면 미리 지정
+    # AI-Hub 검수에서 "위상편집 열기"로 넘어온 도면 — 거주형태·도면 미리 지정
     _tgt = st.session_state.pop("topoedit_target", None)
     if _tgt:
-        st.session_state["te_srckind"] = "AI-Hub 코퍼스(실데이터)"
         st.session_state["te_house"] = _tgt[0]
         st.session_state["_te_plan_target"] = _tgt[1]
-    # ── 데이터 소스: 실제 AI-Hub 코퍼스 | 샘플(demo) ──
-    _srck = st.radio("데이터 소스", ["AI-Hub 코퍼스(실데이터)", "샘플(demo)"],
-                     horizontal=True, key="te_srckind")
-    if _srck.startswith("AI-Hub"):
-        _hs = st.radio("거주형태", ["APT", "DEH", "ROW"], horizontal=True, key="te_house")
 
-        @st.cache_data(show_spinner="AI-Hub 코퍼스 인덱스(최초 1회, 수십초)...")
-        def _aihub_recs(h):
-            from plan2graph import aihub_source as _as
-            return {r["plan_id"]: r for r in _as.scan(house=h)}
-        try:
-            recs = _aihub_recs(_hs)
-        except Exception as e:  # noqa: BLE001
-            st.error(f"AI-Hub 코퍼스 스캔 실패: {e} (PLAN2GRAPH_RAW 확인)")
-            return
-        if not recs:
-            st.warning("AI-Hub 코퍼스에서 편집대상(SPA보유)을 못 찾았습니다.")
-            return
-        ids = list(recs)
-        from plan2graph import aihub_source as _ahs
-        def _loader(s):
-            return _ahs.load(recs[s])
-        _src_tag = "aihub"
-    else:
-        with st.expander("샘플 데이터 소스", expanded=False):
-            src = st.text_input("라벨 디렉터리",
-                                value=str(config.DATA_DIR / "raw" / "linked_demo"))
-        try:
-            plans = scan_dir(src)
-        except Exception as e:  # noqa: BLE001
-            st.error(f"스캔 실패: {e}")
-            return
-        if not plans:
-            st.warning(f"도면 없음: {src}")
-            return
-        ids = [p.plan_id for p in plans]
-        _pby = {p.plan_id: p for p in plans}
-        def _loader(s):
-            return load_plan(_pby[s])
-        _src_tag = "demo"
+    # ── 상단 통일 콤보: 분류 | 거주형태 (G검수와 동일 selectbox 스타일).
+    #    데이터 소스는 AI-Hub 코퍼스 고정(샘플 선택 폐기). ──
+    _HOUSE_KO = {"APT": "APT(아파트)", "DEH": "DEH(단독주택)", "ROW": "ROW(연립주택)"}
+    c_cat, c_house = st.columns(2)
+    _hs = c_house.selectbox("거주형태", ["APT", "DEH", "ROW"],
+                            format_func=lambda k: _HOUSE_KO.get(k, k), key="te_house")
+
+    @st.cache_data(show_spinner="AI-Hub 코퍼스 인덱스(최초 1회, 수십초)...")
+    def _aihub_recs(h):
+        from plan2graph import aihub_source as _as
+        return {r["plan_id"]: r for r in _as.scan(house=h)}
+    try:
+        recs = _aihub_recs(_hs)
+    except Exception as e:  # noqa: BLE001
+        st.error(f"AI-Hub 코퍼스 스캔 실패: {e} (PLAN2GRAPH_RAW 확인)")
+        return
+    if not recs:
+        st.warning("AI-Hub 코퍼스에서 편집대상(SPA보유)을 못 찾았습니다.")
+        return
+    ids = list(recs)
+    from plan2graph import aihub_source as _ahs
+    def _loader(s):
+        return _ahs.load(recs[s])
+    _src_tag = "aihub"
+
+    # ── 분류(검수 카테고리) — 카테고리로 작업 큐 선택 + 카테고리별 숫자 ──
+    from collections import Counter as _Ctr
+    _gids = {p.stem for p in GRAPHS_DIR.glob("*.json")} if GRAPHS_DIR.exists() else set()
+    _sids = {p.stem for p in REC_DIR.glob("*.svg")} if REC_DIR.exists() else set()
+    _eids = {u for u, r in load_ledger().items() if r.get("status") == "제외"}
+
+    def _plan_cat(pid):
+        if any(u.startswith(pid + "_u") for u in _gids):
+            return "검증완료(사용)"
+        if any(u.startswith(pid + "_u") for u in _eids):
+            return "제외"
+        if any(u.startswith(pid + "_u") for u in _sids):
+            return "보정중"
+        return "미검수"
+
+    _allids = ids
+    _catcnt = _Ctr(_plan_cat(p) for p in _allids)
+    _catf = c_cat.selectbox(
+        "분류", ["전체", "미검수", "보정중", "검증완료(사용)", "제외"],
+        key="te_catf",
+        format_func=lambda c: (f"전체 ({len(_allids):,})" if c == "전체"
+                               else f"{c} ({_catcnt.get(c, 0):,})"))
+    if _catf != "전체":
+        ids = [p for p in _allids if _plan_cat(p) == _catf]
+    if not ids:
+        st.info(f"'{_catf}' 분류에 도면이 없습니다. (다른 분류 선택)")
+        return
 
     # ── 상단 바: 도면·세대·상태·액션 (사이드바 아님 → 메뉴 접어도 동작) ──
     t1, t2, t3, t4 = st.columns([3, 3, 3, 2])
