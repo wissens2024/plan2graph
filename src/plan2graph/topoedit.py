@@ -38,6 +38,7 @@ from plan2graph.geometry import assemble_drawing, Drawing  # noqa: E402
 OUT_DIR = config.DATA_DIR / "staging" / "topo_human"
 REC_DIR = OUT_DIR / "records"
 LEDGER = OUT_DIR / "_ledger.jsonl"
+GRAPHS_DIR = OUT_DIR / "graphs"      # 검증완료 → geometry-rich 그래프(= 사용 데이터셋)
 
 SCHEMA = "topo-human-v1"
 CONNECTOR_BASES = ("복도", "전실")
@@ -494,18 +495,32 @@ def write_svg(st: State, dr: Drawing) -> Path:
 
 def save_svg(st: State, dr: Drawing, *, status: str = "검증완료",
              curator: str = "", notes: str = "", ts: str | None = None) -> Path:
-    """SVG 기록 + 상태(ledger) 기록(명시 저장·검증완료 표시용)."""
+    """SVG 기록 + 상태(ledger) 기록 + (검증완료면) 그래프 저장 → '사용' 그래프 +1."""
     p = write_svg(st, dr)
     set_status(st.plan_id, status, curator=curator, notes=notes,
                ts=ts or datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    if status == "검증완료":
+        save_graph(st, dr)
+    return p
+
+
+def save_graph(st: State, dr: Drawing) -> Path:
+    """검증완료 → geometry-rich 그래프 1건 저장(= '사용' 그래프 데이터셋에 추가). corrected=True."""
+    from . import geomgraph
+    GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
+    g = geomgraph.build(st, dr)
+    g["unit_id"] = st.plan_id
+    g["corrected"] = True
+    p = GRAPHS_DIR / f"{st.plan_id}.json"
+    p.write_text(json.dumps(g, ensure_ascii=False), encoding="utf-8")
     return p
 
 
 def delete_record(unit_id: str) -> None:
-    """저장 SVG 삭제(처음부터 다시 시작용)."""
-    p = REC_DIR / f"{unit_id}.svg"
-    if p.exists():
-        p.unlink()
+    """저장 SVG + 그래프 삭제(처음부터 다시 시작용) — 사용에서도 빠짐."""
+    for _p in (REC_DIR / f"{unit_id}.svg", GRAPHS_DIR / f"{unit_id}.json"):
+        if _p.exists():
+            _p.unlink()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

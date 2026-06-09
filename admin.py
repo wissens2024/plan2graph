@@ -451,87 +451,27 @@ except ModuleNotFoundError:
 if which.startswith("🧩"):
     from plan2graph import topoedit
     st.title("🧩 AI-Hub 검수 (G) — 위상+기하 보정")
-    # ── G 데이터셋 검수 회계 (T와 대칭: 숫자·카테고리·사유 분류) ──
-    _recdir_g = config.DATA_DIR / "staging" / "topo_human" / "records"
-    _corr_g = len(list(_recdir_g.glob("*.svg"))) if _recdir_g.exists() else 0
-    _gvers_d = sorted(v for v, _l, _ in config.list_releases() if _l == "gline")
-    _gv = st.selectbox("G 데이터셋", _gvers_d or ["(없음)"],
-                       index=(_gvers_d.index("g0") if "g0" in _gvers_d else 0))
-    _gf = (config.release_dir(_gv) / "geom.jsonl") if _gvers_d else None
-
-    @st.cache_data(show_spinner="G 데이터셋 검수 집계...")
-    def _g_disp_agg(_v, _sz):
-        from collections import Counter as _C
-        ESS = {"현관", "거실", "주방", "화장실", "침실"}
-        cat, reason, seen = _C(), _C(), set()
-        for ln in (config.release_dir(_v) / "geom.jsonl").read_text(
-                encoding="utf-8").splitlines():
-            if not ln.strip():
-                continue
-            r = json.loads(ln)
-            uid = r.get("unit_id") or r.get("plan_id")
-            if uid in seen:
-                cat["excl"] += 1
-                reason["중복(dedup)"] += 1
-                continue
-            seen.add(uid)
-            rooms = r.get("rooms", {})
-            nr = len(rooms)
-            roles = [rm.get("role") for rm in rooms.values()]
-            etc = sum(1 for x in roles if x in ("기타", None, ""))
-            ne = r.get("n_edges", len(r.get("edges", [])))
-            if nr < 5:
-                c, rs = "excl", "방부족(<5)"
-            elif ESS - set(roles):
-                c, rs = "excl", "필수공간없음"
-            elif ne < nr - 1:
-                c, rs = "fix", "위상단절(엣지<방-1)"
-            elif etc / max(nr, 1) > 0.3:
-                c, rs = "fix", "역할미상과다(>30%)"
-            elif all(rm.get("area_m2") is None for rm in rooms.values()):
-                c, rs = "fix", "면적없음(scale)"
-            else:
-                c, rs = "use", "ok"
-            cat[c] += 1
-            reason[rs] += 1
-        return dict(cat), dict(reason)
-
-    if _gf and _gf.exists():
-        _cat, _rsn = _g_disp_agg(_gv, _gf.stat().st_size)
-        _tot = sum(_cat.values())
-        _c4 = st.columns(4)
-        _c4[0].metric("전체", f"{_tot:,}")
-        _c4[1].metric("✅ 사용", f"{_cat.get('use', 0):,}")
-        _c4[2].metric("🛠 보정", f"{_cat.get('fix', 0):,}")
-        _c4[3].metric("🚫 제외", f"{_cat.get('excl', 0):,}")
-        import pandas as _pdg
-        _ECAT = {"중복(dedup)": "제외", "방부족(<5)": "제외", "필수공간없음": "제외", "ok": "사용"}
-        _rrows = [{"카테고리": _ECAT.get(k, "보정"), "사유": ("정상" if k == "ok" else k), "수": v}
-                  for k, v in sorted(_rsn.items(), key=lambda x: -x[1])]
-        st.dataframe(_pdg.DataFrame(_rrows), hide_index=True, use_container_width=True)
-        st.caption(f"자동 생성({_gv}) {_tot:,} + 사람 보정(위상편집 SVG) {_corr_g} — "
-                   "**T 검수와 같은 잣대**(숫자·사용/보정/제외·사유). 롤링: 사용으로 학습→보정해 늘면 재학습.")
-    else:
-        st.info("G 데이터셋(gline)이 없습니다. (scripts/build_geom.py 로 빌드)")
-    with st.expander("🧩 보정분으로 G 데이터셋 빌드 (보정 → 사용 데이터 증가)", expanded=False):
-        _bld_ver = st.text_input("빌드할 G 버전명", "g1", key="gbuild_ver",
-                                 help="base(g0 자동) + 현재 보정 SVG 합쳐 이 버전으로 빌드(보정이 덮어씀)")
-        _blog = config.PROJECT_ROOT / "logs" / f"build_{_bld_ver}.log"
-        if _blog.exists():
-            _bl = _blog.read_text(errors="ignore").strip().splitlines()
-            st.caption(f"빌드 로그: `{(_bl[-1] if _bl else '…')[:120]}`")
-            if st.button("🔄 상태 새로고침", key="gbuild_ref"):
-                st.rerun()
-        if st.button(f"🧩 빌드 실행 — g0 + 보정 {_corr_g} → {_bld_ver}", key="gbuild_go"):
-            import subprocess as _sp
-            _cmd = (f"cd '{config.PROJECT_ROOT}' && PYTHONPATH=src setsid nohup "
-                    f"{sys.executable} -u scripts/build_geom_corrected.py "
-                    f"--base g0 --version {_bld_ver} > logs/build_{_bld_ver}.log 2>&1 &")
-            _sp.Popen(["bash", "-lc", _cmd])
-            st.success(f"{_bld_ver} 빌드 시작(백그라운드) — base g0 + 보정 {_corr_g}개. "
-                       "끝나면 📦 데이터셋·⚖️ 비교에 등장.")
-        st.caption(f"보정 SVG가 base(g0)를 덮어써 '사용' 데이터를 키움 → 같은 잣대로 "
-                   f"**g0 ↔ {_bld_ver} 비교**(보정 효과). 학습은 당신 판단.")
+    # ── G 검수 회계 — 검수 상태(검증완료=사용 그래프) 기준. 데이터셋=그래프. ──
+    from plan2graph import topoedit as _te
+    _led = _te.load_ledger()
+    _n_use = len(list(_te.GRAPHS_DIR.glob("*.json"))) if _te.GRAPHS_DIR.exists() else 0
+    _n_svg = len(list(_te.REC_DIR.glob("*.svg"))) if _te.REC_DIR.exists() else 0
+    _n_excl = sum(1 for _r in _led.values() if _r.get("status") == "제외")
+    _n_fix = max(_n_svg - _n_use, 0)
+    _g0f = config.release_dir("g0") / "manifest.json"
+    _cands = 0
+    if _g0f.exists():
+        try:
+            _cands = json.loads(_g0f.read_text(encoding="utf-8")).get("n_units", 0)
+        except Exception:  # noqa: BLE001
+            _cands = 0
+    _c4 = st.columns(3)
+    _c4[0].metric("✅ 사용 (검증완료 그래프)", f"{_n_use:,}")
+    _c4[1].metric("🛠 보정중 (편집 SVG)", f"{_n_fix:,}")
+    _c4[2].metric("🚫 제외", f"{_n_excl:,}")
+    st.caption(f"**데이터셋 = 그래프.** 사용 그래프는 아래 편집기에서 **검증완료** 누를 때 +1 "
+               f"(그 자리에서 위상+기하 그래프 생성·저장). 자동 후보(g0) {_cands:,}세대는 검증 전 = 사용 아님. "
+               "빌드·학습은 검수가 아니라 G-라인 도면생성에서.")
     st.divider()
     topoedit.render_editor()
     st.stop()
