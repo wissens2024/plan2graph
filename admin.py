@@ -609,45 +609,6 @@ if which.startswith("🏢"):
         _ct[2].metric("🚫 제외", f"{_dt.get('excl', 0):,}")
         st.caption("변환 완성도 레버(자동): ② 기하룰(개방통로·발코니·문매칭) · ③ 임계(간격·비율) · "
                    "④ 무결성 기준(R1~R5) · ① 검출 재학습(V2V/STR) · 라벨 합집합 재변환 → 보정필요를 사용으로.")
-        with st.expander("🔧 변환 보정 (재변환) — 보정필요(fix) → 사용(use)", expanded=False):
-            @st.cache_data(show_spinner=False)
-            def _fix_reasons_t(_sz):
-                from collections import Counter as _Ctr
-                _c = _Ctr()
-                for _l in _aim_t.read_text(encoding="utf-8").splitlines():
-                    if not _l.strip():
-                        continue
-                    _r = json.loads(_l)
-                    if _r.get("disposition") == "fix":
-                        _c[_r.get("reason", "?")] += 1
-                return dict(_c.most_common())
-            _fr = _fix_reasons_t(_aim_t.stat().st_size)
-            st.write("**보정 필요 사유별:** "
-                     + (" · ".join(f"`{k}` {v:,}" for k, v in _fr.items()) or "—"))
-            st.caption("convert_failed → **임계·규칙 재변환**(아래) · spa_only/str_only_pending → **V2V 검출**(별도·GPU).")
-            st.markdown("**변환 파라미터** (이 값들이 변환 품질을 좌우 — 자유 텍스트 아님)")
-            _k1, _k2, _k3 = st.columns(3)
-            _gap = _k1.number_input("개방통로 최대간격(px)", 0.0, 300.0, float(config.OPEN_MAX_GAP_PX))
-            _ratio = _k2.number_input("개방통로 비율 임계", 0.0, 1.0, float(config.OPEN_MIN_RATIO))
-            _etc = _k3.number_input("최소 기타면적(px²)", 0.0, 100000.0, float(config.MIN_ETC_AREA_PX))
-            _cvlog = config.PROJECT_ROOT / "logs" / "reconvert.log"
-            if _cvlog.exists():
-                _cl = _cvlog.read_text(errors="ignore").strip().splitlines()
-                st.info(f"최근 재변환 로그: `{(_cl[-1] if _cl else '…')[:120]}`")
-                if st.button("🔄 상태 새로고침", key="cv_ref"):
-                    st.rerun()
-            if st.button("🔧 재변환 실행 (백그라운드)", key="cv_go"):
-                import subprocess as _sp
-                _env = (f"P2G_OPEN_MAX_GAP_PX={_gap} P2G_OPEN_MIN_RATIO={_ratio} "
-                        f"P2G_MIN_ETC_AREA_PX={_etc} PYEXE='{sys.executable}'")
-                _cmd = (f"cd '{config.PROJECT_ROOT}' && {_env} setsid nohup "
-                        f"bash scripts/reconvert_aihub.sh > logs/reconvert.log 2>&1 &")
-                _sp.Popen(["bash", "-lc", _cmd])
-                st.success("재변환 시작(백그라운드) — 임계 적용 재변환 → staging 통합 → manifest 재생성까지 자동. "
-                           "무겁습니다(수십 분~). 끝나면 **다음 화면 로드에서 use/fix 자동 갱신**.")
-            st.caption("재변환→통합→manifest까지 닫힘(별도 dir 빌드→성공 시만 교체·백업). "
-                       "spa_only/str_only_pending은 V2V 검출이 별도 필요.")
-        st.divider()
     st.caption("AI-Hub 도면을 원본 PNG로 확인 — 채택분(dual)·제외분(부분/완전배제) 사유 육안 검증.")
     if not config.RAW_SOURCE_ROOT.is_dir():
         st.error(f"원본 RAW 없음: {config.RAW_SOURCE_ROOT}\n"
@@ -719,21 +680,61 @@ if which.startswith("🏢"):
     from collections import Counter as _C
     _cnt = _C(_albl(r) for r in rows)
     disp = [(lab, _cnt[lab]) for lab in _AIHUB_ORDER if _cnt.get(lab, 0)]
-    with st.expander("ℹ️ 분류 안내 (꼭 읽기)", expanded=False):
-        st.markdown(
-            f"검수 대상 = 받은 원천 도면 전량 **{len(rows):,}장**(고유+중복사본). "
-            "도면 1장 = **처분 1칸**(대표 사유, 상호배타), 모든 칸 합 = 다운로드.\n\n"
-            "- **✅ 사용**: dual(SPA+STR) 직접변환 · 방만/구조만은 **V2V로 복구**해 사용\n"
-            "- **🛠 보정·복구**: 방만/구조만 V2V 대기 · dual인데 변환 실패(품질게이트)\n"
-            "- **🚫 제외(영구)**: 비-FP(단면/입면/구조=평면도 아님) · OBJ/OCR만(방·구조 없음) · "
-            "중복(같은 PNG byte-identical, 1장만 채택)")
     keymap = {"📋 전체": len(rows)}
     keymap.update(dict(disp))
-    cat = st.sidebar.selectbox("분류", ["📋 전체"] + [lab for lab, _ in disp],
-                               format_func=lambda k: f"{k} ({keymap[k]:,})")
+    # ── 상단 통일 컨트롤(사이드바→본문): 분류 | 거주형태 + 보기 모드. G검수(🧩)와 동일 구조. ──
+    c_cat, c_house = st.columns(2)
+    cat = c_cat.selectbox("분류", ["📋 전체"] + [lab for lab, _ in disp],
+                          format_func=lambda k: f"{k} ({keymap[k]:,})")
     _HOUSE_KO = {"APT": "APT(아파트)", "DEH": "DEH(단독주택)", "ROW": "ROW(연립주택)"}
-    house = st.sidebar.selectbox("거주형태", ["(전체)", "APT", "DEH", "ROW"],
-                                 format_func=lambda k: _HOUSE_KO.get(k, k))
+    house = c_house.selectbox("거주형태", ["(전체)", "APT", "DEH", "ROW"],
+                              format_func=lambda k: _HOUSE_KO.get(k, k))
+    view = st.radio(
+        "보기 모드", ["그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
+        index=0, horizontal=True,
+        help="그래프검수=구버전 위상 검수 · 나란히/겹쳐/원본만=라벨 육안확인 · "
+             "사람 위상 구축은 좌측 메뉴 🧩 AI-Hub 검수 (G)")
+    # 보정(재변환) 도구 — 분류 콤보가 '보정필요(fix)'일 때만 노출(사용/제외/전체에선 숨김).
+    _disp_by_label = {lab: dispo for (dispo, _r), lab in AIHUB_LABEL.items()}
+    if _aim_t.exists() and _disp_by_label.get(cat) == "fix":
+        with st.expander("🔧 변환 보정 (재변환) — 보정필요(fix) → 사용(use)", expanded=True):
+            @st.cache_data(show_spinner=False)
+            def _fix_reasons_t(_sz):
+                from collections import Counter as _Ctr
+                _c = _Ctr()
+                for _l in _aim_t.read_text(encoding="utf-8").splitlines():
+                    if not _l.strip():
+                        continue
+                    _r = json.loads(_l)
+                    if _r.get("disposition") == "fix":
+                        _c[_r.get("reason", "?")] += 1
+                return dict(_c.most_common())
+            _fr = _fix_reasons_t(_aim_t.stat().st_size)
+            st.write("**보정 필요 사유별:** "
+                     + (" · ".join(f"`{k}` {v:,}" for k, v in _fr.items()) or "—"))
+            st.caption("convert_failed → **임계·규칙 재변환**(아래) · spa_only/str_only_pending → **V2V 검출**(별도·GPU).")
+            st.markdown("**변환 파라미터** (이 값들이 변환 품질을 좌우 — 자유 텍스트 아님)")
+            _k1, _k2, _k3 = st.columns(3)
+            _gap = _k1.number_input("개방통로 최대간격(px)", 0.0, 300.0, float(config.OPEN_MAX_GAP_PX))
+            _ratio = _k2.number_input("개방통로 비율 임계", 0.0, 1.0, float(config.OPEN_MIN_RATIO))
+            _etc = _k3.number_input("최소 기타면적(px²)", 0.0, 100000.0, float(config.MIN_ETC_AREA_PX))
+            _cvlog = config.PROJECT_ROOT / "logs" / "reconvert.log"
+            if _cvlog.exists():
+                _cl = _cvlog.read_text(errors="ignore").strip().splitlines()
+                st.info(f"최근 재변환 로그: `{(_cl[-1] if _cl else '…')[:120]}`")
+                if st.button("🔄 상태 새로고침", key="cv_ref"):
+                    st.rerun()
+            if st.button("🔧 재변환 실행 (백그라운드)", key="cv_go"):
+                import subprocess as _sp
+                _env = (f"P2G_OPEN_MAX_GAP_PX={_gap} P2G_OPEN_MIN_RATIO={_ratio} "
+                        f"P2G_MIN_ETC_AREA_PX={_etc} PYEXE='{sys.executable}'")
+                _cmd = (f"cd '{config.PROJECT_ROOT}' && {_env} setsid nohup "
+                        f"bash scripts/reconvert_aihub.sh > logs/reconvert.log 2>&1 &")
+                _sp.Popen(["bash", "-lc", _cmd])
+                st.success("재변환 시작(백그라운드) — 임계 적용 재변환 → staging 통합 → manifest 재생성까지 자동. "
+                           "무겁습니다(수십 분~). 끝나면 **다음 화면 로드에서 use/fix 자동 갱신**.")
+            st.caption("재변환→통합→manifest까지 닫힘(별도 dir 빌드→성공 시만 교체·백업). "
+                       "spa_only/str_only_pending은 V2V 검출이 별도 필요.")
     sel = [r for r in rows
            if (cat == "📋 전체" or _albl(r) == cat) and (house == "(전체)" or r.get("house") == house)]
     # 렌더 대상: manifest 행의 지문 → 렌더 인덱스(없으면 스킵). 카운트는 manifest(sel)가 권위.
@@ -745,11 +746,6 @@ if which.startswith("🏢"):
     def _lblidx(sp):
         return _ix.label_index(sp)
 
-    view = st.sidebar.radio(
-        "보기 모드", ["그래프검수(원본∥그래프)",
-                   "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
-        index=0, help="그래프검수=구버전 위상 검수 · 나란히/겹쳐/원본만=라벨 육안확인 · "
-                      "사람 위상 구축은 좌측 메뉴 🧩 AI-Hub 검수 (G)")
     if view.startswith("그래프검수"):    # ⚠격리/✅채택 흡수 — staging/aihub 그래프 검수·결정(ledger 기록)
         lblidx = _lblidx(split)
         items = []
