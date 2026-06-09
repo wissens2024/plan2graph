@@ -17,6 +17,7 @@
 | D2 | **버전 = 선언적 레시피 `recipe.json`** | 버전마다 명령형 freeze 스크립트 | 조합(출처×상태×역할)이 계속 늘어남 → 선언만 추가하면 재현·비교가 명시적. |
 | D3 | **출처별 개별 검수 페이지 유지** (공통 불변식 강제) | 출처 파라미터화 단일 페이지 | 출처마다 원본 표현·필터가 달라(배제 카테고리/색렌더 등) 개별 페이지가 더 명확. 단 "원본∥그래프+정상/격리+결정버튼"과 `render_graph`는 공통 강제. |
 | D4 | **출처 역할 = benchmark / pretrain** | 모든 출처에 test split | benchmark(AI-Hub)만 test 동결 보유 → 새 출처를 더해도 test 불변 → v0~vN 비교 타당성 유지. pretrain(글로벌)은 train/val만. 기존 `provenance="global_pretrain"` 태그를 정식화. |
+| D5 | **T-라인 / G-라인 완전 분리** (폴더·GUI), 성능만 합쳐 비교 | 상위개념 스키마 통합 / 한 메뉴 위아래 스택 | 두 방식(자동 detection→그래프 vs 사람 SVG→추출)이 데이터셋·스키마·생성방식 모두 다른 별개 패러다임. 섞으면 혼선·은폐. 잣대=도면 품질. → [ADR-0002](adr/0002-tline-gline-separation.md) (§11) |
 
 ---
 
@@ -90,9 +91,9 @@ data/
     aihub/        graphs/  accepted.csv  quarantine.csv  ledger.csv
     cubicasa5k/   graphs/  accepted.csv  quarantine.csv  ledger.csv
     rplan_render/ graphs/  accepted.csv  quarantine.csv  ledger.csv
-  releases/                        # 동결 스냅샷 (불변)
-    v0/   recipe.json  graphs/  splits/{train,val,test}.txt  manifest.json
-    v1/   ...
+  releases/                        # 동결 스냅샷 (불변) — 라인별 분리(ADR-0002, §11)
+    tline/  v0/ v1/ v2/ ...        # T-라인(위상): 각 recipe.json graphs/ splits/{train,val,test}.txt manifest.json
+    gline/  g0/ g_global/ ...      # G-라인(위상+기하)
     _frozen_test/  aihub.json      # benchmark 출처별 test 동결(§6)
 ```
 
@@ -195,3 +196,22 @@ freeze가 그것으로 필터해야 한다(현재 미구현 — graph_id→manif
 | P5 | RPLAN 렌더 Tier2 진입로(앵커 없는 전체이미지 세그멘테이션) — 별도 설계 후 | v2v 확장 |
 
 > P5(비전 Tier2)는 품질 리스크가 커 별도 설계. P1~P4는 데이터셋 구조 정비라 선행.
+
+---
+
+## 11. T-라인 / G-라인 분리 (ADR-0002 · 2026-06-09)
+
+이 문서 §1~§10은 **T-라인(위상, 자동 detection→그래프)** 의 데이터 파이프라인을 정의한다. 이후 **G-라인(위상+기하, 사람 SVG→추출)** 이 추가됐고, 둘은 **데이터셋·스키마·생성 방식이 모두 다른 별개 패러다임**이라 **절대 섞지 않는다**.
+
+| | T-라인 | G-라인 |
+|---|---|---|
+| 데이터 | `releases/tline/` (v0~) | `releases/gline/` (g0~) |
+| 스키마 | `layout.nodes` (type / source-target) | `rooms` (role / from-to / polygon, [GEOMETRY_SCHEMA](GEOMETRY_SCHEMA.md)) |
+| 원천 방식 | 검출→자동 변환 (SVG 없음) | 사람 SVG 편집→추출 (SVG=단일 진실) |
+| 기하 생성 | 규칙기반 treemap (모델 없음) | 학습 기하모델 (train_geom) |
+| 모델 | `runs/tline/` (gen-*) | `runs/gline/` (geom-*) |
+
+- **분리 위치**: 폴더(위)·GUI(라인별 섹션). **성능은 한 화면에 합쳐 비교**(잣대 = 도면 품질).
+- **§4 레이아웃 갱신**: `releases/<version>/` → `releases/{tline,gline}/<version>/`.
+- staging(원천 작업장)은 출처별(aihub/cubicasa/rplan)로 **라인 무관**. 라인 분기는 **releases(빌드 산출)부터**. G-라인 사람 SVG는 `staging/topo_human/`.
+- **지금은 자동화만으로 구조·품질↑**, 사람(알바) 검수·편집은 이후 단계.

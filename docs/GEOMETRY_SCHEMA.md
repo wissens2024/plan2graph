@@ -1,5 +1,7 @@
 # GEOMETRY_SCHEMA — 위상+기하 결합 표현 (계약서)
 
+> ⚠️ **이 문서 = G-라인(위상+기하) 스키마.** T-라인(자동 detection→그래프, `layout.nodes`)과 **절대 섞지 않는다**(폴더·GUI 분리, [ADR-0002](adr/0002-tline-gline-separation.md)). 단, 현 `g0`는 이 사양에 **미달**(SVG 사람 교정을 건너뛴 지름길 빌드 → 위상·기하 결손: 엣지 door만·`door_type`/`area_m2`/`fixtures` 없음). **②단계에서 이 사양대로 자동 정교화**가 목표.
+
 > 위상은 도면의 **문법**이지 그림이 아니다. 이 스키마는 생성 모델(Graph-to-Geometry,
 > Wall/Door/Window)이 학습·소비하고 검증기가 검사하는 **그라운드 트루스 표현**이다.
 > 단순 room-door-room 그래프로는 정교한 도면 생성에 부족하다 → geometry-rich graph.
