@@ -629,15 +629,14 @@ if which.startswith("🏢"):
             if st.button("🔧 재변환 실행 (백그라운드)", key="cv_go"):
                 import subprocess as _sp
                 _env = (f"P2G_OPEN_MAX_GAP_PX={_gap} P2G_OPEN_MIN_RATIO={_ratio} "
-                        f"P2G_MIN_ETC_AREA_PX={_etc}")
-                _cmd = (f"cd '{config.PROJECT_ROOT}' && {_env} PYTHONPATH=src setsid nohup "
-                        f"{sys.executable} -u -m plan2graph.build_dataset --split all --jobs 4 "
-                        f"> logs/reconvert.log 2>&1 &")
+                        f"P2G_MIN_ETC_AREA_PX={_etc} PYEXE='{sys.executable}'")
+                _cmd = (f"cd '{config.PROJECT_ROOT}' && {_env} setsid nohup "
+                        f"bash scripts/reconvert_aihub.sh > logs/reconvert.log 2>&1 &")
                 _sp.Popen(["bash", "-lc", _cmd])
-                st.success("재변환 시작(백그라운드) — 위 임계로 라벨→그래프 전체 재변환. "
-                           "무겁습니다(수십 분~). '상태 새로고침'으로 진행 확인.")
-            st.caption("⚠️ 전체(43k) 재변환이라 무겁습니다. spa_only/str_only_pending은 V2V 검출이 별도 필요. "
-                       "처분(use/fix) 반영은 재변환 산출을 staging에 통합하는 단계 후(플러밍 예정).")
+                st.success("재변환 시작(백그라운드) — 임계 적용 재변환 → staging 통합 → manifest 재생성까지 자동. "
+                           "무겁습니다(수십 분~). 끝나면 **다음 화면 로드에서 use/fix 자동 갱신**.")
+            st.caption("재변환→통합→manifest까지 닫힘(별도 dir 빌드→성공 시만 교체·백업). "
+                       "spa_only/str_only_pending은 V2V 검출이 별도 필요.")
         st.divider()
     st.caption("AI-Hub 도면을 원본 PNG로 확인 — 채택분(dual)·제외분(부분/완전배제) 사유 육안 검증.")
     if not config.RAW_SOURCE_ROOT.is_dir():
