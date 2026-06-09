@@ -813,7 +813,7 @@ def crop_overlay_image(dr: Drawing, png: bytes, st: State, draw_pts,
 
 
 def bake_background(dr: Drawing, png: bytes, st: State, max_w: int = 900,
-                    margin: int = 90, highlight=None, highlight_edge=None):
+                    margin: int = 90, highlight=None, highlight_edge=None, geom: bool = False):
     """캔버스 배경 = 원본 크롭 + 영역(반투명 색박스) + 연결선 + 노드(동그라미+id).
     반환 (PIL RGB, (x0,y0,native_w,native_h), (disp_w,disp_h)). 클릭→원본 좌표 매핑용.
     highlight=강조할 노드 id(연결 시 선택된 A를 빨갛게).
@@ -877,6 +877,28 @@ def bake_background(dr: Drawing, png: bytes, st: State, max_w: int = 900,
                     font=_pil_font(), anchor="ma")
         except Exception:
             pass
+    # 5) (옵션) 기하 요소 검수 오버레이 — 탐지된 창·문(arc=여닫이 방향)·기구
+    if geom:
+        for w in dr.windows:
+            if w.polygon is not None:
+                pts = [(x - x0, y - y0) for x, y in w.polygon.exterior.coords]
+                if len(pts) >= 3:
+                    dd.polygon(pts, fill=(0, 200, 220, 140), outline=(0, 150, 170, 255))
+        for d in dr.doors:
+            if d.polygon is not None:
+                pts = [(x - x0, y - y0) for x, y in d.polygon.exterior.coords]
+                if len(pts) >= 3:
+                    dd.polygon(pts, fill=(21, 101, 192, 120), outline=(21, 101, 192, 255))
+        for o in dr.objects:
+            if not o.centroid:
+                continue
+            ox, oy = o.centroid[0] - x0, o.centroid[1] - y0
+            dd.ellipse([ox - 7, oy - 7, ox + 7, oy + 7], fill=(216, 27, 96, 235))
+            try:
+                dd.text((ox + 9, oy), o.class_name.replace("객체_", ""),
+                        fill=(160, 15, 70, 255), font=_pil_font(), anchor="lm")
+            except Exception:  # noqa: BLE001
+                pass
     out = Image.alpha_composite(crop, ov).convert("RGB")
     nw, nh = x1 - x0, y1 - y0
     if out.width > max_w:
@@ -1134,7 +1156,7 @@ def render_editor() -> None:
 
     # ── 도구(가로 라디오, 이모지X). 면적보정은 항상 접근 가능 — 축척이 틀려 전체 면적이
     #    안 맞는 경우도 사용자가 들어가 고쳐야 하므로 숨기지 않는다(헤더 전체면적으로 판단). ──
-    tool = st.radio("도구", ["보기", "영역그리기", "역할", "연결", "면적보정"],
+    tool = st.radio("도구", ["보기", "영역그리기", "역할", "연결", "기하(창·문·기구)", "면적보정"],
                     horizontal=True, key=f"tool_{unit_id}")
 
     bg, mp_xy, (dw, dh) = bake_background(dr, png, stt)
@@ -1183,6 +1205,28 @@ def render_editor() -> None:
             if erows:
                 st.dataframe(pd.DataFrame(erows), hide_index=True, use_container_width=True,
                              height=(len(erows) + 1) * 35 + 3)
+    elif tool == "기하(창·문·기구)":
+        bg2, _mp2, _sz2 = bake_background(dr, png, stt, geom=True)
+        with canvas_col:
+            st.image(bg2 if bg2 is not None else bg)
+            st.caption("🟦문(arc=여닫이 방향) · 🟦창(채광) · 🔴기구 — **탐지 결과 검수**. "
+                       "틀리면 역할/영역 도구로 보정(중복입력 없이 탐지값을 조인).")
+        import pandas as _pd
+        from shapely.geometry import Point as _Pt
+        _grows = []
+        for n in stt.nodes.values():
+            if n.polygon is None:
+                continue
+            _nb = n.polygon.buffer(40)
+            _nw = sum(1 for w in dr.windows if w.polygon is not None and _nb.intersects(w.polygon))
+            _nd = sum(1 for d in dr.doors if d.centroid and _nb.contains(_Pt(*d.centroid)))
+            _grows.append({"방": f"{_disp_id(n.id)} {n.role}", "채광(창)": _nw,
+                           "문": _nd, "기구": ",".join(_fixtures_in(dr, n.polygon)) or "—"})
+        panel.metric("탐지 합", f"창 {len(dr.windows)}·문 {len(dr.doors)}·기구 {len(dr.objects)}")
+        panel.caption("방별 채광·문·기구는 dr 탐지에서 도출(채울 순서: 창문→문방향→기구).")
+        if _grows:
+            st.dataframe(_pd.DataFrame(_grows), hide_index=True, use_container_width=True,
+                         height=(len(_grows) + 1) * 35 + 3)
     elif tool == "역할":
         buf = bundle.setdefault("clk", {}).setdefault(
             unit_id, {"pts": [], "last": None, "sel": None})
