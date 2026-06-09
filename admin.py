@@ -599,6 +599,45 @@ if which.startswith("🏢"):
         _ct[2].metric("🚫 제외", f"{_dt.get('excl', 0):,}")
         st.caption("변환 완성도 레버(자동): ② 기하룰(개방통로·발코니·문매칭) · ③ 임계(간격·비율) · "
                    "④ 무결성 기준(R1~R5) · ① 검출 재학습(V2V/STR) · 라벨 합집합 재변환 → 보정필요를 사용으로.")
+        with st.expander("🔧 변환 보정 (재변환) — 보정필요(fix) → 사용(use)", expanded=False):
+            @st.cache_data(show_spinner=False)
+            def _fix_reasons_t(_sz):
+                from collections import Counter as _Ctr
+                _c = _Ctr()
+                for _l in _aim_t.read_text(encoding="utf-8").splitlines():
+                    if not _l.strip():
+                        continue
+                    _r = json.loads(_l)
+                    if _r.get("disposition") == "fix":
+                        _c[_r.get("reason", "?")] += 1
+                return dict(_c.most_common())
+            _fr = _fix_reasons_t(_aim_t.stat().st_size)
+            st.write("**보정 필요 사유별:** "
+                     + (" · ".join(f"`{k}` {v:,}" for k, v in _fr.items()) or "—"))
+            st.caption("convert_failed → **임계·규칙 재변환**(아래) · spa_only/str_only_pending → **V2V 검출**(별도·GPU).")
+            st.markdown("**변환 파라미터** (이 값들이 변환 품질을 좌우 — 자유 텍스트 아님)")
+            _k1, _k2, _k3 = st.columns(3)
+            _gap = _k1.number_input("개방통로 최대간격(px)", 0.0, 300.0, float(config.OPEN_MAX_GAP_PX))
+            _ratio = _k2.number_input("개방통로 비율 임계", 0.0, 1.0, float(config.OPEN_MIN_RATIO))
+            _etc = _k3.number_input("최소 기타면적(px²)", 0.0, 100000.0, float(config.MIN_ETC_AREA_PX))
+            _cvlog = config.PROJECT_ROOT / "logs" / "reconvert.log"
+            if _cvlog.exists():
+                _cl = _cvlog.read_text(errors="ignore").strip().splitlines()
+                st.info(f"최근 재변환 로그: `{(_cl[-1] if _cl else '…')[:120]}`")
+                if st.button("🔄 상태 새로고침", key="cv_ref"):
+                    st.rerun()
+            if st.button("🔧 재변환 실행 (백그라운드)", key="cv_go"):
+                import subprocess as _sp
+                _env = (f"P2G_OPEN_MAX_GAP_PX={_gap} P2G_OPEN_MIN_RATIO={_ratio} "
+                        f"P2G_MIN_ETC_AREA_PX={_etc}")
+                _cmd = (f"cd '{config.PROJECT_ROOT}' && {_env} PYTHONPATH=src setsid nohup "
+                        f"{sys.executable} -u -m plan2graph.build_dataset --split all --jobs 4 "
+                        f"> logs/reconvert.log 2>&1 &")
+                _sp.Popen(["bash", "-lc", _cmd])
+                st.success("재변환 시작(백그라운드) — 위 임계로 라벨→그래프 전체 재변환. "
+                           "무겁습니다(수십 분~). '상태 새로고침'으로 진행 확인.")
+            st.caption("⚠️ 전체(43k) 재변환이라 무겁습니다. spa_only/str_only_pending은 V2V 검출이 별도 필요. "
+                       "처분(use/fix) 반영은 재변환 산출을 staging에 통합하는 단계 후(플러밍 예정).")
         st.divider()
     st.caption("AI-Hub 도면을 원본 PNG로 확인 — 채택분(dual)·제외분(부분/완전배제) 사유 육안 검증.")
     if not config.RAW_SOURCE_ROOT.is_dir():
