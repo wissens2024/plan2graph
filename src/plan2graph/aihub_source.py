@@ -6,11 +6,32 @@ coco.load_coco_bytes + geometry.assemble_drawing 으로 Drawing을 조립한다(
 """
 from __future__ import annotations
 
+import sys
 import zipfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+import config  # noqa: E402
 
 from . import inspect_excluded as _ix
 from .coco import load_coco_bytes
 from .geometry import assemble_drawing
+
+PRED_DIR = config.DATA_DIR / "v2v" / "predicted"   # V2V 예측 라벨(YOLO-seg) COCO
+
+
+def _predicted_index() -> dict:
+    """V2V 예측 라벨 색인 {(label_type, have_key): path}. 파일명 `{MISS}_{have_key}.json`
+    (build_predicted 페어링 규약 — 빠진 종류를 보유라벨 key로 예측 저장)."""
+    idx: dict = {}
+    if PRED_DIR.exists():
+        for f in PRED_DIR.glob("*.json"):
+            parts = f.stem.split("_", 1)            # "SPA_000213273" → ["SPA","000213273"]
+            if len(parts) == 2 and parts[0] in ("SPA", "STR"):
+                idx[(parts[0], parts[1])] = str(f)
+    return idx
 
 
 def _extra_label_index(split, labels=("OBJ", "OCR")) -> dict:
@@ -32,18 +53,21 @@ def _extra_label_index(split, labels=("OBJ", "OCR")) -> dict:
 
 
 def scan(split=("Training", "Validation"), house: str | None = None,
-         with_obj_ocr: bool = True) -> list[dict]:
-    """편집 대상 목록(SPA 있는 도면만). 반환 [{plan_id, house, sig, png, labels}].
-    labels = {라벨종류: (zip, entry)} (COCO). png = (zip, entry) (원천).
-    with_obj_ocr=True면 OBJ(기구)·OCR(이름)도 지문일치 시 병합(역할 유도 신호)."""
+         with_obj_ocr: bool = True, with_predicted: bool = True) -> list[dict]:
+    """편집/SVG 변환 대상 목록. 반환 [{plan_id, house, sig, png, labels}].
+    labels = {라벨종류: (zip,entry)} 또는 ("__file__", path)(V2V 예측). png = (zip,entry).
+    with_predicted=True면 **V2V 예측 라벨을 union**(실라벨 우선, 빠진 종류만 채움) →
+    SPA-only는 STR(문) 예측 보강, STR-only는 SPA(방) 예측으로 방 확보(SVG 가능)."""
     idx = _ix.build_index(split)         # sig -> {label: {zip, entry, key, house}} (원천 PNG)
     lbl = _ix.label_index(split)         # {SPA/STR: {key: (zip, entry)}}          (라벨 COCO)
     extra = _extra_label_index(split) if with_obj_ocr else {}   # {OBJ/OCR: {key: ...}}
+    pred = _predicted_index() if with_predicted else {}         # {(type, have_key): path}
     out = []
     for sig, d in idx.items():
-        if "SPA" not in d:               # 방(SPA) 없으면 편집 불가
+        anchor = d.get("SPA") or d.get("STR")    # 방 우선, 없으면 구조(이미지·house 기준)
+        if anchor is None:
             continue
-        h = d["SPA"]["house"]
+        h = anchor["house"]
         if house and h != house:
             continue
         labels = {lt: lbl[lt][d[lt]["key"]]
@@ -52,20 +76,29 @@ def scan(split=("Training", "Validation"), house: str | None = None,
         for lt in ("OBJ", "OCR"):        # 지문(sig)일치 + 라벨 COCO 존재 시만 병합
             if lt in d and d[lt]["key"] in extra.get(lt, {}):
                 labels[lt] = extra[lt][d[lt]["key"]]
-        if "SPA" not in labels:          # SPA COCO 없으면 스킵
+        if with_predicted:               # 빠진 종류만 예측으로 채움(union not replace)
+            for have, miss in (("STR", "SPA"), ("SPA", "STR")):
+                if miss not in labels and have in d:
+                    p = pred.get((miss, d[have]["key"]))
+                    if p:
+                        labels[miss] = ("__file__", p)
+        if "SPA" not in labels:          # 방(실 or 예측) 없으면 SVG 불가
             continue
         out.append({"plan_id": f"{h}_FP_{sig}", "house": h, "sig": sig,
-                    "png": (d["SPA"]["zip"], d["SPA"]["entry"]), "labels": labels})
+                    "png": (anchor["zip"], anchor["entry"]), "labels": labels})
     return sorted(out, key=lambda r: r["plan_id"])
 
 
 def load(rec: dict, scale=None):
-    """rec(scan 산출) → (Drawing, png_bytes). 위상편집 load_plan과 동일 형태."""
-    import config
+    """rec(scan 산출) → (Drawing, png_bytes). 예측 라벨(("__file__", path))은 파일서 직접 읽음."""
     docs = []
     for lt, (zp, entry) in rec["labels"].items():
-        with zipfile.ZipFile(zp) as zf:
-            docs.append(load_coco_bytes(zf.read(entry), source=f"{lt}:{entry}"))
+        if zp == "__file__":                         # V2V 예측 라벨(COCO 파일)
+            data = Path(entry).read_bytes()
+        else:
+            with zipfile.ZipFile(zp) as zf:
+                data = zf.read(entry)
+        docs.append(load_coco_bytes(data, source=f"{lt}:{entry}"))
     sc = scale if scale is not None else config.DEFAULT_SCALE
     dr = assemble_drawing(docs, image_path=None, scale=sc)
     zp, entry = rec["png"]
