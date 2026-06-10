@@ -484,7 +484,47 @@ if which.startswith("🧮"):
     from plan2graph import dataset_status
 
     st.title("🧮 검수 현황(종합)")
-    st.caption("AI-Hub · CubiCasa5k · RPLAN — 처분(✅사용 / 🛠보정·복구필요 / 🚫제외)별, "
+
+    # ── 데이터셋 기본 비교: T-라인 vs G-라인 (세대 단위·같은 위치) ──
+    #   세대 = 데이터셋 예제 단위(한 도면=여러 세대 타일). 여기는 '세대'로 통일해 직접 비교.
+    from plan2graph import topoedit as _te, sources as _src
+    import re as _re
+
+    @st.cache_data(show_spinner="라인 비교 집계...")
+    def _line_compare(_gsig, _tsig):
+        from plan2graph import dataset_status as _ds
+        g = _ds.gline_status(_te.GRAPHS_DIR)                  # G: 세대 단위 전량 분류
+        tdir = _src.graphs_dir("aihub")                      # T: 채택(사용) 세대만 보관
+        tu, td = 0, set()
+        if tdir.is_dir():
+            for f in tdir.glob("*.json"):
+                tu += 1
+                td.add(_re.sub(r"_u\d+$", "", f.stem))
+        return g, tu, len(td)
+    _gn = len(list(_te.GRAPHS_DIR.glob("*.json"))) if _te.GRAPHS_DIR.exists() else 0
+    _tdir = _src.graphs_dir("aihub")
+    _tn = len(list(_tdir.glob("*.json"))) if _tdir.is_dir() else 0
+    _g, _tu, _td = _line_compare(_gn, _tn)
+
+    st.markdown("#### 데이터셋 비교 — **세대 단위**")
+    _ct, _cg = st.columns(2)
+    with _ct:
+        st.markdown("**T-라인** · 자동변환(채택만 보관)")
+        st.caption(f"도면 {_td:,} → 세대 {_tu:,}")
+        st.metric("✅ 사용 세대", f"{_tu:,}")
+        st.caption("보정/제외 세대는 보관 안 함(채택 시 가르고 버림)")
+    with _cg:
+        st.markdown("**G-라인 (g0)** · 전량 분류 보관")
+        st.caption(f"도면 {_g['n_drawings']:,} → 세대 {_g['total']:,}")
+        _c3 = st.columns(3)
+        _c3[0].metric("✅ 사용", f"{_g['use']:,}")
+        _c3[1].metric("🛠 보정필요", f"{_g['fix']:,}")
+        _c3[2].metric("🚫 제외", f"{_g['excl']:,}")
+    st.caption("※ 위는 **세대**(데이터셋 기본 단위). T는 채택(사용)만 남겨 비교 숫자가 사용 세대뿐이고, "
+               "G는 전량을 사용/보정필요/제외로 분류해 보관. 도면=원본 시트(여러 세대 타일).")
+    st.divider()
+
+    st.caption("아래 — **도면(받은 원본) 단위** · AI-Hub · CubiCasa5k · RPLAN 처분 비교. "
                "각 출처 합 = 다운로드 원본 수. 개별 검수는 각 도면검수 메뉴에서.")
     SRC = [("aihub", "🏢 AI-Hub"), ("cubicasa5k", "🏠 CubiCasa5k"), ("rplan", "📐 RPLAN")]
     if st.button("🔄 재집계(캐시 비움)", help="재변환·dedup 후 현황을 다시 집계(디스크 캐시도 삭제)"):
