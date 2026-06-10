@@ -1425,50 +1425,19 @@ if which.startswith("📗"):
     from pathlib import Path as _Path
     _ROOT = _Path(__file__).resolve().parent
     st.title("📗 G-라인 도면생성 — 자연어→위상→학습 기하모델")
-    st.caption("NL → 방 구성 → **g0 실측 면적** → **자기교정(겹침0·외곽채움)** → 도면. "
-               "위상 모델 없이도 동작(관례 인접=거실 허브). 본 파이프라인: 위상→기하→검증→자기교정.")
 
-    # ── 🖼 생성형 도면 / 📐 AutoCAD(DXF) — G 그래프를 cadrender로 (위상도면 대신 두 산출물) ──
-    st.markdown("### 🖼 생성형 도면 / 📐 AutoCAD  (위상도면 대신 — 두 산출물)")
-    from plan2graph import topoedit as _te2, cadrender as _cr
-    _gdir = _te2.GRAPHS_DIR
-    _gjsons = sorted(_gdir.glob("*.json")) if _gdir.exists() else []
-    if not _gjsons:
-        st.info("G 그래프가 아직 없습니다(SVG 변환→빌드 후).")
-    else:
-        _rc1, _rc2 = st.columns([3, 1])
-        _selg = _rc1.selectbox(f"도면(그래프) 선택 ({len(_gjsons):,})", _gjsons,
-                               format_func=lambda p: p.stem)
-        try:
-            _gobj = json.loads(_selg.read_text(encoding="utf-8"))
-            _geom = _cr.autocorrect(_cr.from_geomgraph(_gobj))
-            st.pyplot(_cr.render_fig(_geom), clear_figure=True)
-            # 🔧 자기교정 로그 — 몇 바퀴 돌고 무엇을 검사·수정했나(GUI에서 그대로 보임)
-            with st.expander(f"🔧 자기교정 {len(_geom.correct_log)}바퀴 — 검사·수정 내역", expanded=True):
-                for _rd in _geom.correct_log:
-                    if _rd.get("done"):
-                        st.markdown(f"**{_rd['iter']}바퀴** · 검사 0건 → ✅ 완료(깨끗)")
-                    else:
-                        st.markdown(f"**{_rd['iter']}바퀴** · 검사 {len(_rd['found'])}건 발견 → "
-                                    f"{len(_rd['fixed'])}건 수정")
-                        for _fx in _rd["fixed"]:
-                            st.caption(f"　🔧 고침: {_fx}")
-                        for _fd in _rd["found"]:
-                            st.caption(f"　🔎 검출: {_fd}")
-                st.markdown(f"**잔여 {len(_geom.issues)}건**"
-                            + (" — ⚠ 보정필요" if _geom.issues else " — ✅ 깨끗"))
-            try:
-                _dxf = _cr.render_dxf(_geom)
-                _rc2.download_button("📐 AutoCAD(DXF) 받기", _dxf,
-                                     file_name=f"{_geom.plan_id}.dxf", mime="application/dxf")
-            except RuntimeError as _e:
-                _rc2.caption(f"DXF 불가: {_e}")
-        except Exception as _e:  # noqa: BLE001
-            st.error(f"렌더 실패: {_e}")
-    st.divider()
+    # ── 1. 파이프라인 — 지금 어디까지 ──
+    st.header("1. 파이프라인 — 지금 어디까지")
+    st.markdown(
+        "자연어 요구 → **방 구성(program)** → **g0 실측 면적 prior** → **자기교정(겹침0·외곽채움)** "
+        "→ 좌표 도면. 위상 모델 없이도 동작(관례 인접=거실 허브).\n\n"
+        "흐름: **② 기하 모델을 고르거나 학습** → **③ 자연어로 도면 생성** → (필요 시 **④ 데이터 그래프 확인·DXF**). "
+        "**최종 목표 = *잘 나온 도면*** — T(박스형)↔G(실측형) 비교가 핵심.")
 
-    # 기하 모델 학습 — G-라인 데이터셋을 순서대로(사전학습→파인튜닝) 또는 기존 모델 사용
-    st.markdown("**기하 모델 학습** — 데이터셋을 순서대로(① 사전학습 → ② 파인튜닝) 또는 기존 모델 사용")
+    # ── 2. 기하 모델 구성 — 사전학습 × 파인튜닝 ──
+    st.header("2. 기하 모델 구성 — 사전학습 × 파인튜닝")
+    st.caption("**① 사전학습 → ② 파인튜닝**을 고른다. 모델이 있으면 §3 생성에 쓰이고, 없으면 백그라운드 학습. "
+               "데이터셋: g0=dual 정상변환 · g1=+추가본(V2V·objocr 복구).")
     _gvers = []  # 기하(G-라인) 데이터셋
     for _v, _line, _rp in config.list_releases():
         if _line != "gline":
@@ -1523,6 +1492,9 @@ if which.startswith("📗"):
                 st.rerun()
     st.divider()
 
+    # ── 3. 도면 생성 — 자연어 → 자기교정 기하 도면 ──
+    st.header("3. 도면 생성 — 자연어 → 자기교정 기하 도면")
+    st.caption("요구를 입력하고 생성 버튼을 누르면 도면이 나옵니다. (누르기 전엔 아무것도 렌더하지 않음)")
     gtext2 = st.text_input("요구(자연어)", "신혼부부 아파트 침실2 욕실1 거실 주방", key="geo_text")
     if st.button("🏠 기하 도면 생성"):
         try:
@@ -1548,6 +1520,47 @@ if which.startswith("📗"):
                        "인접 미실현 쌍은 위상 라우팅 대상(2층 자기교정).")
         except Exception as e:  # noqa: BLE001
             st.error(f"기하 생성 실패: {e}")
+
+    # ── 4. 데이터 그래프 보기 · DXF 내보내기 (생성 아님 — 확인·내보내기용) ──
+    st.header("4. 데이터 그래프 보기 · DXF 내보내기")
+    st.caption("학습 데이터(G 그래프)를 cadrender로 **확인·내보내기**용 — *생성이 아님*. "
+               "자동 베이스라인이라 거칠 수 있음. **그래프를 골라야 렌더**합니다(자동 표시 없음).")
+    from plan2graph import topoedit as _te2, cadrender as _cr
+    _gdir = _te2.GRAPHS_DIR
+    _gjsons = sorted(_gdir.glob("*.json")) if _gdir.exists() else []
+    if not _gjsons:
+        st.info("G 그래프가 아직 없습니다(SVG 변환→빌드 후).")
+    else:
+        _PICK = "— 그래프 선택 —"
+        _rc1, _rc2 = st.columns([3, 1])
+        _selg = _rc1.selectbox(f"도면(그래프) 선택 ({len(_gjsons):,})", [_PICK] + _gjsons,
+                               format_func=lambda p: p if isinstance(p, str) else p.stem)
+        if _selg != _PICK:
+            try:
+                _gobj = json.loads(_selg.read_text(encoding="utf-8"))
+                _geom = _cr.autocorrect(_cr.from_geomgraph(_gobj))
+                st.pyplot(_cr.render_fig(_geom), clear_figure=True)
+                with st.expander(f"🔧 자기교정 {len(_geom.correct_log)}바퀴 — 검사·수정 내역"):
+                    for _rd in _geom.correct_log:
+                        if _rd.get("done"):
+                            st.markdown(f"**{_rd['iter']}바퀴** · 검사 0건 → ✅ 완료(깨끗)")
+                        else:
+                            st.markdown(f"**{_rd['iter']}바퀴** · 검사 {len(_rd['found'])}건 발견 → "
+                                        f"{len(_rd['fixed'])}건 수정")
+                            for _fx in _rd["fixed"]:
+                                st.caption(f"　🔧 고침: {_fx}")
+                            for _fd in _rd["found"]:
+                                st.caption(f"　🔎 검출: {_fd}")
+                    st.markdown(f"**잔여 {len(_geom.issues)}건**"
+                                + (" — ⚠ 보정필요" if _geom.issues else " — ✅ 깨끗"))
+                try:
+                    _dxf = _cr.render_dxf(_geom)
+                    _rc2.download_button("📐 AutoCAD(DXF) 받기", _dxf,
+                                         file_name=f"{_geom.plan_id}.dxf", mime="application/dxf")
+                except RuntimeError as _e:
+                    _rc2.caption(f"DXF 불가: {_e}")
+            except Exception as _e:  # noqa: BLE001
+                st.error(f"렌더 실패: {_e}")
     st.stop()
 
 if which.startswith("⚖️"):
