@@ -74,7 +74,8 @@ class Geometry:
     walls: list = field(default_factory=list)
     doors: list = field(default_factory=list)
     windows: list = field(default_factory=list)
-    issues: list = field(default_factory=list)
+    issues: list = field(default_factory=list)        # 자기교정 후 잔여
+    correct_log: list = field(default_factory=list)   # 라운드별 {iter, found, fixed}
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -184,21 +185,25 @@ def _seg_dist(p, a, b):
     return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
 
 
-def fix(geom: Geometry, issues: list[str]) -> Geometry:
-    """G: 실측 기하 정리(treemap 교체 아님). 현 버전: 기구 방안 clamp + 문 최근접 방경계 스냅."""
+def fix(geom: Geometry, issues: list[str]) -> tuple[Geometry, list[str]]:
+    """G: 실측 기하 정리(treemap 교체 아님). 위반된 것만 고치고 **한 일을 기록해 반환**."""
+    applied: list[str] = []
     for r in geom.rooms:
         if not r.polygon:
             continue
         x0, y0, x1, y1 = _poly_bounds(r.polygon)
-        for f in r.fixtures:                    # R4 기구 → 방 bbox 안(여백)으로 clamp
+        for f in r.fixtures:                    # R4 기구 방밖 → 방 안(여백)으로
             fx, fy, fw, fh = f.bbox
+            if _pt_in_poly((fx + fw / 2, fy + fh / 2), r.polygon):
+                continue
             mx, my = fw / 2 + 2, fh / 2 + 2
             cx = (x0 + x1) / 2 if x1 - mx < x0 + mx else min(max(fx + fw / 2, x0 + mx), x1 - mx)
             cy = (y0 + y1) / 2 if y1 - my < y0 + my else min(max(fy + fh / 2, y0 + my), y1 - my)
             f.bbox = (cx - fw / 2, cy - fh / 2, fw, fh)
-    for d in geom.doors:                        # R3 문 → 최근접 방 경계점으로 스냅
+            applied.append(f"기구 '{FIX_KO.get(f.cls, f.cls)}'@{ROLE_KO.get(r.role, r.role)} → 방 안으로 이동")
+    for d in geom.doors:                        # R3 문 off-wall → 최근접 방 경계로 스냅
         if geom.rooms and not any(_near_poly(d.pos, r.polygon, 25) for r in geom.rooms):
-            best, bd = d.pos, 1e9
+            old, best, bd = d.pos, d.pos, 1e9
             for r in geom.rooms:
                 for i in range(len(r.polygon)):
                     a, b = r.polygon[i], r.polygon[(i + 1) % len(r.polygon)]
@@ -206,16 +211,23 @@ def fix(geom: Geometry, issues: list[str]) -> Geometry:
                     if dd < bd:
                         bd, best = dd, ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
             d.pos = best
-    return geom
+            applied.append(f"문 @({round(old[0])},{round(old[1])}) → 벽 경계로 스냅")
+    return geom, applied
 
 
 def autocorrect(geom: Geometry, max_iter: int = 5) -> Geometry:
-    """검사→고치기→재검사 루프. 잔여 issues는 geom.issues로(렌더에 경고 표시)."""
-    for _ in range(max_iter):
-        iss = verify(geom)
-        if not iss:
+    """검사→고치기→재검사 루프. **라운드별 기록**을 geom.correct_log에, 잔여는 geom.issues에.
+    무엇을 몇 바퀴 고쳤는지 GUI가 그대로 보여줄 수 있다."""
+    geom.correct_log = []
+    for i in range(1, max_iter + 1):
+        found = verify(geom)
+        if not found:                            # 더 검사할 게 없음 = 완료
+            geom.correct_log.append({"iter": i, "found": [], "fixed": [], "done": True})
             break
-        geom = fix(geom, iss)
+        geom, applied = fix(geom, found)
+        geom.correct_log.append({"iter": i, "found": found, "fixed": applied})
+        if not applied:                          # 검사는 걸리는데 못 고침 → 중단(무한루프 방지)
+            break
     geom.issues = verify(geom)
     return geom
 

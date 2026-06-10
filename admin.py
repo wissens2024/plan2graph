@@ -1423,8 +1423,20 @@ if which.startswith("📗"):
             _gobj = json.loads(_selg.read_text(encoding="utf-8"))
             _geom = _cr.autocorrect(_cr.from_geomgraph(_gobj))
             st.pyplot(_cr.render_fig(_geom), clear_figure=True)
-            if _geom.issues:
-                st.warning(f"자기교정 잔여 {len(_geom.issues)}건: " + ", ".join(_geom.issues[:6]))
+            # 🔧 자기교정 로그 — 몇 바퀴 돌고 무엇을 검사·수정했나(GUI에서 그대로 보임)
+            with st.expander(f"🔧 자기교정 {len(_geom.correct_log)}바퀴 — 검사·수정 내역", expanded=True):
+                for _rd in _geom.correct_log:
+                    if _rd.get("done"):
+                        st.markdown(f"**{_rd['iter']}바퀴** · 검사 0건 → ✅ 완료(깨끗)")
+                    else:
+                        st.markdown(f"**{_rd['iter']}바퀴** · 검사 {len(_rd['found'])}건 발견 → "
+                                    f"{len(_rd['fixed'])}건 수정")
+                        for _fx in _rd["fixed"]:
+                            st.caption(f"　🔧 고침: {_fx}")
+                        for _fd in _rd["found"]:
+                            st.caption(f"　🔎 검출: {_fd}")
+                st.markdown(f"**잔여 {len(_geom.issues)}건**"
+                            + (" — ⚠ 보정필요" if _geom.issues else " — ✅ 깨끗"))
             try:
                 _dxf = _cr.render_dxf(_geom)
                 _rc2.download_button("📐 AutoCAD(DXF) 받기", _dxf,
