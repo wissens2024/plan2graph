@@ -216,18 +216,33 @@ def gline_plan_status(graphs_dir: Path) -> dict[str, str]:
     return out
 
 
-def aihub_row_units(r: dict) -> int:
-    """manifest 행 1개가 기여하는 '고유 세대수' = 실제 변환된 그래프 수.
-    중복(사본)·미변환(변환실패·V2V대기)·비FP = 0. 세대는 고유 변환분만 센다.
-    중복은 '받은 도면 수'로만 카운트(세대 재계상 안 함 = 이중계상 방지)."""
-    return len(r.get("graph_ids") or [])
+def aihub_fp_units(rows: list) -> dict:
+    """지문(fingerprint) → 세대수(graph 보유 행). 중복본이 원본 세대수를 참조할 때 사용.
+    aihub_t_status·분류 콤보가 같은 규칙을 쓰도록 단일 소스화."""
+    fp = {}
+    for r in rows:
+        n = len(r.get("graph_ids") or [])
+        if n:
+            fp[r.get("fingerprint")] = n
+    return fp
+
+
+def aihub_row_units(r: dict, fp_units: dict) -> int:
+    """manifest 행 1개의 세대수(사용자 확정 규칙): 변환세대 있으면 그 수,
+    중복본=원본(dup_of) 세대수, 그 외(비FP·변환실패)=0(못 세면 0)."""
+    n = len(r.get("graph_ids") or [])
+    if n:
+        return n
+    if r.get("reason") == "duplicate":
+        return fp_units.get(r.get("dup_of"), 0)
+    return 0
 
 
 def aihub_t_status(manifest_path: Path) -> dict:
     """T-라인 AI-Hub 회계(정본 manifest) — 처분 use/fix/excl, 도면·세대 병기, by_house.
     gline_status와 같은 접근법(x['use']=세대, x['draw']['use']=도면)으로 종합 비교에서 동일 처리.
-    세대 = 고유 변환분(Σlen(graph_ids)). 중복·미변환·비FP=0(중복은 도면수로만, 세대 재계상 X).
-    도면 = manifest 행 1개(받은 raw PNG 1장). [[dataset-disposition-accounting]]."""
+    세대 규칙: use=Σlen(graph_ids), excl·duplicate=원본(dup_of) 세대수, 그 외=0(못 세면 0).
+    도면 = manifest 행 1개(받은 raw PNG 1장). [[dataset-essence-is-numbers-categories]]."""
     rows = []
     p = Path(manifest_path)
     if p.exists():
@@ -237,6 +252,11 @@ def aihub_t_status(manifest_path: Path) -> dict:
                     rows.append(json.loads(ln))
                 except Exception:  # noqa: BLE001
                     continue
+    fp_units = aihub_fp_units(rows)                # 지문 → 세대수 (공유 규칙)
+
+    def _units(r):                                 # 행 1개의 세대 수(공유 규칙)
+        return aihub_row_units(r, fp_units)
+
     draw, unit = Counter(), Counter()
     house_draw: dict[str, Counter] = {}
     house_unit: dict[str, Counter] = {}
@@ -245,7 +265,7 @@ def aihub_t_status(manifest_path: Path) -> dict:
         if disp not in ("use", "fix", "excl"):
             continue
         h = r.get("house") or "?"
-        n = aihub_row_units(r)
+        n = _units(r)
         draw[disp] += 1
         unit[disp] += n
         house_draw.setdefault(h, Counter())[disp] += 1
