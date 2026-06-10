@@ -124,6 +124,7 @@ def build_corpus(source: str = "dir", src_dir: Path | None = None,
                  house: str | None = None, limit: int | None = None) -> dict:
     """코퍼스 전량 → gline/graphs/*.json + 매니페스트(숫자·분류·사유)."""
     GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
+    T.REC_DIR.mkdir(parents=True, exist_ok=True)         # SVG 변환 출력 위치
     disp, reasons, warns, info = Counter(), Counter(), Counter(), Counter()
     n_units = n_plans = 0
     t0 = time.time()
@@ -134,8 +135,12 @@ def build_corpus(source: str = "dir", src_dir: Path | None = None,
         for st in _states_from_dr(dr, plan_id, phouse):
             for nid, role in T.suggest_roles(st, dr).items():    # 자동 역할(OCR·기구·면적)
                 T.set_role(st, nid, role)
-            T.write_svg(st, dr)                                   # SVG 베이스라인(사람 보정 substrate) — G 정의: 원본→SVG→그래프
-            g = GG.build(st, dr)                                  # build 내부서 enhance_roles_g(기타방 보강)
+            # ① SVG 변환: 원본(자동 State) → SVG (사람 보정 substrate)
+            svg = T.to_svg(st, dr)
+            (T.REC_DIR / f"{st.plan_id}.svg").write_text(svg, encoding="utf-8")
+            # ② 빌드: SVG → State → geometry-rich 그래프. 그래프는 **SVG에서 파생**(보정 루프와 동일 경로).
+            st_svg = T.state_from_svg(svg, dr, st.plan_id, st.house)
+            g = GG.build(st_svg, dr)                              # build 내부서 enhance_roles_g(기타방 보강)
             g["unit_id"] = st.plan_id
             g["corrected"] = False                                # 자동 베이스라인
             disp[_disposition(g)] += 1
