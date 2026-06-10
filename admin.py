@@ -1408,6 +1408,33 @@ if which.startswith("📗"):
     st.caption("NL → 방 구성 → **g0 실측 면적** → **자기교정(겹침0·외곽채움)** → 도면. "
                "위상 모델 없이도 동작(관례 인접=거실 허브). 본 파이프라인: 위상→기하→검증→자기교정.")
 
+    # ── 🖼 생성형 도면 / 📐 AutoCAD(DXF) — G 그래프를 cadrender로 (위상도면 대신 두 산출물) ──
+    st.markdown("### 🖼 생성형 도면 / 📐 AutoCAD  (위상도면 대신 — 두 산출물)")
+    from plan2graph import topoedit as _te2, cadrender as _cr
+    _gdir = _te2.GRAPHS_DIR
+    _gjsons = sorted(_gdir.glob("*.json")) if _gdir.exists() else []
+    if not _gjsons:
+        st.info("G 그래프가 아직 없습니다(SVG 변환→빌드 후).")
+    else:
+        _rc1, _rc2 = st.columns([3, 1])
+        _selg = _rc1.selectbox(f"도면(그래프) 선택 ({len(_gjsons):,})", _gjsons,
+                               format_func=lambda p: p.stem)
+        try:
+            _gobj = json.loads(_selg.read_text(encoding="utf-8"))
+            _geom = _cr.autocorrect(_cr.from_geomgraph(_gobj))
+            st.pyplot(_cr.render_fig(_geom), clear_figure=True)
+            if _geom.issues:
+                st.warning(f"자기교정 잔여 {len(_geom.issues)}건: " + ", ".join(_geom.issues[:6]))
+            try:
+                _dxf = _cr.render_dxf(_geom)
+                _rc2.download_button("📐 AutoCAD(DXF) 받기", _dxf,
+                                     file_name=f"{_geom.plan_id}.dxf", mime="application/dxf")
+            except RuntimeError as _e:
+                _rc2.caption(f"DXF 불가: {_e}")
+        except Exception as _e:  # noqa: BLE001
+            st.error(f"렌더 실패: {_e}")
+    st.divider()
+
     # 기하 모델 학습 — G-라인 데이터셋을 순서대로(사전학습→파인튜닝) 또는 기존 모델 사용
     st.markdown("**기하 모델 학습** — 데이터셋을 순서대로(① 사전학습 → ② 파인튜닝) 또는 기존 모델 사용")
     _gvers = []  # 기하(G-라인) 데이터셋

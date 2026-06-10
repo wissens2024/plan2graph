@@ -26,3 +26,5 @@ torch-geometric>=2.4      # GNN/graph-diffusion
 # ── 위상 편집기(✏️) — 캔버스 그리기 ──
 streamlit-drawable-canvas   # 원본 위 박스/폴리곤/선 그리기(사람 위상 구축)
 streamlit-option-menu       # 사이드바 클릭형 메뉴(동그라미 없는 네비)
+
+ezdxf>=1.1                   # AutoCAD DXF 출력 — cadrender.render_dxf

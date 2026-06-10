@@ -12,3 +12,4 @@ pytest>=7.0
 streamlit>=1.30        # 관리자 콘솔(격리/채택 검토·교정) — admin.py
 streamlit-option-menu>=0.3  # 사이드바 클릭형 메뉴(동그라미 없는 네비) — admin.py
 rapidocr-onnxruntime>=1.4  # 치수선 OCR 역산(scale) — scale_ocr.py (경량, torch 불요)
+ezdxf>=1.1                 # AutoCAD DXF 도면 출력(건축 사무소 작업도면) — cadrender.py
