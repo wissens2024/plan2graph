@@ -12,10 +12,14 @@
 소스 두 가지:
   - aihub : zip 코퍼스(aihub_source, 115 실데이터). SPA+STR+OBJ+OCR 지문병합. **SPA 보유 FP 전량**(dual+spa_only). 각 세대마다 SVG 베이스라인도 기록(사람 보정 substrate).
   - dir   : linked 디렉터리(topoedit.scan_dir, 로컬 스모크).
-공통:  dr → topology.build_graph(문·open·balcony) → iter_units(세대 분리)
-        → State(role·polygon·fixtures) → suggest_roles(자동 역할) → geomgraph.build(g-0.3)
-        → data/staging/gline/graphs/{plan}_u{i}.json (ADR-0002 분리, 옵션 A)
-        + _manifest.json : 숫자·분류·사유(use/fix/excl) — 데이터셋 본질=숫자·카테고리
+두 단계로 **명확히 분리**(한 작업으로 뭉치지 말 것 — 개념이 꼬인다):
+  ① 선행 = **SVG 변환** (svg_convert): 원본 → SVG (사람 보정 substrate).
+       dr → topology.build_graph(문·open·balcony) → iter_units(세대 분리)
+       → State(role·polygon·fixtures) → suggest_roles → to_svg → REC_DIR/{plan}_u{i}.svg
+  ② 빌드 = **SVG→그래프** (build_graphs): 저장 SVG(+dr) → geomgraph.build(g-0.3)
+       → gline/graphs/{plan}_u{i}.json (ADR-0002 분리) + _manifest.json(숫자·분류·사유).
+       **반복 가능** — 파라미터·SVG 보정 후 재빌드로 보정필요→사용가능 전환.
+  ※ "빌드"=그래프 만드는 단계(T·G 공통). 원본→SVG는 빌드 아니라 'SVG 변환'.
 
 검증(geomgraph.validate) 기준 처분:
   excl = 격리(hard: 면적없음·방부족·필수공간없음·위상단절)
@@ -23,14 +27,17 @@
   use  = 통과 + 무경고
 
 실행(서버 115, raw zip 보유):
-  python scripts/build_gline_auto.py --source aihub --house APT
-  python scripts/build_gline_auto.py --source aihub --open-min-ratio 0.25   # 파라미터 튜닝
-  python scripts/build_gline_auto.py                                        # 로컬 dir 스모크
+  python scripts/build_gline_auto.py --source aihub --house APT --stage svg    # ① 선행만
+  python scripts/build_gline_auto.py --source aihub --house APT --stage build  # ② 빌드만(반복)
+  python scripts/build_gline_auto.py --source aihub --house APT                # all(①후②)
+  python scripts/build_gline_auto.py --source aihub --open-min-ratio 0.25      # 파라미터 튜닝
+  python scripts/build_gline_auto.py --stage svg                               # 로컬 dir 스모크
 """
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from collections import Counter
@@ -120,12 +127,12 @@ def _iter_plans(source: str, src_dir: Path, house: str | None):
             yield rp.plan_id, rp.house, dr
 
 
-def build_corpus(source: str = "dir", src_dir: Path | None = None,
-                 house: str | None = None, limit: int | None = None) -> dict:
-    """코퍼스 전량 → gline/graphs/*.json + 매니페스트(숫자·분류·사유)."""
-    GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
+def svg_convert(source: str = "dir", src_dir: Path | None = None,
+                house: str | None = None, limit: int | None = None) -> dict:
+    """① 선행단계 = **SVG 변환**: 원본 → 자동 State → SVG. REC_DIR/*.svg 기록까지만.
+    그래프·검증·처분 회계 없음 — 사람 보정 substrate를 깐다. 소스 바뀔 때만 재실행.
+    (빌드[②]는 별도: build_graphs가 이 SVG들을 읽어 그래프를 뽑는다.)"""
     T.REC_DIR.mkdir(parents=True, exist_ok=True)         # SVG 변환 출력 위치
-    disp, reasons, warns, info = Counter(), Counter(), Counter(), Counter()
     n_units = n_plans = 0
     t0 = time.time()
     for plan_id, phouse, dr in _iter_plans(source, src_dir, house):
@@ -135,12 +142,38 @@ def build_corpus(source: str = "dir", src_dir: Path | None = None,
         for st in _states_from_dr(dr, plan_id, phouse):
             for nid, role in T.suggest_roles(st, dr).items():    # 자동 역할(OCR·기구·면적)
                 T.set_role(st, nid, role)
-            # ① SVG 변환: 원본(자동 State) → SVG (사람 보정 substrate)
-            svg = T.to_svg(st, dr)
+            svg = T.to_svg(st, dr)                                # 원본(자동 State) → SVG
             (T.REC_DIR / f"{st.plan_id}.svg").write_text(svg, encoding="utf-8")
-            # ② 빌드: SVG → State → geometry-rich 그래프. 그래프는 **SVG에서 파생**(보정 루프와 동일 경로).
+            n_units += 1
+    man = {"stage": "svg_convert", "source": source,
+           "source_dir": (str(src_dir) if source == "dir" else None),
+           "house": house or "ALL", "n_plans": n_plans, "n_units_svg": n_units,
+           "built_sec": round(time.time() - t0, 1)}
+    print(f"① SVG 변환 완료: {n_units} units → {T.REC_DIR}")
+    return man
+
+
+def build_graphs(source: str = "dir", src_dir: Path | None = None,
+                 house: str | None = None, limit: int | None = None) -> dict:
+    """② 빌드단계 = **SVG→그래프**: 저장된 REC_DIR/*.svg(+원본 dr) → geometry-rich 그래프
+    + 처분 회계(use/fix/excl) + 매니페스트. **반복 가능** — 파라미터·SVG 보정 후 재빌드로
+    보정필요→사용가능 전환. SVG 없으면 skip(선행[①] 먼저 돌려야 함)."""
+    GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
+    disp, reasons, warns, info = Counter(), Counter(), Counter(), Counter()
+    n_units = n_plans = n_missing = 0
+    t0 = time.time()
+    for plan_id, phouse, dr in _iter_plans(source, src_dir, house):
+        if limit and n_plans >= limit:
+            break
+        n_plans += 1
+        for st in _states_from_dr(dr, plan_id, phouse):
+            svg_path = T.REC_DIR / f"{st.plan_id}.svg"
+            if not svg_path.exists():                             # 선행(SVG 변환) 안 된 세대
+                n_missing += 1
+                continue
+            svg = svg_path.read_text(encoding="utf-8")            # 저장 SVG(사람 보정 반영분 포함)
             st_svg = T.state_from_svg(svg, dr, st.plan_id, st.house)
-            g = GG.build(st_svg, dr)                              # build 내부서 enhance_roles_g(기타방 보강)
+            g = GG.build(st_svg, dr)                              # SVG → 그래프 (enhance_roles_g 포함)
             g["unit_id"] = st.plan_id
             g["corrected"] = False                                # 자동 베이스라인
             disp[_disposition(g)] += 1
@@ -155,11 +188,11 @@ def build_corpus(source: str = "dir", src_dir: Path | None = None,
             n_units += 1
     use, fix, excl = disp.get("use", 0), disp.get("fix", 0), disp.get("excl", 0)
     man = {
-        "schema_version": GG.SCHEMA_VERSION, "corrected": False,
+        "schema_version": GG.SCHEMA_VERSION, "stage": "build", "corrected": False,
         "source": source, "source_dir": (str(src_dir) if source == "dir" else None),
         "house": house or "ALL",
         "open_min_ratio": config.OPEN_MIN_RATIO, "open_max_gap_px": config.OPEN_MAX_GAP_PX,
-        "n_plans": n_plans, "n_units": n_units,
+        "n_plans": n_plans, "n_units": n_units, "n_svg_missing": n_missing,
         # ── 자동 분류(T-라인 구조) + 보정 회계([[gline-correction-not-verification]]) ──
         "분류_자동": {"사용": use, "보정필요": fix, "제외": excl},
         "사용가능_현재_자동": use,                 # 사람 손 없이 바로 사용가능
@@ -172,6 +205,19 @@ def build_corpus(source: str = "dir", src_dir: Path | None = None,
         "built_sec": round(time.time() - t0, 1),
     }
     MANIFEST.write_text(json.dumps(man, ensure_ascii=False, indent=2), encoding="utf-8")
+    if n_missing:
+        print(f"  [주의] SVG 없는 세대 {n_missing} skip — '--stage svg'(선행) 먼저 돌리세요.")
+    print(f"② 빌드 완료: {n_units} units, 분류 {man['분류_자동']} → {GRAPHS_DIR}")
+    return man
+
+
+def build_corpus(source: str = "dir", src_dir: Path | None = None,
+                 house: str | None = None, limit: int | None = None) -> dict:
+    """편의 래퍼 — ① 선행(SVG 변환) 후 ② 빌드(SVG→그래프)를 연달아 실행.
+    정식 두 단계는 svg_convert()·build_graphs()를 따로 호출(한 작업으로 뭉치지 말 것)."""
+    sv = svg_convert(source, src_dir, house, limit)
+    man = build_graphs(source, src_dir, house, limit)
+    man["n_units_svg"] = sv["n_units_svg"]
     return man
 
 
@@ -253,6 +299,8 @@ if __name__ == "__main__":
                     help="개방통로 벽 미피복 비율 임계(낮을수록 더 많이 연결). 기본 config")
     ap.add_argument("--open-max-gap", type=float, default=None,
                     help="개방통로 최대 간격 px(클수록 더 멀어도 연결). 기본 config")
+    ap.add_argument("--stage", choices=("svg", "build", "all"), default="all",
+                    help="svg=① 선행(SVG 변환)만 · build=② 빌드(SVG→그래프)만(기존 SVG에서·반복용) · all=둘 다")
     ap.add_argument("--revalidate", action="store_true",
                     help="재빌드 없이 저장 그래프를 현재 검증기로 재검증·매니페스트 갱신")
     ap.add_argument("--freeze", metavar="VER", default=None,
@@ -271,7 +319,15 @@ if __name__ == "__main__":
     else:
         if a.source == "dir" and not a.dir:
             ap.error("--source dir 는 코퍼스 디렉터리 인자가 필요합니다. 정식 빌드는 --source aihub(115 zip).")
-        man = build_corpus(source=a.source, src_dir=Path(a.dir) if a.dir else None,
-                           house=a.house, limit=a.limit)
+        _sd = Path(a.dir) if a.dir else None
+        if a.stage == "svg":                       # ① 선행만
+            man = svg_convert(source=a.source, src_dir=_sd, house=a.house, limit=a.limit)
+        elif a.stage == "build":                   # ② 빌드만(기존 SVG에서)
+            man = build_graphs(source=a.source, src_dir=_sd, house=a.house, limit=a.limit)
+        else:                                       # all = ① 후 ②
+            man = build_corpus(source=a.source, src_dir=_sd, house=a.house, limit=a.limit)
     print(json.dumps(man, ensure_ascii=False, indent=2))
-    print(f"\n→ {GRAPHS_DIR}  ({man['n_units']} units, 분류 {man['분류_자동']})")
+    if "분류_자동" in man:                          # 빌드/올/재검증 결과
+        print(f"\n→ {GRAPHS_DIR}  ({man['n_units']} units, 분류 {man['분류_자동']})")
+    else:                                           # 선행(SVG 변환)만
+        print(f"\n→ {T.REC_DIR}  (SVG {man.get('n_units_svg', 0)} units 변환)")
