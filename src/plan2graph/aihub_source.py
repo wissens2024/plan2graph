@@ -19,7 +19,8 @@ from . import inspect_excluded as _ix
 from .coco import load_coco_bytes
 from .geometry import assemble_drawing
 
-PRED_DIR = config.DATA_DIR / "v2v" / "predicted"   # V2V 예측 라벨(YOLO-seg) COCO
+PRED_DIR = config.DATA_DIR / "v2v" / "predicted"        # V2V 예측 라벨(보유라벨 페어링) COCO
+PRED_IMG_DIR = config.DATA_DIR / "v2v" / "predicted_img"  # objocr 이미지-직접 예측(sig 키) COCO
 
 
 def _predicted_index() -> dict:
@@ -29,6 +30,21 @@ def _predicted_index() -> dict:
     if PRED_DIR.exists():
         for f in PRED_DIR.glob("*.json"):
             parts = f.stem.split("_", 1)            # "SPA_000213273" → ["SPA","000213273"]
+            if len(parts) == 2 and parts[0] in ("SPA", "STR"):
+                idx[(parts[0], parts[1])] = str(f)
+    return idx
+
+
+def _predicted_img_index() -> dict:
+    """objocr 이미지-직접 예측 색인 {(label_type, sig): path}. 파일명 `{TYPE}_{sig}.json`
+    (v2v_infer.run_objocr 규약 — SPA/STR 라벨 없는 도면을 PNG에서 직접 예측, sig로 키).
+    sig는 'crc_size'라 언더바를 포함하므로 split('_', 1)로 TYPE만 분리."""
+    idx: dict = {}
+    if PRED_IMG_DIR.exists():
+        for f in PRED_IMG_DIR.glob("*.json"):
+            if f.stem.startswith("_"):              # _provenance.json 등 메타 제외
+                continue
+            parts = f.stem.split("_", 1)            # "SPA_c6c049b6_17442034" → ["SPA","c6c049b6_17442034"]
             if len(parts) == 2 and parts[0] in ("SPA", "STR"):
                 idx[(parts[0], parts[1])] = str(f)
     return idx
@@ -57,16 +73,21 @@ def scan(split=("Training", "Validation"), house: str | None = None,
     """편집/SVG 변환 대상 목록. 반환 [{plan_id, house, sig, png, labels}].
     labels = {라벨종류: (zip,entry)} 또는 ("__file__", path)(V2V 예측). png = (zip,entry).
     with_predicted=True면 **V2V 예측 라벨을 union**(실라벨 우선, 빠진 종류만 채움) →
-    SPA-only는 STR(문) 예측 보강, STR-only는 SPA(방) 예측으로 방 확보(SVG 가능)."""
+    SPA-only는 STR(문) 예측 보강, STR-only는 SPA(방) 예측으로 방 확보(SVG 가능).
+    objocr(OBJ/OCR만, SPA·STR 라벨 없음)는 PNG에서 직접 예측한 SPA(sig 키)가 있으면
+    이미지-anchor로 대상화 — `_predicted_img_index`([[v2v_infer]] run_objocr)."""
     idx = _ix.build_index(split)         # sig -> {label: {zip, entry, key, house}} (원천 PNG)
     lbl = _ix.label_index(split)         # {SPA/STR: {key: (zip, entry)}}          (라벨 COCO)
     extra = _extra_label_index(split) if with_obj_ocr else {}   # {OBJ/OCR: {key: ...}}
     pred = _predicted_index() if with_predicted else {}         # {(type, have_key): path}
+    pred_img = _predicted_img_index() if with_predicted else {}  # {(type, sig): path} objocr 직접예측
     out = []
     for sig, d in idx.items():
         anchor = d.get("SPA") or d.get("STR")    # 방 우선, 없으면 구조(이미지·house 기준)
-        if anchor is None:
-            continue
+        if anchor is None:                       # objocr — SPA/STR 라벨 없음. PNG를 anchor로
+            anchor = d.get("OBJ") or d.get("OCR")
+            if anchor is None:
+                continue
         h = anchor["house"]
         if house and h != house:
             continue
@@ -77,11 +98,16 @@ def scan(split=("Training", "Validation"), house: str | None = None,
             if lt in d and d[lt]["key"] in extra.get(lt, {}):
                 labels[lt] = extra[lt][d[lt]["key"]]
         if with_predicted:               # 빠진 종류만 예측으로 채움(union not replace)
-            for have, miss in (("STR", "SPA"), ("SPA", "STR")):
+            for have, miss in (("STR", "SPA"), ("SPA", "STR")):  # 보유라벨 bbox 페어 예측
                 if miss not in labels and have in d:
                     p = pred.get((miss, d[have]["key"]))
                     if p:
                         labels[miss] = ("__file__", p)
+            for lt in ("SPA", "STR"):    # 이미지-직접 예측(objocr — sig 키, 라벨 없을 때만)
+                if lt not in labels:
+                    p = pred_img.get((lt, sig))
+                    if p:
+                        labels[lt] = ("__file__", p)
         if "SPA" not in labels:          # 방(실 or 예측) 없으면 SVG 불가
             continue
         out.append({"plan_id": f"{h}_FP_{sig}", "house": h, "sig": sig,

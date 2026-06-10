@@ -23,6 +23,7 @@ for _p in (str(ROOT), str(ROOT / "src")):
 import config  # noqa: E402
 
 PRED_DIR = config.DATA_DIR / "v2v" / "predicted"
+PRED_IMG_DIR = config.DATA_DIR / "v2v" / "predicted_img"   # objocr 이미지-직접 예측(SPA/STR 라벨 없음)
 SPACE_CLASSES = list(config.SPACE_CLASSES)
 STRUCT_CLASSES = list(config.STRUCTURE_CLASSES)
 
@@ -183,6 +184,80 @@ def run(spa_weights: str, str_weights: str, split: str = "Training",
             "provenance": str(PRED_DIR / "_provenance.json")}
 
 
+def run_objocr(spa_weights: str, str_weights: str,
+               split=("Training", "Validation"), imgsz: int = 1024,
+               conf: float = 0.25, limit: int | None = None, device=None) -> dict:
+    """objocr 도면(OBJ/OCR 라벨만, SPA·STR 둘 다 없음) → **이미지에서 직접** SPA·STR 예측.
+
+    기존 run()은 보유 라벨(SPA/STR) bbox에 크롭해 빠진 종류를 예측하지만, objocr는
+    크롭 기준이 될 SPA/STR 라벨이 없다 → **전체 이미지**를 입력으로 SPA(방)·STR(구조)를
+    둘 다 예측한다. 결과는 predicted_img/{TYPE}_{sig}.json (sig 키 — aihub_source.scan이
+    이미지-anchor 분기에서 sig로 조회). 노이즈 큰 베이스라인이며 빌드에서 보정필요로 분류,
+    사람이 교정한다([[gline-correction-not-verification]]). 방(SPA) 예측이 0이면 그래프
+    불가라 건너뛴다(STR만 단독 저장하지 않음)."""
+    import io
+    import zipfile as _zip
+    from ultralytics import YOLO
+    from PIL import Image
+    from plan2graph import inspect_excluded as ix, experiments as exp
+
+    models = {"SPA": YOLO(spa_weights), "STR": YOLO(str_weights)}
+    cls_of = {"SPA": SPACE_CLASSES, "STR": STRUCT_CLASSES}
+    recs = ix.objocr_only_records(split)
+    PRED_IMG_DIR.mkdir(parents=True, exist_ok=True)
+    wfp = {"SPA": _weight_fingerprint(spa_weights), "STR": _weight_fingerprint(str_weights)}
+    git = exp.git_commit()
+    stamp = {"spa": Path(spa_weights).name, "str": Path(str_weights).name,
+             "conf": conf, "imgsz": imgsz, "git": git[:8]}
+    n = 0
+    stat = {"SPA": 0, "STR": 0, "skip_noroom": 0, "skip_png": 0}
+    for rec in recs:
+        sig = rec["sig"]
+        try:
+            with _zip.ZipFile(rec["zip"]) as zf:
+                img = Image.open(io.BytesIO(zf.read(rec["entry"])))
+                img.load()
+        except Exception as e:  # noqa: BLE001
+            print(f"  [skip] {sig}: PNG 로드 실패 {e}")
+            stat["skip_png"] += 1
+            continue
+        W, H = img.size
+        full = (0.0, 0.0, float(W), float(H))           # 라벨 없음 → 전체 이미지가 크롭 영역
+        spa_preds = predict_missing(models["SPA"], img, full, cls_of["SPA"], imgsz, conf, device)
+        if not spa_preds:                                # 방 0 → 그래프 불가, 건너뜀
+            stat["skip_noroom"] += 1
+            continue
+        spa_coco = to_coco(spa_preds, W, H, sig, "SPA")
+        spa_coco["_v2v"] = {**stamp, "weights": stamp["spa"], "direction": "IMG->SPA"}
+        (PRED_IMG_DIR / f"SPA_{sig}.json").write_text(
+            json.dumps(spa_coco, ensure_ascii=False), encoding="utf-8")
+        stat["SPA"] += 1
+        str_preds = predict_missing(models["STR"], img, full, cls_of["STR"], imgsz, conf, device)
+        if str_preds:
+            str_coco = to_coco(str_preds, W, H, sig, "STR")
+            str_coco["_v2v"] = {**stamp, "weights": stamp["str"], "direction": "IMG->STR"}
+            (PRED_IMG_DIR / f"STR_{sig}.json").write_text(
+                json.dumps(str_coco, ensure_ascii=False), encoding="utf-8")
+            stat["STR"] += 1
+        n += 1
+        if limit and n >= limit:
+            break
+        if n % 200 == 0:
+            print(f"  ...{n} objocr 예측 (방 {stat['SPA']}/구조 {stat['STR']}/"
+                  f"방없음 {stat['skip_noroom']})")
+    sp_list = list(split) if not isinstance(split, str) else [split]
+    prov = {"kind": "v2v_infer_objocr", "created": exp._now(), "git_commit": git,
+            "env": exp.env_provenance(), "split": sp_list, "imgsz": imgsz, "conf": conf,
+            "device": device, "limit": limit, "weights": wfp, "predicted": n, "detail": stat}
+    (PRED_IMG_DIR / "_provenance.json").write_text(
+        json.dumps(prov, ensure_ascii=False, indent=2), encoding="utf-8")
+    exp.append_index({"kind": "v2v_infer_objocr", "git_commit": git, "conf": conf,
+                      "imgsz": imgsz, "spa_weights": wfp["SPA"].get("sha256"),
+                      "str_weights": wfp["STR"].get("sha256"), "predicted": n, **stat})
+    return {"predicted": n, "detail": stat, "out": str(PRED_IMG_DIR),
+            "provenance": str(PRED_IMG_DIR / "_provenance.json")}
+
+
 def _self_test():
     """좌표 역변환 검증(YOLO 불요): 정변환→역변환 왕복 일치."""
     cx0, cy0, cw, ch, imgsz = 100.0, 200.0, 800.0, 600.0, 1024
@@ -202,7 +277,8 @@ if __name__ == "__main__":
         pass
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", nargs="?", default="run", choices=["run"])
+    ap.add_argument("cmd", nargs="?", default="run", choices=["run", "objocr"],
+                    help="run=단일라벨 페어 예측 · objocr=OBJ/OCR만 도면 이미지직접 SPA·STR 예측")
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--spa-weights", default="runs/segment/spa/weights/best.pt")
     ap.add_argument("--str-weights", default="runs/segment/str/weights/best.pt")
@@ -212,10 +288,15 @@ if __name__ == "__main__":
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--device", default=None, help="GPU index(2-GPU 분할용)")
     ap.add_argument("--only", default=None, choices=["SPA", "STR"],
-                    help="그 라벨 가진 도면만(방향 분할)")
+                    help="그 라벨 가진 도면만(방향 분할, run 전용)")
     a = ap.parse_args()
     if a.self_test:
         sys.exit(0 if _self_test() else 1)
     dev = int(a.device) if a.device is not None else None
-    print(json.dumps(run(a.spa_weights, a.str_weights, a.split, a.imgsz, a.conf,
-                         a.limit, dev, a.only), ensure_ascii=False, indent=2))
+    if a.cmd == "objocr":
+        # objocr는 Training/Validation 합쳐 한 풀로(포장 무관, [[inspect_excluded]] _norm_splits)
+        sp = (a.split,) if a.split not in ("all", "ALL") else ("Training", "Validation")
+        out = run_objocr(a.spa_weights, a.str_weights, sp, a.imgsz, a.conf, a.limit, dev)
+    else:
+        out = run(a.spa_weights, a.str_weights, a.split, a.imgsz, a.conf, a.limit, dev, a.only)
+    print(json.dumps(out, ensure_ascii=False, indent=2))
