@@ -208,6 +208,27 @@ def revalidate() -> dict:
     return man
 
 
+def freeze(version: str) -> dict:
+    """staging/gline(현재) → releases/gline/<version> 동결([[gline-version-plan]]·[[staging-is-current]]).
+    버전별 데이터셋(g0=dual, g1=+V2V…)을 학습 입력(geom.jsonl)으로 잠근다. train_geom이 읽음."""
+    rel = config.RELEASES_DIR / "gline" / version
+    rel.mkdir(parents=True, exist_ok=True)
+    n = 0
+    with (rel / "geom.jsonl").open("w", encoding="utf-8") as w:
+        for f in sorted(GRAPHS_DIR.glob("*.json")):
+            try:
+                g = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                continue
+            w.write(json.dumps(g, ensure_ascii=False) + "\n")
+            n += 1
+    man = json.loads(MANIFEST.read_text(encoding="utf-8")) if MANIFEST.exists() else {}
+    man["version"] = version
+    man["n_graphs"] = n
+    (rel / "manifest.json").write_text(json.dumps(man, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"version": version, "n_graphs": n, "path": str(rel)}
+
+
 if __name__ == "__main__":
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -227,7 +248,13 @@ if __name__ == "__main__":
                     help="개방통로 최대 간격 px(클수록 더 멀어도 연결). 기본 config")
     ap.add_argument("--revalidate", action="store_true",
                     help="재빌드 없이 저장 그래프를 현재 검증기로 재검증·매니페스트 갱신")
+    ap.add_argument("--freeze", metavar="VER", default=None,
+                    help="staging/gline → releases/gline/<VER> 동결(g0, g1…). 학습 입력 잠금")
     a = ap.parse_args()
+    if a.freeze:
+        info = freeze(a.freeze)
+        print(json.dumps(info, ensure_ascii=False, indent=2))
+        sys.exit(0)
     if a.open_min_ratio is not None:
         config.OPEN_MIN_RATIO = a.open_min_ratio      # build_graph가 호출 시점에 읽음
     if a.open_max_gap is not None:
