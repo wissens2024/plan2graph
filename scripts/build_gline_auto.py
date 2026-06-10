@@ -124,27 +124,18 @@ def build_corpus(source: str = "dir", src_dir: Path | None = None,
     """코퍼스 전량 → gline/graphs/*.json + 매니페스트(숫자·분류·사유)."""
     GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
     disp, reasons, warns, info = Counter(), Counter(), Counter(), Counter()
-    n_units = n_plans = done = 0
+    n_units = n_plans = 0
     t0 = time.time()
     for plan_id, phouse, dr in _iter_plans(source, src_dir, house):
         if limit and n_plans >= limit:
             break
         n_plans += 1
         for st in _states_from_dr(dr, plan_id, phouse):
-            out_f = GRAPHS_DIR / f"{st.plan_id}.json"
-            if out_f.exists():           # 사람 보정완료(corrected=true) 보존 — 자동이 덮지 않음
-                try:
-                    if json.loads(out_f.read_text(encoding="utf-8")).get("corrected"):
-                        done += 1
-                        n_units += 1
-                        continue
-                except Exception:  # noqa: BLE001
-                    pass
             for nid, role in T.suggest_roles(st, dr).items():    # 자동 역할(OCR·기구·면적)
                 T.set_role(st, nid, role)
             g = GG.build(st, dr)                                  # build 내부서 enhance_roles_g(기타방 보강)
             g["unit_id"] = st.plan_id
-            g["corrected"] = False                                # 자동 베이스라인(seed)
+            g["corrected"] = False                                # 자동 베이스라인
             disp[_disposition(g)] += 1
             for r in g["validation"]["reasons"]:
                 reasons[r] += 1
@@ -152,7 +143,8 @@ def build_corpus(source: str = "dir", src_dir: Path | None = None,
                 warns[w] += 1
             for ii in g["validation"].get("info", []):
                 info[ii] += 1
-            out_f.write_text(json.dumps(g, ensure_ascii=False), encoding="utf-8")
+            (GRAPHS_DIR / f"{st.plan_id}.json").write_text(
+                json.dumps(g, ensure_ascii=False), encoding="utf-8")
             n_units += 1
     use, fix, excl = disp.get("use", 0), disp.get("fix", 0), disp.get("excl", 0)
     man = {
@@ -167,8 +159,6 @@ def build_corpus(source: str = "dir", src_dir: Path | None = None,
         "사용가능_상한_전부보정시": use + fix,      # 제외 빼고 모두 보정완료 가정(= n_units - 제외)
         "증량여지_보정필요→보정완료": fix,          # ⭐사람 보정이 키우는 건 이것뿐(사용→보정완료는 +0)
         "제외_보증불가": excl,
-        "보정완료_사람": done,                      # corrected=true 보존 건수(자동이 안 덮음)
-        "사용가능_보정완료포함": use + done,
         "제외_사유": dict(reasons.most_common()),
         "보정필요_경고": dict(warns.most_common()),
         "정보_측정결손": dict(info.most_common()),   # 문폭없음 등 — 사용 차단 아님
@@ -182,16 +172,13 @@ def revalidate() -> dict:
     """저장된 gline 그래프를 **현재 검증기로 재검증** — validation/meta 갱신 + 매니페스트 재생성.
     재빌드 없이 분류 정책 변경(예: 문폭없음 강등)을 반영. 기하 재계산 없음 → 빠름."""
     disp, reasons, warns, info = Counter(), Counter(), Counter(), Counter()
-    n = done = 0
+    n = 0
     for f in sorted(GRAPHS_DIR.glob("*.json")):
         try:
             g = json.loads(f.read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001
             continue
         n += 1
-        if g.get("corrected"):                 # 사람 보정완료 보존 — 자동 보강/재검증 안 함
-            done += 1
-            continue
         GG.enhance_roles_g(g)                  # 기타방 역할 보강(저장 그래프에 직접 적용 — 재빌드 없이)
         v = GG.validate(g)
         g["validation"] = v
@@ -211,9 +198,8 @@ def revalidate() -> dict:
     man.update({
         "schema_version": GG.SCHEMA_VERSION, "n_units": n, "revalidated": True,
         "분류_자동": {"사용": use, "보정필요": fix, "제외": excl},
-        "사용가능_현재_자동": use, "사용가능_상한_전부보정시": use + fix + done,
-        "증량여지_보정필요→보정완료": fix, "제외_보증불가": excl, "보정완료_사람": done,
-        "사용가능_보정완료포함": use + done,
+        "사용가능_현재_자동": use, "사용가능_상한_전부보정시": use + fix,
+        "증량여지_보정필요→보정완료": fix, "제외_보증불가": excl,
         "제외_사유": dict(reasons.most_common()),
         "보정필요_경고": dict(warns.most_common()),
         "정보_측정결손": dict(info.most_common()),
