@@ -36,7 +36,7 @@ Deciders: wissens2024
 - TODO: NL→모델생성 결과 렌더(geom_gen→geomgraph 어댑터) · T 어댑터 비교화면 · 가구/그리드 · DXF 치수체인 고도화 · IFC.
 
 ## 구현 (2026-06-10)
-`cadrender.py`(Geometry·어댑터·autocorrect·render_fig/png/svg·render_dxf), `docs/RENDER.md`(설계·슈도),
+`cadrender.py`(Geometry·어댑터·autocorrect·render_fig/png/svg·render_dxf), [ARCHITECTURE.md](../ARCHITECTURE.md) §5(설계),
 ezdxf 서버 설치. 📗·📘에 버튼. 합성·실데이터 검증(G 실측형/T 박스형 도면 출력 확인).
 
-관련: [[ADR-0002]](T·G 분리) · [GEOMETRY_SCHEMA](../GEOMETRY_SCHEMA.md) · [RENDER](../RENDER.md) · [[geometry-realization-is-bottleneck]]
+관련: [[ADR-0002]](T·G 분리) · [ARCHITECTURE.md](../ARCHITECTURE.md)(스키마·렌더) · [[geometry-realization-is-bottleneck]]

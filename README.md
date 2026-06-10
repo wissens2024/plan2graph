@@ -10,7 +10,7 @@
 - **3개 출처를 공통 스키마로 통합**: AI-Hub(한국 실측 COCO) · CubiCasa5k(SVG 벡터) · RPLAN(.mat 벡터) → 동일 그래프 스키마([schema.py](src/plan2graph/schema.py)).
 - **눈으로 검증하는 콘솔**: Streamlit 대시보드로 *원본 ∥ 그래프*를 전수 검수. 모든 도면은 **처분(✅사용 / 🛠보정·복구 / 🚫제외 + 사유)** 으로 분류되고, **각 출처 합 = 받은 원본 수**(누구나 추적·검증 가능).
 
-## 데이터 현황 (라이브 — 상세 [docs/DATA_STATUS.md](docs/DATA_STATUS.md))
+## 데이터 현황 (라이브 — 상세 [docs/DATA.md](docs/DATA.md))
 
 | 출처 | 받은 원본 | ✅ 사용 | 🛠 보정·복구 | 🚫 제외 | scale |
 |---|---|---|---|---|---|
@@ -19,7 +19,7 @@
 | **RPLAN** | 80,788 | 80,371 | 417 | 0 | 없음(정규화 벡터) |
 
 > "전체"는 우리가 정하는 수가 아니라 **받은 raw 그 자체**. 중복·배제는 전부 *기록된 사유*이고, raw가 보존돼 검증 가능 — 이게 데이터 신뢰의 기본.
-> (AI-Hub 공식 명세는 48,033이나 실제 개방 배포분은 43,219 — 자세한 경위는 DATA_STATUS.)
+> (AI-Hub 공식 명세는 48,033이나 실제 개방 배포분은 43,219 — 자세한 경위는 DATA.md.)
 
 ## 실행
 
@@ -96,14 +96,16 @@ bash scripts/start_dashboard.sh        # → https://plan2graph.aines.kr/  (로�
 
 | 문서 | 내용 |
 |---|---|
-| [DATASET_DESIGN](docs/DATASET_DESIGN.md) | 데이터 모델·처분·manifest 설계 |
-| [DATA_STATUS](docs/DATA_STATUS.md) | 라이브 데이터 현황(수치·43,219 등) |
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | **AI 기술·모델·파이프라인·스키마** (SPEC+RENDER+V2V+GEOMETRY+KR관행 통합) |
+| [DATA](docs/DATA.md) | **데이터 출처·카운트·처분·버전·스키마** (DATA_STATUS+DATASET_DESIGN 통합) |
 | [ROADMAP](docs/ROADMAP.md) | 계획·마스터플랜 |
 | [OPERATIONS](docs/OPERATIONS.md) | 115 배포·실행·디버그 |
 | [EXPERIMENTS](docs/EXPERIMENTS.md) | 학습·평가·결과 |
-| [NOTES](docs/NOTES.md) | 가정↔실제·결정 로그 |
+| [V2V](docs/V2V.md) | V2V 검출 모델·실험 원장(fix→use) |
+| [CORRECTION_GUIDE](docs/CORRECTION_GUIDE.md) | 사람 보정 가이드 |
+| [NOTES](docs/NOTES.md) | 가정↔실제·결정 로그(역사) |
 | [DECISIONS_NEEDED](docs/DECISIONS_NEEDED.md) | 사람 확인 필요 항목 |
-| [SPEC](docs/SPEC.md) | 원본 작업 명세(데이터 스펙·태스크·스키마) |
+| [adr/](docs/adr/) | 설계 결정 기록(ADR-0001~0005) |
 
 ## 기술 스택
 

@@ -2,7 +2,7 @@
 
 > **2026-06-05 서버(115) 실측.** 단일라벨 도면(SPA만/STR만)에 빠진 종류를 YOLOv8-seg로 예측 → 위상 게이트 통과분만 그래프로 채택(`use`).
 > 목적: 모델·추론 설정을 바꿀 때마다 **fix→use 전환수**를 기록해, 어느 레버가 실제로 `use`를 늘리는지로 의사결정한다.
-> 관련: [DATA_STATUS.md](DATA_STATUS.md)(처분 회계) · [OPERATIONS.md](OPERATIONS.md)§4(V2V 튜닝) · [ROADMAP.md](ROADMAP.md)(트랙2 V2V)
+> 관련: [DATA.md](DATA.md)(처분 회계) · [ARCHITECTURE.md](ARCHITECTURE.md)§3(검출 요약) · [OPERATIONS.md](OPERATIONS.md)(V2V 튜닝) · [ROADMAP.md](ROADMAP.md)
 
 ---
 

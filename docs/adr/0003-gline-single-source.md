@@ -45,4 +45,4 @@ G-라인 데이터가 **반복 작업 중 켜켜이 쌓여 3~4개로 산만하�
 - Positive: G 데이터 단일 진실 → 화면·학습이 한 곳을 읽어 혼선·쓰레기화 제거. 진짜 진행도(자동 사용/보정필요/제외 + 사람 보정완료)가 한 화면에. 미래 세션이 죽은 g0을 현재로 오인하는 실수 차단.
 - Negative: GUI 저장경로·화면 로직 변경(③④) 1회 필요(오른쪽 합의). 기존 topo_human 테스트 데이터 폐기.
 
-관련: [[ADR-0002]](tline-gline 분리) · [[gline-correction-not-verification]] · [[staging-is-current]] · [[no-separate-goldset-one-dataset]] · [GEOMETRY_SCHEMA.md](../GEOMETRY_SCHEMA.md)
+관련: [[ADR-0002]](tline-gline 분리) · [[gline-correction-not-verification]] · [[staging-is-current]] · [[no-separate-goldset-one-dataset]] · [ARCHITECTURE.md](../ARCHITECTURE.md)(G-라인 스키마)

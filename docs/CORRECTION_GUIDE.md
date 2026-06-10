@@ -2,7 +2,7 @@
 
 > **대상:** AI-Hub 도면을 `fix`(보정 대기)에서 `use`(데이터셋 채택)로 살리는 작업을 하는 사람.
 > **핵심:** 모델(YOLO)을 안 건드려도, 사람이 **규칙·임계·기준·검수**를 손보면 `use`가 는다. 단 *틀린 그래프를 늘리는 것*과 *맞는 그래프를 더 잘 살리는 것*을 항상 구분하라.
-> 관련: [V2V.md](V2V.md)(모델·실험 원장) · [DATA_STATUS.md](DATA_STATUS.md)(처분 회계) · [DATASET_DESIGN.md](DATASET_DESIGN.md)(불변식)
+> 관련: [V2V.md](V2V.md)(모델·실험 원장) · [DATA.md](DATA.md)(처분 회계·불변식) · [ARCHITECTURE.md](ARCHITECTURE.md)(검출 기술)
 > 검수 콘솔: https://plan2graph.aines.kr
 
 ---

@@ -44,11 +44,11 @@ T-라인과 G-라인을 **완전히 분리**한다 — 절대 한 스키마로 �
 ## Consequences
 - Positive: 두 패러다임이 독립 진화(데이터셋 검수·학습·알고리즘을 라인별로). 도면 품질로 **공정 비교**(규칙기반 vs 학습). 스키마 혼선·은폐 제거.
 - Negative: 폴더 이전으로 `releases/<v>` 경로 참조 다수 수정 필요(1회). GUI 메뉴 재편 비용.
-- Follow-up: ① 폴더 마이그레이션 + 경로 상수화(무손실, GUI health 확인) → ② GUI 라인 분리 + 합친 비교 뷰 → ③ G-라인 스키마 정교화(문서 갱신 후) → ④ `DATASET_DESIGN.md` §4 레이아웃을 라인 하위폴더로 갱신.
+- Follow-up: ① 폴더 마이그레이션 + 경로 상수화(무손실, GUI health 확인) → ② GUI 라인 분리 + 합친 비교 뷰 → ③ G-라인 스키마 정교화(문서 갱신 후) → ④ [DATA.md](../DATA.md) §4 레이아웃을 라인 하위폴더로 갱신(완료).
 
 ## Assumptions
 - 두 라인이 계속 병존하며 각자 발전한다(한쪽 폐기 전제면 분리는 과설계).
 - 최종 평가는 **도면 품질** 단일 기준(둘을 합쳐 비교 가능).
 - 지금 단계는 자동화로 충분(사람 검수 없이도 구조·품질 향상 가능).
 
-관련: [DATASET_DESIGN.md](../DATASET_DESIGN.md)(§11에 본 ADR 반영 완료) · [GEOMETRY_SCHEMA.md](../GEOMETRY_SCHEMA.md)(G-라인 스키마) · [ROADMAP.md](../ROADMAP.md) · [ADR-0001](0001-generator-abstraction.md)
+관련: [DATA.md](../DATA.md)(데이터·버전) · [ARCHITECTURE.md](../ARCHITECTURE.md)(라인별 스키마·파이프라인) · [ROADMAP.md](../ROADMAP.md) · [ADR-0001](0001-generator-abstraction.md)
