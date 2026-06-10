@@ -129,6 +129,72 @@ def from_geomgraph(g: dict) -> Geometry:
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# 어댑터 — T geometry(treemap 박스) → Geometry  (geo모델 없음, 박스형 그대로 유지)
+# ════════════════════════════════════════════════════════════════════════════
+def from_floorgeom(rooms, boxes, edges, *, width_m=12.0, height_m=9.0,
+                   px_per_m=100.0) -> Geometry:
+    """T-라인 treemap 출력 → 공통 Geometry. boxes=[[cx,cy,w,h]] 0..1, rooms=[(role,frac,nwin)],
+    edges=[(i,j)] 인접. **박스형 그대로**(이상한 집 유지) — G의 실측형과 비교용."""
+    W, H = width_m * px_per_m, height_m * px_per_m
+    scale_mm = 1000.0 / px_per_m                      # 1m=px_per_m px → mm/px
+    rms, walls, doors, centers = [], [], [], []
+    for i, (b, rm) in enumerate(zip(boxes, rooms)):
+        cx, cy, w, h = b
+        x0, y0, x1, y1 = (cx - w / 2) * W, (cy - h / 2) * H, (cx + w / 2) * W, (cy + h / 2) * H
+        poly = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+        role = rm[0] if isinstance(rm, (list, tuple)) else str(rm)
+        rms.append(RoomG(id=i, role=role, polygon=poly,
+                         area_m2=(w * width_m) * (h * height_m),
+                         label_pt=(cx * W, cy * H), fixtures=[]))
+        centers.append((cx * W, cy * H))
+        for a, c in [((x0, y0), (x1, y0)), ((x1, y0), (x1, y1)),
+                     ((x1, y1), (x0, y1)), ((x0, y1), (x0, y0))]:
+            ext = _on_border(a, W, H) and _on_border(c, W, H)
+            walls.append(WallG(seg=(a, c), type="exterior" if ext else "interior"))
+    for (i, j) in edges:                              # 문 = 인접 두 방 중점
+        if i < len(centers) and j < len(centers):
+            doors.append(DoorG(pos=((centers[i][0] + centers[j][0]) / 2,
+                                    (centers[i][1] + centers[j][1]) / 2),
+                               width_px=W * 0.04))
+    return Geometry(plan_id="tline", house="?", scale_mm_per_px=scale_mm,
+                    bbox=(0, 0, W, H), rooms=rms, walls=walls, doors=doors, windows=[])
+
+
+def _on_border(p, W, H, tol=1.0):
+    return abs(p[0]) < tol or abs(p[0] - W) < tol or abs(p[1]) < tol or abs(p[1] - H) < tol
+
+
+def from_tline_graph(G, *, width_m=12.0, height_m=9.0, px_per_m=100.0) -> Geometry:
+    """T-라인 위상그래프(networkx) → Geometry. floorgeom.layout_rooms(treemap)로 박스 배치.
+    geo모델 없음 — treemap 박스형 그대로. y축은 이미지좌표(y-down)로 변환(렌더 일관)."""
+    from . import floorgeom as _fg
+    rects = _fg.layout_rooms(G, width_m, height_m)     # {node:(x,y,w,h)} m, 좌하단 원점
+    W, H = width_m * px_per_m, height_m * px_per_m
+    s_mm = 1000.0 / px_per_m
+    rms, walls, doors, ctr = [], [], [], {}
+    for n, (x, y, w, h) in rects.items():
+        X0, Y0 = x * px_per_m, (height_m - (y + h)) * px_per_m   # y-up → y-down(상단원점)
+        X1, Y1 = (x + w) * px_per_m, (height_m - y) * px_per_m
+        poly = [(X0, Y0), (X1, Y0), (X1, Y1), (X0, Y1)]
+        role = (_fg._type(G.nodes[n]) or "기타").replace("공간_", "")
+        rms.append(RoomG(id=n, role=role, polygon=poly, area_m2=w * h,
+                         label_pt=((X0 + X1) / 2, (Y0 + Y1) / 2), fixtures=[]))
+        ctr[n] = ((X0 + X1) / 2, (Y0 + Y1) / 2)
+        for a, c in [((X0, Y0), (X1, Y0)), ((X1, Y0), (X1, Y1)),
+                     ((X1, Y1), (X0, Y1)), ((X0, Y1), (X0, Y0))]:
+            walls.append(WallG(seg=(a, c),
+                              type="exterior" if _on_border(a, W, H) and _on_border(c, W, H)
+                              else "interior"))
+    for u, v in G.edges:                                # 문 = 인접 두 방 중점
+        if u in ctr and v in ctr:
+            doors.append(DoorG(pos=((ctr[u][0] + ctr[v][0]) / 2, (ctr[u][1] + ctr[v][1]) / 2),
+                              width_px=W * 0.04))
+    return Geometry(plan_id=str((getattr(G, "graph", {}) or {}).get("plan_id", "tline")),
+                    house="?", scale_mm_per_px=s_mm, bbox=(0, 0, W, H),
+                    rooms=rms, walls=walls, doors=doors, windows=[])
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # 자기교정 — verify(검사) → fix(고치기) → 재검사 (동일 패턴, G=실측 정리)
 # ════════════════════════════════════════════════════════════════════════════
 def _poly_bounds(poly):

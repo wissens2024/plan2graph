@@ -1339,6 +1339,26 @@ if which.startswith("📘"):
                 st.caption("방=유형 색사각형 · 검은테=벽 · 흰 틈=문(위상 엣지+경계공유) · 외벽 현관/창. "
                            "면적은 유형별 표준비(실측 scale 확보 전 근사). "
                            "좌표회귀·diffusion·RL은 §5 로드맵.")
+                # ── 🖼 생성형 도면 + 📐 AutoCAD(DXF) — treemap 박스를 cadrender로(박스형 유지·geo모델 없음) ──
+                from plan2graph import cadrender as _cr
+                st.markdown("**🖼 생성형 도면 / 📐 AutoCAD** (treemap 박스형 유지 · geo모델 없음 — G와 비교용)")
+                try:
+                    _tgeom = _cr.autocorrect(_cr.from_tline_graph(G_on))
+                    _tc1, _tc2 = st.columns([3, 1])
+                    _tc1.pyplot(_cr.render_fig(_tgeom), clear_figure=True)
+                    with _tc2:
+                        try:
+                            st.download_button("📐 AutoCAD(DXF)", _cr.render_dxf(_tgeom),
+                                               file_name="tline_plan.dxf", mime="application/dxf")
+                        except RuntimeError as _e:
+                            st.caption(f"DXF 불가: {_e}")
+                    with st.expander(f"🔧 자기교정 {len(_tgeom.correct_log)}바퀴 — 검사·수정", expanded=False):
+                        for _rd in _tgeom.correct_log:
+                            st.caption(f"{_rd['iter']}바퀴 · 검사 {len(_rd['found'])}건 → 수정 "
+                                       f"{len(_rd['fixed'])}건" + (" ✅완료" if _rd.get('done') else ""))
+                        st.caption(f"잔여 {len(_tgeom.issues)}건")
+                except Exception as _e:  # noqa: BLE001
+                    st.caption(f"생성형/DXF 렌더 스킵: {_e}")
                 _st_on = _fg.layout_stats(G_on)
                 _m1, _m2, _m3 = st.columns(3)
                 _m1.metric("방 수", _st_on["rooms"])
