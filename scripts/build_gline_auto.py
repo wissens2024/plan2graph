@@ -100,20 +100,46 @@ def _states_from_dr(dr, plan_id: str, house: str):
             yield State(plan_id=f"{plan_id}_u{ui}", house=house, nodes=nodes, edges=edges)
 
 
+def _provenance(rec: dict) -> dict:
+    """scan rec → 출처(provenance). 실라벨(zip) vs 예측(__file__: predicted_img=이미지직접,
+    predicted=페어)로 구성 분류 → dual/spa_only/str_only/objocr. g0(dual)·g1(추가) freeze 필터
+    + ADR-0005 검수 콤보(구성×처분)용. 새 버킷 아님 — T-라인 라벨 구성과 동일 어휘."""
+    labels = rec.get("labels", {})
+
+    def kind(lt):
+        v = labels.get(lt)
+        if not v:
+            return None
+        if v[0] != "__file__":
+            return "label"                                  # 실라벨(zip)
+        return "v2v_img" if "predicted_img" in str(v[1]) else "v2v"   # 예측(이미지직접 vs 페어)
+
+    spa, strk = kind("SPA"), kind("STR")
+    if spa == "label" and strk == "label":
+        src = "dual"
+    elif spa == "label":
+        src = "spa_only"
+    elif strk == "label":
+        src = "str_only"
+    else:
+        src = "objocr"                                      # 실 SPA/STR 없음 — 예측으로 방 확보
+    return {"source": src, "spa": spa, "str": strk}
+
+
 def _iter_plans(source: str, src_dir: Path, house: str | None):
-    """소스별 (plan_id, house, dr) 제너레이터. aihub=zip 코퍼스(dual만), dir=linked 디렉터리."""
+    """소스별 (plan_id, house, dr, provenance) 제너레이터. aihub=zip 코퍼스(dual+예측복구),
+    dir=linked 디렉터리. provenance = 출처(dual/spa_only/str_only/objocr) — freeze·콤보용."""
     if source == "aihub":
         from plan2graph import aihub_source as A
-        # SPA(방) 보유 FP 전량 — dual뿐 아니라 spa_only도. STR 없으면 위상이 빈약해
-        # excl/fix로 분류되지만 그건 정상(보정대상). 사람이 SVG 위에서 문·연결 보정.
-        # (str_only·objocr=SPA 없음은 이 스캐너 밖 → 2단계.)
+        # SPA(방) 보유 FP 전량 — dual·spa_only(실라벨) + str_only·objocr(예측 SPA로 방 확보).
+        # STR 없으면 위상이 빈약해 fix(보정필요)로 분류되지만 정상(보정대상).
         for rec in A.scan(house=house):
             try:
                 dr, _png = A.load(rec)
             except Exception as e:  # noqa: BLE001
                 print(f"  [skip] {rec['plan_id']}: load 실패 {e}")
                 continue
-            yield rec["plan_id"], rec["house"], dr
+            yield rec["plan_id"], rec["house"], dr, _provenance(rec)
     else:
         plans = T.scan_dir(src_dir)
         if house:
@@ -124,7 +150,7 @@ def _iter_plans(source: str, src_dir: Path, house: str | None):
             except Exception as e:  # noqa: BLE001
                 print(f"  [skip] {rp.plan_id}: load 실패 {e}")
                 continue
-            yield rp.plan_id, rp.house, dr
+            yield rp.plan_id, rp.house, dr, {"source": "dir", "spa": "label", "str": "label"}
 
 
 def svg_convert(source: str = "dir", src_dir: Path | None = None,
@@ -135,7 +161,7 @@ def svg_convert(source: str = "dir", src_dir: Path | None = None,
     T.REC_DIR.mkdir(parents=True, exist_ok=True)         # SVG 변환 출력 위치
     n_units = n_plans = 0
     t0 = time.time()
-    for plan_id, phouse, dr in _iter_plans(source, src_dir, house):
+    for plan_id, phouse, dr, _prov in _iter_plans(source, src_dir, house):
         if limit and n_plans >= limit:
             break
         n_plans += 1
@@ -160,12 +186,14 @@ def build_graphs(source: str = "dir", src_dir: Path | None = None,
     보정필요→사용가능 전환. SVG 없으면 skip(선행[①] 먼저 돌려야 함)."""
     GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
     disp, reasons, warns, info = Counter(), Counter(), Counter(), Counter()
+    comp, comp_draw = Counter(), Counter()      # 구성(provenance.source) — 세대·도면별(ADR-0005 콤보)
     n_units = n_plans = n_missing = n_err = 0
     t0 = time.time()
-    for plan_id, phouse, dr in _iter_plans(source, src_dir, house):
+    for plan_id, phouse, dr, prov in _iter_plans(source, src_dir, house):
         if limit and n_plans >= limit:
             break
         n_plans += 1
+        comp_draw[prov["source"]] += 1                            # 도면(시트) 단위 구성
         try:                                                      # 위상/세대분리 실패 도면 스킵
             _states = list(_states_from_dr(dr, plan_id, phouse))
         except Exception as e:  # noqa: BLE001
@@ -187,6 +215,8 @@ def build_graphs(source: str = "dir", src_dir: Path | None = None,
                 continue
             g["unit_id"] = st.plan_id
             g["corrected"] = False                                # 자동 베이스라인
+            g["provenance"] = prov                                # 출처(dual/spa_only/str_only/objocr) — freeze·콤보
+            comp[prov["source"]] += 1
             disp[_disposition(g)] += 1
             for r in g["validation"]["reasons"]:
                 reasons[r] += 1
@@ -213,6 +243,9 @@ def build_graphs(source: str = "dir", src_dir: Path | None = None,
         "제외_사유": dict(reasons.most_common()),
         "보정필요_경고": dict(warns.most_common()),
         "정보_측정결손": dict(info.most_common()),   # 문폭없음 등 — 사용 차단 아님
+        # ── 구성(provenance) — dual/spa_only/str_only/objocr (ADR-0005 라벨구성 축, freeze g0/g1) ──
+        "구성_세대": dict(comp.most_common()),
+        "구성_도면": dict(comp_draw.most_common()),
         "built_sec": round(time.time() - t0, 1),
     }
     MANIFEST.write_text(json.dumps(man, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -272,25 +305,51 @@ def revalidate() -> dict:
     return man
 
 
-def freeze(version: str) -> dict:
+# 버전별 출처 필터(T v0=dual정상 / v1=추가본과 대칭). provenance.source로 거른다.
+VERSION_SOURCES = {
+    "g0": ("dual",),                                       # dual 정상변환만
+    "g1": ("dual", "spa_only", "str_only", "objocr"),      # + 추가본(V2V·objocr 복구)
+}
+
+
+def freeze(version: str, sources=None) -> dict:
     """staging/gline(현재) → releases/gline/<version> 동결([[gline-version-plan]]·[[staging-is-current]]).
-    버전별 데이터셋(g0=dual, g1=+V2V…)을 학습 입력(geom.jsonl)으로 잠근다. train_geom이 읽음."""
+    **provenance.source로 거른다**(g0=dual / g1=+추가, VERSION_SOURCES). 학습 입력(geom.jsonl)을 잠근다.
+    출처 없는(구버전) 그래프는 필터 시 제외하고 그 수를 명시(silent truncation 금지)."""
+    srcs = tuple(sources) if sources is not None else VERSION_SOURCES.get(version)
     rel = config.RELEASES_DIR / "gline" / version
     rel.mkdir(parents=True, exist_ok=True)
     n = 0
+    by_src, no_prov = Counter(), 0
     with (rel / "geom.jsonl").open("w", encoding="utf-8") as w:
         for f in sorted(GRAPHS_DIR.glob("*.json")):
             try:
                 g = json.loads(f.read_text(encoding="utf-8"))
             except Exception:  # noqa: BLE001
                 continue
+            src = (g.get("provenance") or {}).get("source")
+            if srcs is not None:                              # 필터 지정 시 출처로 거름
+                if src is None:
+                    no_prov += 1
+                    continue
+                if src not in srcs:
+                    continue
             w.write(json.dumps(g, ensure_ascii=False) + "\n")
             n += 1
+            by_src[src or "?"] += 1
     man = json.loads(MANIFEST.read_text(encoding="utf-8")) if MANIFEST.exists() else {}
     man["version"] = version
     man["n_graphs"] = n
+    man["freeze_sources"] = list(srcs) if srcs else "all"
+    man["freeze_구성"] = dict(by_src.most_common())
+    if no_prov:
+        man["freeze_skipped_no_provenance"] = no_prov         # 구버전(출처미기록) 제외 수 명시
     (rel / "manifest.json").write_text(json.dumps(man, ensure_ascii=False, indent=2), encoding="utf-8")
-    return {"version": version, "n_graphs": n, "path": str(rel)}
+    out = {"version": version, "n_graphs": n, "sources": list(srcs) if srcs else "all",
+           "구성": dict(by_src.most_common()), "path": str(rel)}
+    if no_prov:
+        out["skipped_no_provenance"] = no_prov
+    return out
 
 
 if __name__ == "__main__":
