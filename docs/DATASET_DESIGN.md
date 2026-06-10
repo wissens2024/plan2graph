@@ -111,10 +111,10 @@ data/
 **생성(출력)** = `releases/<version>/recipe.json` — freeze가 동결 시점에 박아두는 사본(provenance).
 손으로 편집 금지(다음 freeze가 덮어씀). 정본과 충돌하면 정본(`recipes/`)이 이긴다.
 
-⚠️ **버전 구분 가능성(distinguishability)**: recipe의 `status`/`role`만으로는 v0(dual)과 v2(+V2V)를
-구분할 수 없다 — staging "success"가 V2V 복구분을 포함하게 된 뒤로 두 버전이 같은 필터가 됨.
-버전을 *선언적으로* 재현하려면 레코드에 **출처 품질(provenance: dual / v2v_pred …)** 이 박혀 있고
-freeze가 그것으로 필터해야 한다(현재 미구현 — graph_id→manifest.reason 조인 필요).
+**버전 구분 가능성(distinguishability) — 구현됨(2026-06-11):** 레코드에 **출처(provenance)** 가 박혀
+있고 freeze가 그것으로 필터한다. T-라인은 manifest provenance를 `recipes/*.json`으로(v0=dual·v2=+V2V),
+G-라인은 그래프 `provenance.source`(dual/spa_only/str_only/objocr)를 `build_gline_auto.VERSION_SOURCES`로
+거른다(g0=dual·g1=+추가본). → [ADR-0005](adr/0005-dataset-accounting-composition-x-disposition.md).
 
 정본 예 `releases/recipes/<version>.json`:
 
@@ -211,7 +211,8 @@ freeze가 그것으로 필터해야 한다(현재 미구현 — graph_id→manif
 | 기하 생성 | 규칙기반 treemap (모델 없음) | 학습 기하모델 (train_geom) |
 | 모델 | `runs/tline/` (gen-*) | `runs/gline/` (geom-*) |
 
+- **버전 정의(대칭)**: T-라인 `v0`=dual 정상변환 · `v1`=+추가본. G-라인 `g0`=dual · `g1`=+추가본(spa_only·str_only·objocr 복구). provenance 필터로 구분(§5).
 - **분리 위치**: 폴더(위)·GUI(라인별 섹션). **성능은 한 화면에 합쳐 비교**(잣대 = 도면 품질).
 - **§4 레이아웃 갱신**: `releases/<version>/` → `releases/{tline,gline}/<version>/`.
-- staging(원천 작업장)은 출처별(aihub/cubicasa/rplan)로 **라인 무관**. 라인 분기는 **releases(빌드 산출)부터**. G-라인 사람 SVG는 `staging/topo_human/`.
+- staging(원천 작업장)은 출처별(aihub/cubicasa/rplan)로 **라인 무관**. 라인 분기는 **releases(빌드 산출)부터**. G-라인은 **단일 진실 `staging/gline/`**(자동+사람 보정 공존, corrected 플래그). 옛 `topo_human` 분리는 폐기 → [ADR-0003](adr/0003-gline-single-source.md).
 - **지금은 자동화만으로 구조·품질↑**, 사람(알바) 검수·편집은 이후 단계.

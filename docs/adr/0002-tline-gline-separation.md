@@ -51,4 +51,4 @@ T-라인과 G-라인을 **완전히 분리**한다 — 절대 한 스키마로 �
 - 최종 평가는 **도면 품질** 단일 기준(둘을 합쳐 비교 가능).
 - 지금 단계는 자동화로 충분(사람 검수 없이도 구조·품질 향상 가능).
 
-관련: [DATASET_DESIGN.md](../DATASET_DESIGN.md)(§4 레이아웃·이 ADR로 갱신 예정) · [GEOMETRY_SCHEMA.md](../GEOMETRY_SCHEMA.md)(G-라인 스키마) · [ROADMAP.md](../ROADMAP.md) · [ADR-0001](0001-generator-abstraction.md)
+관련: [DATASET_DESIGN.md](../DATASET_DESIGN.md)(§11에 본 ADR 반영 완료) · [GEOMETRY_SCHEMA.md](../GEOMETRY_SCHEMA.md)(G-라인 스키마) · [ROADMAP.md](../ROADMAP.md) · [ADR-0001](0001-generator-abstraction.md)
