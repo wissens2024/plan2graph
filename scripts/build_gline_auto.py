@@ -10,7 +10,7 @@
 ※ T/G 스키마는 안 섞는다(ADR-0002) — 재사용하는 건 위상 '추론 방식'이고 산출은 G 스키마(rooms).
 
 소스 두 가지:
-  - aihub : zip 코퍼스(aihub_source, 115 실데이터). SPA+STR+OBJ+OCR 지문병합. dual만 빌드.
+  - aihub : zip 코퍼스(aihub_source, 115 실데이터). SPA+STR+OBJ+OCR 지문병합. **SPA 보유 FP 전량**(dual+spa_only). 각 세대마다 SVG 베이스라인도 기록(사람 보정 substrate).
   - dir   : linked 디렉터리(topoedit.scan_dir, 로컬 스모크).
 공통:  dr → topology.build_graph(문·open·balcony) → iter_units(세대 분리)
         → State(role·polygon·fixtures) → suggest_roles(자동 역할) → geomgraph.build(g-0.3)
@@ -97,9 +97,10 @@ def _iter_plans(source: str, src_dir: Path, house: str | None):
     """소스별 (plan_id, house, dr) 제너레이터. aihub=zip 코퍼스(dual만), dir=linked 디렉터리."""
     if source == "aihub":
         from plan2graph import aihub_source as A
+        # SPA(방) 보유 FP 전량 — dual뿐 아니라 spa_only도. STR 없으면 위상이 빈약해
+        # excl/fix로 분류되지만 그건 정상(보정대상). 사람이 SVG 위에서 문·연결 보정.
+        # (str_only·objocr=SPA 없음은 이 스캐너 밖 → 2단계.)
         for rec in A.scan(house=house):
-            if "STR" not in rec["labels"]:          # dual(SPA+STR)만 — 문/벽 없으면 위상 빈약
-                continue
             try:
                 dr, _png = A.load(rec)
             except Exception as e:  # noqa: BLE001
@@ -133,6 +134,7 @@ def build_corpus(source: str = "dir", src_dir: Path | None = None,
         for st in _states_from_dr(dr, plan_id, phouse):
             for nid, role in T.suggest_roles(st, dr).items():    # 자동 역할(OCR·기구·면적)
                 T.set_role(st, nid, role)
+            T.write_svg(st, dr)                                   # SVG 베이스라인(사람 보정 substrate) — G 정의: 원본→SVG→그래프
             g = GG.build(st, dr)                                  # build 내부서 enhance_roles_g(기타방 보강)
             g["unit_id"] = st.plan_id
             g["corrected"] = False                                # 자동 베이스라인
