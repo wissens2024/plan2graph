@@ -451,27 +451,26 @@ except ModuleNotFoundError:
 if which.startswith("🧩"):
     from plan2graph import topoedit
     st.title("🧩 AI-Hub 검수 (G) — 위상+기하 보정")
-    # ── G 검수 회계 — 검수 상태(검증완료=사용 그래프) 기준. 데이터셋=그래프. ──
+    # ── G 보정 회계 — 단일 진실 staging/gline(자동 분류 + 사람 보정완료 2축). ADR-0003 ──
     from plan2graph import topoedit as _te
-    _led = _te.load_ledger()
-    _n_use = len(list(_te.GRAPHS_DIR.glob("*.json"))) if _te.GRAPHS_DIR.exists() else 0
-    _n_svg = len(list(_te.REC_DIR.glob("*.svg"))) if _te.REC_DIR.exists() else 0
-    _n_excl = sum(1 for _r in _led.values() if _r.get("status") == "제외")
-    _n_fix = max(_n_svg - _n_use, 0)
-    _g0f = config.release_dir("g0") / "manifest.json"
-    _cands = 0
-    if _g0f.exists():
-        try:
-            _cands = json.loads(_g0f.read_text(encoding="utf-8")).get("n_units", 0)
-        except Exception:  # noqa: BLE001
-            _cands = 0
-    _c4 = st.columns(3)
-    _c4[0].metric("✅ 사용 (검증완료 그래프)", f"{_n_use:,}")
-    _c4[1].metric("🛠 보정중 (편집 SVG)", f"{_n_fix:,}")
-    _c4[2].metric("🚫 제외", f"{_n_excl:,}")
-    st.caption(f"**데이터셋 = 그래프.** 사용 그래프는 아래 편집기에서 **검증완료** 누를 때 +1 "
-               f"(그 자리에서 위상+기하 그래프 생성·저장). 자동 후보(g0) {_cands:,}세대는 검증 전 = 사용 아님. "
-               "빌드·학습은 검수가 아니라 G-라인 도면생성에서.")
+    from plan2graph import dataset_status as _ds
+
+    @st.cache_data(show_spinner="G 회계 집계...")
+    def _gline_acct(_sig):
+        return _ds.gline_status(_te.GRAPHS_DIR)
+    _gd = _te.GRAPHS_DIR
+    _sig = (len(list(_gd.glob("*.json"))), int(_gd.stat().st_mtime)) if _gd.exists() else (0, 0)
+    _a = _gline_acct(_sig)
+    _c4 = st.columns(5)
+    _c4[0].metric("✅ 사용 (자동)", f"{_a['use']:,}")
+    _c4[1].metric("🛠 보정필요", f"{_a['fix']:,}")
+    _c4[2].metric("🚫 제외", f"{_a['excl']:,}")
+    _c4[3].metric("✍ 보정완료 (사람)", f"{_a['done']:,}")
+    _c4[4].metric("📦 사용가능", f"{_a['usable_now']:,}", f"상한 {_a['usable_max']:,}")
+    st.caption(f"**G 단일 데이터셋 = staging/gline** (자동 베이스라인 + 사람 보정 한 폴더, ADR-0003). "
+               f"사용가능 {_a['usable_now']:,} = 자동 사용 {_a['use']:,} + 사람 보정완료 {_a['done']:,}. "
+               f"보정필요 {_a['fix']:,} → 보정완료가 데이터를 키운다(증량). 제외 {_a['excl']:,}는 보증 불가. "
+               "사람 보정은 아래 편집기에서 **보정완료**(corrected=true 저장).")
     st.divider()
     topoedit.render_editor(show_title=False)
     st.stop()

@@ -124,6 +124,41 @@ def scan_status(graphs_dir: Path) -> dict:
             "reasons": dict(reasons.most_common()), "by_id": by_id}
 
 
+def gline_status(graphs_dir: Path) -> dict:
+    """G-라인 보정 회계(단일 소스 staging/gline) — corrected=true=보정완료(사람), 나머지=자동 분류.
+    [[gline-correction-not-verification]]·[[gline-single-source]] 2축. 반환:
+    {total, use, fix, excl, done, usable_now, usable_max, reasons, warns}."""
+    use = fix = excl = done = total = 0
+    reasons, warns = Counter(), Counter()
+    if graphs_dir.is_dir():
+        for f in graphs_dir.glob("*.json"):
+            try:
+                g = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                continue
+            total += 1
+            if g.get("corrected"):
+                done += 1                          # 사람 보정완료 = 사용 확정
+                continue
+            v = g.get("validation") or {}
+            passed = v.get("passed")
+            if passed is None:                     # 옛 레코드 폴백
+                passed = (g.get("meta", {}).get("status") == "success")
+            if not passed:
+                excl += 1
+                for r in v.get("reasons", []):
+                    reasons[r] += 1
+            elif v.get("warnings"):
+                fix += 1
+                for w in v.get("warnings", []):
+                    warns[w] += 1
+            else:
+                use += 1
+    return {"total": total, "use": use, "fix": fix, "excl": excl, "done": done,
+            "usable_now": use + done, "usable_max": use + fix + done,
+            "reasons": dict(reasons.most_common()), "warns": dict(warns.most_common())}
+
+
 if __name__ == "__main__":
     import sys
     try:

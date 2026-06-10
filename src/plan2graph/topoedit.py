@@ -35,10 +35,12 @@ from plan2graph.coco import load_coco  # noqa: E402
 from plan2graph.geometry import assemble_drawing, Drawing  # noqa: E402
 
 # ── 저장 위치(신규, 기존 골드와 분리). staging=현재 단일 진실 ────────────────────
-OUT_DIR = config.DATA_DIR / "staging" / "topo_human"
+# G-라인 단일 진실(ADR-0003) — 자동 베이스라인(build_gline_auto)·사람 보정이 한 폴더.
+#   사람 보정완료 = 같은 graphs 폴더의 corrected=true(별 폴더 topo_human 폐기·통합).
+OUT_DIR = config.DATA_DIR / "staging" / "gline"
 REC_DIR = OUT_DIR / "records"
 LEDGER = OUT_DIR / "_ledger.jsonl"
-GRAPHS_DIR = OUT_DIR / "graphs"      # 검증완료 → geometry-rich 그래프(= 사용 데이터셋)
+GRAPHS_DIR = OUT_DIR / "graphs"      # 자동+사람보정 공존. 사람 보정완료=corrected=true(= 사용 확정)
 
 SCHEMA = "topo-human-v1"
 CONNECTOR_BASES = ("복도", "전실")
