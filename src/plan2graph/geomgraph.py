@@ -468,19 +468,23 @@ def validate(g: dict) -> dict:
         if G.number_of_nodes() and nx.number_connected_components(G) > 1:
             reasons.append("위상단절")
 
-    # soft
+    # soft warning (보정필요 — 사람이 할 진짜 일)
     if any(r.get("privacy") == "other" or r.get("role") in (None, "기타") for r in rooms.values()):
         warnings.append("역할미상")
     if not any(r.get("role") == "현관" for r in rooms.values()):
         warnings.append("현관없음")
-    if any(d.get("via") == "door" and d.get("width_px") is None for d in g.get("doors", [])):
-        warnings.append("문폭없음")
     for e in edges:
         if e.get("via") not in ("door", "open"):
             warnings.append("via미상")
             break
 
-    return {"passed": len(reasons) == 0, "reasons": reasons, "warnings": warnings}
+    # info (정보성 — 사용 차단 아님. 측정 결손이지 데이터 결함/사람 일 아님)
+    info = []
+    if any(d.get("via") == "door" and d.get("width_px") is None for d in g.get("doors", [])):
+        info.append("문폭없음")
+
+    return {"passed": len(reasons) == 0, "reasons": reasons,
+            "warnings": warnings, "info": info}
 
 
 if __name__ == "__main__":

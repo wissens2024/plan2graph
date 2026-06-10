@@ -123,7 +123,7 @@ def build_corpus(source: str = "dir", src_dir: Path | None = None,
                  house: str | None = None, limit: int | None = None) -> dict:
     """코퍼스 전량 → gline/graphs/*.json + 매니페스트(숫자·분류·사유)."""
     GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
-    disp, reasons, warns = Counter(), Counter(), Counter()
+    disp, reasons, warns, info = Counter(), Counter(), Counter(), Counter()
     n_units = n_plans = 0
     t0 = time.time()
     for plan_id, phouse, dr in _iter_plans(source, src_dir, house):
@@ -141,6 +141,8 @@ def build_corpus(source: str = "dir", src_dir: Path | None = None,
                 reasons[r] += 1
             for w in g["validation"]["warnings"]:
                 warns[w] += 1
+            for ii in g["validation"].get("info", []):
+                info[ii] += 1
             (GRAPHS_DIR / f"{st.plan_id}.json").write_text(
                 json.dumps(g, ensure_ascii=False), encoding="utf-8")
             n_units += 1
@@ -160,8 +162,48 @@ def build_corpus(source: str = "dir", src_dir: Path | None = None,
         "보정완료_사람": 0,                        # 자동 베이스라인은 0. 이후 ledger(사람)서 증가
         "제외_사유": dict(reasons.most_common()),
         "보정필요_경고": dict(warns.most_common()),
+        "정보_측정결손": dict(info.most_common()),   # 문폭없음 등 — 사용 차단 아님
         "built_sec": round(time.time() - t0, 1),
     }
+    MANIFEST.write_text(json.dumps(man, ensure_ascii=False, indent=2), encoding="utf-8")
+    return man
+
+
+def revalidate() -> dict:
+    """저장된 gline 그래프를 **현재 검증기로 재검증** — validation/meta 갱신 + 매니페스트 재생성.
+    재빌드 없이 분류 정책 변경(예: 문폭없음 강등)을 반영. 기하 재계산 없음 → 빠름."""
+    disp, reasons, warns, info = Counter(), Counter(), Counter(), Counter()
+    n = 0
+    for f in sorted(GRAPHS_DIR.glob("*.json")):
+        try:
+            g = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        v = GG.validate(g)
+        g["validation"] = v
+        if "meta" in g:
+            g["meta"]["status"] = "success" if v["passed"] else "quarantine"
+            g["meta"]["reason"] = ",".join(v["reasons"])
+        f.write_text(json.dumps(g, ensure_ascii=False), encoding="utf-8")
+        disp[_disposition(g)] += 1
+        n += 1
+        for r in v["reasons"]:
+            reasons[r] += 1
+        for w in v["warnings"]:
+            warns[w] += 1
+        for ii in v.get("info", []):
+            info[ii] += 1
+    use, fix, excl = disp.get("use", 0), disp.get("fix", 0), disp.get("excl", 0)
+    man = json.loads(MANIFEST.read_text(encoding="utf-8")) if MANIFEST.exists() else {}
+    man.update({
+        "schema_version": GG.SCHEMA_VERSION, "n_units": n, "revalidated": True,
+        "분류_자동": {"사용": use, "보정필요": fix, "제외": excl},
+        "사용가능_현재_자동": use, "사용가능_상한_전부보정시": use + fix,
+        "증량여지_보정필요→보정완료": fix, "제외_보증불가": excl, "보정완료_사람": 0,
+        "제외_사유": dict(reasons.most_common()),
+        "보정필요_경고": dict(warns.most_common()),
+        "정보_측정결손": dict(info.most_common()),
+    })
     MANIFEST.write_text(json.dumps(man, ensure_ascii=False, indent=2), encoding="utf-8")
     return man
 
@@ -183,14 +225,19 @@ if __name__ == "__main__":
                     help="개방통로 벽 미피복 비율 임계(낮을수록 더 많이 연결). 기본 config")
     ap.add_argument("--open-max-gap", type=float, default=None,
                     help="개방통로 최대 간격 px(클수록 더 멀어도 연결). 기본 config")
+    ap.add_argument("--revalidate", action="store_true",
+                    help="재빌드 없이 저장 그래프를 현재 검증기로 재검증·매니페스트 갱신")
     a = ap.parse_args()
     if a.open_min_ratio is not None:
         config.OPEN_MIN_RATIO = a.open_min_ratio      # build_graph가 호출 시점에 읽음
     if a.open_max_gap is not None:
         config.OPEN_MAX_GAP_PX = a.open_max_gap
-    if a.source == "dir" and not a.dir:
-        ap.error("--source dir 는 코퍼스 디렉터리 인자가 필요합니다. 정식 빌드는 --source aihub(115 zip).")
-    man = build_corpus(source=a.source, src_dir=Path(a.dir) if a.dir else None,
-                       house=a.house, limit=a.limit)
+    if a.revalidate:
+        man = revalidate()
+    else:
+        if a.source == "dir" and not a.dir:
+            ap.error("--source dir 는 코퍼스 디렉터리 인자가 필요합니다. 정식 빌드는 --source aihub(115 zip).")
+        man = build_corpus(source=a.source, src_dir=Path(a.dir) if a.dir else None,
+                           house=a.house, limit=a.limit)
     print(json.dumps(man, ensure_ascii=False, indent=2))
-    print(f"\n→ {GRAPHS_DIR}  ({man['n_units']} units, {man['disposition']})")
+    print(f"\n→ {GRAPHS_DIR}  ({man['n_units']} units, 분류 {man['분류_자동']})")
