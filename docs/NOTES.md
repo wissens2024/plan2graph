@@ -2,6 +2,9 @@
 
 > README §0 원칙: 추측 금지·실데이터 우선. 가정과 실제가 다르면 가정을 고치고 여기 기록한다.
 
+> ⚠️ **이 문서는 초기 단계(2026-05-30~06-04) 결정·발견 로그(역사 기록)다.** "왜 그렇게 정했나"의 근거를 보존한다.
+> **현재 수치·정책·구조는 여기가 아니라** [DATA_STATUS](DATA_STATUS.md)(회계 43,219/48,628)·[DATASET_DESIGN](DATASET_DESIGN.md)(파이프라인·버전)·[adr/](adr/)(결정)를 본다. 아래 기록 중 그 시점 한정이라 지금과 다른 것은 해당 항목에 *(폐기/갱신)* 표시.
+
 ## 실데이터 검증 결과 (2026-05-30, 검증셋 ZIP 직접 파싱)
 
 | 항목 | README 가정 | 실제 | 조치 |
@@ -34,6 +37,7 @@ README §2.2는 "동일 도면의 여러 라벨을 {9자리} 키로 묶는다"�
 - **그래프화 가능 표본 ≈ 3,899개**(Training 3,836 + Val 63). 4종 라벨 전부 보유(OBJ+OCR+SPA+STR) = Training 1,424개.
 - 결정: 중복률 20.2%는 **해시(CRC) 그룹핑으로 SPA+STR 병합** 분기에 해당 → **계획대로 진행**. 이 3,836개가 방(타입라벨)+문+벽을 모두 가진 1급 데이터셋.
 - STR만 보유(4,290) 도면은 방 타입라벨이 없음 → 후순위 STR중심 증강 후보(벽 폐곡선→방 영역 유도, 타입 미상). 1차 데이터셋에는 미포함.
+  - *(갱신 2026-06-11: 이 "dual ~3,899만" 정책은 폐기. str_only는 V2V SPA복구, objocr는 이미지직접 검출로 편입 → 전체 43,219도면/48,628세대, g1=+추가본. [DATASET_DESIGN §5·§11].)*
 - 산출물: `data/interim/linked_spa_str_training.json`(pairs: 지문→{SPA:key, STR:key, OBJ:, OCR:}), `linked_spa_str_validation.json`.
 
 ## 카테고리 id→name 원본 (검증 파일 APT_FP_SPA_350195713.json)
@@ -74,6 +78,9 @@ README §2.2는 "동일 도면의 여러 라벨을 {9자리} 키로 묶는다"�
 - **잔여**: 발코니도 창도 없는 순수 개방 LDK(거실-주방 트임)는 여전히 미연결 → 벽틈 기하추론은 후순위(DECISIONS_NEEDED). 중앙값 3방 세대 다수는 이 잔여 때문.
 
 ## 데이터셋 채택 정책: '완벽한 세대만' (2026-05-31, 사용자 지시)
+
+> *(갱신: 이 절의 `processed/`·accepted/quarantine.csv·"채택 1,400~1,500" 수치는 옛 T-라인 파이프라인. processed/ 은퇴, 현재 회계는 staging/aihub manifest 처분(사용 10,921 등) — [DATA_STATUS §5].)*
+
 사용자 지시: "문제 나올 때마다 멈추지 말고, 문제는 별도 기록·제외하고 완벽한 것만 끝까지 진행. 격리 목록은 나중에 눈으로 보며 처리 결정."
 - **채택 기준**(config): 필수 5요소(현관·거실·침실·주방·화장실) 모두 보유 + 방수 5~60 + 무결성 통과 + 단일 연결. (`build_dataset.classify_unit`)
 - 미달은 `data/processed/quarantine.csv`에 사유·program과 함께 격리(데이터셋 제외). 채택은 `accepted.csv`.
@@ -158,7 +165,7 @@ README §2.2는 "동일 도면의 여러 라벨을 {9자리} 키로 묶는다"�
 
 ## 임계값 변경 이력
 <!-- DOOR_BUFFER_PX 등 config 임계값을 게이트에서 조정할 때마다 기록 -->
-- 초기값: DOOR_BUFFER_PX=30, DOOR_PROBE_DIST_PX=40, DOOR_MAX_GAP_PX=60 (미검증, 1장 게이트에서 조정 예정).
+- 초기값: DOOR_BUFFER_PX=30, DOOR_PROBE_DIST_PX=40, DOOR_MAX_GAP_PX=60. *(갱신: 게이트 검증 완료 — 아래 "정확도 게이트" 절 참조, precision 90.3%. 현재값은 `config.py`.)*
 
 ## 정확도 게이트 + 개방통로 과연결 튜닝 (2026-06-02)
 - `gate.py`: 깨끗한 단일세대 20장 추출 + 검증 오버레이(문엣지 번호) + 채점표(precision/recall). v1 수동보정 도구 겸용.
