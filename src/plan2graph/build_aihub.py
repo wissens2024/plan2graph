@@ -16,9 +16,9 @@ staging/aihub/ 한 곳으로 통일한다. 원본(zip)·V2V 산출물·옛 폴�
   방만 · 그래프없음   → fix  · spa_only_pending    (V2V 미적용/실패)
   구조만 + 그래프    → use  · v2v_spa_recovered   (corrected: from str_only, method v2v_spa)
   구조만 · 그래프없음 → fix  · str_only_pending
-  비-FP             → excl · nonfp
-  OBJ/OCR만         → excl · objocr
-  중복 사본          → excl · duplicate (대표 외 추가 키)
+  OBJ/OCR만         → fix  · objocr   (평면도+방 있음·SPA/STR 라벨만 없음 → 보정대상)
+  비-FP             → excl · nonfp    (평면도 아님 = 대상 아님)
+  중복 사본          → excl · duplicate (대표 외 추가 키 = 사본)
 
 CLI: python src/plan2graph/build_aihub.py --at "<ISO시각>"   (시각은 외부 주입; 미지정 시 빈값)
 """
@@ -126,7 +126,9 @@ def _disposition(cat: str, became: bool, at: str, merged: bool = False):
     if cat == "nonfp":
         return "excl", "nonfp", None
     if cat == "objocr":
-        return "excl", "objocr", None
+        # 원본은 평면도(방 있음), SPA/STR 라벨만 없음 → 알바가 원본 위에서 보정 가능.
+        # 제외 아님(제외=nonfp·중복만). T·G 공통 처분모델.
+        return "fix", "objocr", None
     if cat == "dual":
         if became and merged:
             return ("use", "dual_dedup_merge",

@@ -534,8 +534,8 @@ if which.startswith("🏢"):
         ("fix", "convert_failed"): "🛠 보정필요 · 변환실패(dual)",
         ("fix", "spa_only_pending"): "🛠 복구대상 · 방만(V2V 대기)",
         ("fix", "str_only_pending"): "🛠 복구대상 · 구조만(V2V 대기)",
+        ("fix", "objocr"): "🛠 보정필요 · OBJ/OCR만(공간라벨 없음)",
         ("excl", "nonfp"): "🚫 제외 · 비-FP(평면도 아님)",
-        ("excl", "objocr"): "🚫 제외 · OBJ/OCR만",
         ("excl", "duplicate"): "🔁 제외 · 중복(사본)",
     }
     _AIHUB_ORDER = list(AIHUB_LABEL.values())
