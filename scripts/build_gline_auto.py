@@ -133,7 +133,7 @@ def build_corpus(source: str = "dir", src_dir: Path | None = None,
         for st in _states_from_dr(dr, plan_id, phouse):
             for nid, role in T.suggest_roles(st, dr).items():    # 자동 역할(OCR·기구·면적)
                 T.set_role(st, nid, role)
-            g = GG.build(st, dr)
+            g = GG.build(st, dr)                                  # build 내부서 enhance_roles_g(기타방 보강)
             g["unit_id"] = st.plan_id
             g["corrected"] = False                                # 자동 베이스라인(seed)
             disp[_disposition(g)] += 1
@@ -179,6 +179,7 @@ def revalidate() -> dict:
             g = json.loads(f.read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001
             continue
+        GG.enhance_roles_g(g)                  # 기타방 역할 보강(저장 그래프에 직접 적용 — 재빌드 없이)
         v = GG.validate(g)
         g["validation"] = v
         if "meta" in g:

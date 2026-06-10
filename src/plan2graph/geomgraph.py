@@ -279,6 +279,63 @@ def _door_for_edge(dr, walls, a, b, gap=50.0):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 기타방 역할 추정 강화 (위상·기하 신호) — suggest_roles(OCR·기구·면적) 이후 보강
+#   속성(역할)은 조인·신호로 도출(관계만 사람이 선언) 원칙. 한국 아파트 정준 연결공간 식별.
+#   보수적: 다중 신호 일치 시만 relabel(오분류 최소화). 역할미상(=기타) 축소가 목적.
+# ─────────────────────────────────────────────────────────────────────────────
+def enhance_roles_g(g) -> set:
+    """build된 그래프(dict)의 base=role='기타' 방을 위상(연결수·이웃역할)+기하(길쭉·외벽·창)로 세분.
+    규칙(고신뢰 순): 허브연결=복도 · 외벽+창+거주실인접=발코니 · 안방막다른=드레스룸 ·
+    길쭉통과=복도 · 사적공간 사이=전실. role·privacy·is_connector·엣지 privacy_transition 갱신.
+    id를 str로 정규화 → 메모리(int 키)·JSON(str 키) 양쪽 강건(build·revalidate 공용)."""
+    from collections import defaultdict
+    rooms = g.get("rooms", {})
+    edges = g.get("edges", [])
+    rkeys = {str(k): k for k in rooms}          # str → 원래 키(int/str)
+    deg, nbr = {}, defaultdict(list)
+    for e in edges:
+        a, b = str(e.get("from")), str(e.get("to"))
+        if a in rkeys and b in rkeys:
+            deg[a] = deg.get(a, 0) + 1
+            deg[b] = deg.get(b, 0) + 1
+            nbr[a].append(b)
+            nbr[b].append(a)
+    changed = set()
+    for sk, ok in rkeys.items():
+        r = rooms[ok]
+        if r.get("base") != "기타" or r.get("role") != "기타":
+            continue
+        d = deg.get(sk, 0)
+        ar = r.get("aspect_ratio", 0) or 0
+        te = bool(r.get("touches_exterior"))
+        nwin = r.get("n_windows", 0) or 0
+        fx = r.get("fixtures") or []
+        nb = {rooms[rkeys[m]].get("role") for m in nbr.get(sk, [])}
+        new = None
+        if d >= 3:                                                      # 허브 연결 = 복도
+            new = "복도"
+        elif te and nwin > 0 and not fx and (nb & {"거실", "침실", "안방", "주방"}):
+            new = "발코니"                                              # 외벽+창+거주실 인접
+        elif d == 1 and nb == {"안방"} and not fx and nwin == 0:
+            new = "드레스룸"                                            # 안방 막다른 부속
+        elif ar >= 2.5 and d >= 2:                                      # 길쭉한 통과 = 복도
+            new = "복도"
+        elif d == 2 and (nb & {"현관", "안방", "욕실", "전용욕실", "드레스룸"}):
+            new = "전실"                                                # 사적공간 사이 전실
+        if new:
+            r["role"] = new
+            r["privacy"] = PRIVACY.get(new, "other")
+            r["is_connector"] = new in CONNECTOR_ROLES
+            changed.add(ok)
+    for e in edges:                                                     # privacy_transition 갱신
+        a, b = str(e.get("from")), str(e.get("to"))
+        if a in rkeys and b in rkeys:
+            e["privacy_transition"] = (f"{rooms[rkeys[a]].get('privacy')}_to_"
+                                       f"{rooms[rkeys[b]].get('privacy')}")
+    return changed
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 본체
 # ─────────────────────────────────────────────────────────────────────────────
 def build(state, dr) -> dict:
@@ -423,6 +480,7 @@ def build(state, dr) -> dict:
         "n_walls": len(walls), "n_doors": len(doors), "n_windows": len(windows),
         "rooms": rooms, "edges": edges, "walls": walls, "doors": doors, "windows": windows,
     }
+    enhance_roles_g(g)                      # 기타방 위상·기하 역할 보강(역할미상↓) — 검증 전
     g["validation"] = validate(g)
     v = g["validation"]
     g["meta"] = {
