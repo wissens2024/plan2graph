@@ -545,14 +545,22 @@ if which.startswith("🏢"):
                                f"{row['disposition']}·{row['reason']}")
 
     from collections import Counter as _C
-    _cnt = _C(_albl(r) for r in rows)
+    _cnt = _C(_albl(r) for r in rows)                    # 라벨별 도면수(행=raw PNG 1장)
     disp = [(lab, _cnt[lab]) for lab in _AIHUB_ORDER if _cnt.get(lab, 0)]
-    keymap = {"📋 전체": len(rows)}
+    keymap = {"📋 전체": len(rows)}                       # 분류 → 도면수
     keymap.update(dict(disp))
+    # 분류 → 세대수 — 정본 규칙(dataset_status) 재사용(못세면0·중복=원본). 도면+세대 병기.
+    from plan2graph import dataset_status
+    _fpu = dataset_status.aihub_fp_units(rows)
+    _ukey = _C()
+    for _r in rows:
+        _ukey[_albl(_r)] += dataset_status.aihub_row_units(_r, _fpu)
+    keymap_unit = {"📋 전체": sum(_ukey.values())}        # 분류 → 세대수
+    keymap_unit.update(dict(_ukey))
     # ── 상단 통일 컨트롤(사이드바→본문): 분류 | 거주형태 + 보기 모드. G검수(🧩)와 동일 구조. ──
     c_cat, c_house = st.columns(2)
     cat = c_cat.selectbox("분류", ["📋 전체"] + [lab for lab, _ in disp],
-                          format_func=lambda k: f"{k} ({keymap[k]:,})")
+                          format_func=lambda k: f"{k} (도면 {keymap[k]:,} · 세대 {keymap_unit.get(k,0):,})")
     _HOUSE_KO = {"APT": "APT(아파트)", "DEH": "DEH(단독주택)", "ROW": "ROW(연립주택)"}
     house = c_house.selectbox("거주형태", ["(전체)", "APT", "DEH", "ROW"],
                               format_func=lambda k: _HOUSE_KO.get(k, k))

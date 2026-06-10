@@ -216,6 +216,28 @@ def gline_plan_status(graphs_dir: Path) -> dict[str, str]:
     return out
 
 
+def aihub_fp_units(rows: list) -> dict:
+    """지문(fingerprint) → 세대수(graph 보유 행). 중복본이 원본 세대수를 참조할 때 사용.
+    aihub_t_status·분류 콤보가 같은 규칙을 쓰도록 단일 소스화."""
+    fp = {}
+    for r in rows:
+        n = len(r.get("graph_ids") or [])
+        if n:
+            fp[r.get("fingerprint")] = n
+    return fp
+
+
+def aihub_row_units(r: dict, fp_units: dict) -> int:
+    """manifest 행 1개의 세대수(사용자 확정 규칙): 변환세대 있으면 그 수,
+    중복본=원본(dup_of) 세대수, 그 외(비FP·변환실패)=0(못 세면 0)."""
+    n = len(r.get("graph_ids") or [])
+    if n:
+        return n
+    if r.get("reason") == "duplicate":
+        return fp_units.get(r.get("dup_of"), 0)
+    return 0
+
+
 def aihub_t_status(manifest_path: Path) -> dict:
     """T-라인 AI-Hub 회계(정본 manifest) — 처분 use/fix/excl, 도면·세대 병기, by_house.
     gline_status와 같은 접근법(x['use']=세대, x['draw']['use']=도면)으로 종합 비교에서 동일 처리.
@@ -230,19 +252,10 @@ def aihub_t_status(manifest_path: Path) -> dict:
                     rows.append(json.loads(ln))
                 except Exception:  # noqa: BLE001
                     continue
-    fp_units = {}                                  # 지문 → 세대수(graph 보유 행) — 중복본이 참조
-    for r in rows:
-        n = len(r.get("graph_ids") or [])
-        if n:
-            fp_units[r.get("fingerprint")] = n
+    fp_units = aihub_fp_units(rows)                # 지문 → 세대수 (공유 규칙)
 
-    def _units(r):                                 # 행 1개의 세대 수(사용자 확정 규칙)
-        n = len(r.get("graph_ids") or [])
-        if n:
-            return n
-        if r.get("reason") == "duplicate":         # 중복본 = 원본 세대수
-            return fp_units.get(r.get("dup_of"), 0)
-        return 0                                    # 변환 안 됨/평면도 아님 → 못 세면 0
+    def _units(r):                                 # 행 1개의 세대 수(공유 규칙)
+        return aihub_row_units(r, fp_units)
 
     draw, unit = Counter(), Counter()
     house_draw: dict[str, Counter] = {}

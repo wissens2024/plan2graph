@@ -1118,7 +1118,13 @@ def render_editor(show_title: bool = True) -> None:
         return _pdisp.get(pid, "todo")                # 그래프 미생성 = 작업 대기
 
     _allids = ids
-    _catcnt = _Ctr(_plan_cat(p) for p in _allids)
+    _catcnt = _Ctr(_plan_cat(p) for p in _allids)        # 분류 → 도면수
+    # 분류 → 세대수 — 그래프파일(=세대 1건)을 도면 분류로 집계(못세면0). T검수와 도면+세대 병기 일치.
+    import re as _re2
+    _ucat = _Ctr()
+    for _gf in GRAPHS_DIR.glob("*.json"):
+        _ucat[_plan_cat(_re2.sub(r"_u\d+$", "", _gf.stem))] += 1
+    _utot = sum(_ucat.values())
     # 라벨·이모지 = T 검수(🏢)와 동일 vocabulary(✅사용/🛠보정필요/🚫제외/✍보정완료).
     _CATEMO = {"전체": "📋 전체", "todo": "🆕 미생성", "fix": "🛠 보정필요",
                "use": "✅ 사용(자동)", "done": "✍ 보정완료", "excl": "🚫 제외"}
@@ -1126,8 +1132,8 @@ def render_editor(show_title: bool = True) -> None:
     _catf = c_cat.selectbox(
         "분류", _CATORDER,
         key="te_catf",
-        format_func=lambda c: (f"{_CATEMO['전체']} ({len(_allids):,})" if c == "전체"
-                               else f"{_CATEMO.get(c, c)} ({_catcnt.get(c, 0):,})"))
+        format_func=lambda c: (f"{_CATEMO['전체']} (도면 {len(_allids):,} · 세대 {_utot:,})" if c == "전체"
+                               else f"{_CATEMO.get(c, c)} (도면 {_catcnt.get(c, 0):,} · 세대 {_ucat.get(c, 0):,})"))
     if _catf != "전체":
         ids = [p for p in _allids if _plan_cat(p) == _catf]
     if not ids:
