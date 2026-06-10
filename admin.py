@@ -348,53 +348,7 @@ if which.startswith("🧮"):
 
     st.title("🧮 검수 현황(종합)")
 
-    # ── 데이터셋 기본 비교: T-라인 vs G-라인 (같은 처분 버킷·도면+세대 병기) ──
-    #   정본 = T manifest 처분(사용/보정필요/제외). G도 같은 버킷·규칙으로 정렬해 직접 비교.
-    #   세대 규칙: 못 세면 0, 제외·중복은 원본 세대수(dataset_status.aihub_t_status).
-    from plan2graph import topoedit as _te
-    import pandas as _pd
-    _tman = config.DATA_DIR / "staging" / "aihub" / "manifest.jsonl"
-
-    @st.cache_data(show_spinner="라인 비교 집계...")
-    def _line_acct(_gsig, _tsig):
-        from plan2graph import dataset_status as _ds
-        return _ds.aihub_t_status(_tman), _ds.gline_status(_te.GRAPHS_DIR)
-    _gn = len(list(_te.GRAPHS_DIR.glob("*.json"))) if _te.GRAPHS_DIR.exists() else 0
-    _tn = _tman.stat().st_size if _tman.exists() else 0
-    _t, _g = _line_acct(_gn, _tn)
-
-    st.markdown("#### 데이터셋 비교 — T-라인 vs G-라인 (**같은 처분 · 도면+세대 병기**)")
-    _HOUSE_KO = {"APT": "APT(아파트)", "DEH": "DEH(단독주택)", "ROW": "ROW(연립주택)"}
-    _hf = st.selectbox("거주형태", ["전체", "APT", "DEH", "ROW"],
-                       format_func=lambda k: "전체" if k == "전체" else _HOUSE_KO.get(k, k),
-                       key="cmp_house")
-
-    def _cell(acct, bucket, kind):                    # kind: 'draw'(도면) | 'unit'(세대)
-        if _hf == "전체":
-            return acct.get("draw", {}).get(bucket, 0) if kind == "draw" else acct.get(bucket, 0)
-        return acct.get("by_house", {}).get(_hf, {}).get(kind, {}).get(bucket, 0)
-
-    _BUCKETS = [("use", "✅ 사용"), ("fix", "🛠 보정필요"),
-                ("excl", "🚫 제외"), ("done", "✍ 보정완료(사람)")]
-    _rows = []
-    for _bk, _bl in _BUCKETS + [("__tot__", "합계")]:
-        if _bk == "__tot__":
-            _td_, _tu_, _gd_, _gu_ = (sum(_cell(_t, b, "draw") for b, _ in _BUCKETS),
-                                      sum(_cell(_t, b, "unit") for b, _ in _BUCKETS),
-                                      sum(_cell(_g, b, "draw") for b, _ in _BUCKETS),
-                                      sum(_cell(_g, b, "unit") for b, _ in _BUCKETS))
-        else:
-            _td_, _tu_ = _cell(_t, _bk, "draw"), _cell(_t, _bk, "unit")
-            _gd_, _gu_ = _cell(_g, _bk, "draw"), _cell(_g, _bk, "unit")
-        _rows.append({"처분": _bl, "T 도면": f"{_td_:,}", "T 세대": f"{_tu_:,}",
-                      "G 도면": f"{_gd_:,}", "G 세대": f"{_gu_:,}"})
-    st.dataframe(_pd.DataFrame(_rows), hide_index=True, use_container_width=True)
-    st.caption("같은 처분 버킷·도면+세대 병기로 직접 비교. **T 세대**: 사용=Σ변환세대 · 제외·중복=원본 세대수 · "
-               "보정필요=0(미변환이라 못 셈). **G**: 자동생성 그래프 전량을 같은 규칙으로 분류. "
-               "보정완료(사람)=증량분(T는 아직 없음). 도면=받은 원본 시트(여러 세대 타일).")
-    st.divider()
-
-    st.caption("아래 — **도면(받은 원본) 단위** · AI-Hub · CubiCasa5k · RPLAN 처분 비교. "
+    st.caption("**도면(받은 원본) 단위** · AI-Hub · CubiCasa5k · RPLAN 처분 비교. "
                "각 출처 합 = 다운로드 원본 수. 개별 검수는 각 도면검수 메뉴에서.")
     SRC = [("aihub", "🏢 AI-Hub"), ("cubicasa5k", "🏠 CubiCasa5k"), ("rplan", "📐 RPLAN")]
     if st.button("🔄 재집계(캐시 비움)", help="재변환·dedup 후 현황을 다시 집계(디스크 캐시도 삭제)"):
