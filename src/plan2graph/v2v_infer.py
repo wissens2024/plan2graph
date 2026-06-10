@@ -184,17 +184,59 @@ def run(spa_weights: str, str_weights: str, split: str = "Training",
             "provenance": str(PRED_DIR / "_provenance.json")}
 
 
+def _cluster_units(boxes: list, gap_frac: float = 0.6) -> list[list[int]]:
+    """방 bbox 리스트 [(x0,y0,x1,y1)] → 세대 군집(인덱스 리스트들). 방 bbox를 margin만큼
+    확장해 겹치면 같은 세대(union-find). margin = gap_frac × 방 변길이 중앙값(적응적) —
+    한 세대 안 방들은 인접/근접, 세대 사이는 큰 여백이라 자연 분리. 멀티세대 시트 → 세대 N개."""
+    n = len(boxes)
+    if n == 0:
+        return []
+    dims = sorted([b[2] - b[0] for b in boxes] + [b[3] - b[1] for b in boxes])
+    med = dims[len(dims) // 2] if dims else 0.0
+    m = gap_frac * med
+    parent = list(range(n))
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    for i in range(n):
+        bi = boxes[i]
+        for j in range(i + 1, n):
+            bj = boxes[j]
+            if not (bi[2] + m < bj[0] or bj[2] + m < bi[0]
+                    or bi[3] + m < bj[1] or bj[3] + m < bi[1]):   # 확장 후 겹침
+                parent[find(i)] = find(j)
+    groups: dict = {}
+    for i in range(n):
+        groups.setdefault(find(i), []).append(i)
+    return list(groups.values())
+
+
+def _offset_pred(p: dict, ox: float, oy: float) -> dict:
+    """예측 인스턴스의 좌표(세대 크롭 기준) → 시트 좌표로 평행이동(+ox,+oy)."""
+    seg = [[(v + ox if k % 2 == 0 else v + oy) for k, v in enumerate(ring)]
+           for ring in p["segmentation"]]
+    b = p["bbox"]
+    return {**p, "segmentation": seg, "bbox": [b[0] + ox, b[1] + oy, b[2], b[3]]}
+
+
 def run_objocr(spa_weights: str, str_weights: str,
                split=("Training", "Validation"), imgsz: int = 1024,
-               conf: float = 0.25, limit: int | None = None, device=None) -> dict:
-    """objocr 도면(OBJ/OCR 라벨만, SPA·STR 둘 다 없음) → **이미지에서 직접** SPA·STR 예측.
+               conf: float = 0.25, limit: int | None = None, device=None,
+               spa_imgsz: int = 768, str_imgsz: int = 1024,
+               min_unit_rooms: int = 2) -> dict:
+    """objocr 도면(OBJ/OCR 라벨만, SPA·STR 둘 다 없음) → **세대별로 쪼개 이미지 직접** SPA·STR 예측.
 
-    기존 run()은 보유 라벨(SPA/STR) bbox에 크롭해 빠진 종류를 예측하지만, objocr는
-    크롭 기준이 될 SPA/STR 라벨이 없다 → **전체 이미지**를 입력으로 SPA(방)·STR(구조)를
-    둘 다 예측한다. 결과는 predicted_img/{TYPE}_{sig}.json (sig 키 — aihub_source.scan이
-    이미지-anchor 분기에서 sig로 조회). 노이즈 큰 베이스라인이며 빌드에서 보정필요로 분류,
-    사람이 교정한다([[gline-correction-not-verification]]). 방(SPA) 예측이 0이면 그래프
-    불가라 건너뛴다(STR만 단독 저장하지 않음)."""
+    **2-패스**(전체시트 1패스는 다세대 시트에서 방이 작게 보여 STR이 부실 → 세대 크롭으로 해결):
+    - 패스1: 전체 시트에 SPA 검출 → 방 bbox를 `_cluster_units`로 **세대 군집**으로 분할.
+    - 패스2: **세대별로 이미지 크롭** → 그 크롭에 SPA(768)·STR(1024) **재검출**(학습 분포에 맞는 크기)
+      → 좌표를 시트로 역오프셋해 누적.
+    결과는 predicted_img/{TYPE}_{sig}.json (시트 좌표, sig 키 — aihub_source.scan 이미지-anchor가
+    조회, 빌드의 _states_from_dr가 다시 세대 분리). 방(SPA) 0이면 그래프 불가라 건너뜀.
+    노이즈는 빌드에서 보정필요로 분류, 사람이 교정([[gline-correction-not-verification]])."""
     import io
     import zipfile as _zip
     from ultralytics import YOLO
@@ -208,9 +250,9 @@ def run_objocr(spa_weights: str, str_weights: str,
     wfp = {"SPA": _weight_fingerprint(spa_weights), "STR": _weight_fingerprint(str_weights)}
     git = exp.git_commit()
     stamp = {"spa": Path(spa_weights).name, "str": Path(str_weights).name,
-             "conf": conf, "imgsz": imgsz, "git": git[:8]}
+             "conf": conf, "spa_imgsz": spa_imgsz, "str_imgsz": str_imgsz, "git": git[:8]}
     n = 0
-    stat = {"SPA": 0, "STR": 0, "skip_noroom": 0, "skip_png": 0}
+    stat = {"SPA": 0, "STR": 0, "units": 0, "skip_noroom": 0, "skip_png": 0}
     for rec in recs:
         sig = rec["sig"]
         try:
@@ -222,20 +264,47 @@ def run_objocr(spa_weights: str, str_weights: str,
             stat["skip_png"] += 1
             continue
         W, H = img.size
-        full = (0.0, 0.0, float(W), float(H))           # 라벨 없음 → 전체 이미지가 크롭 영역
-        spa_preds = predict_missing(models["SPA"], img, full, cls_of["SPA"], imgsz, conf, device)
-        if not spa_preds:                                # 방 0 → 그래프 불가, 건너뜀
+        # ── 패스1: 전체 시트 SPA로 방 위치 파악 → 세대 군집 ──
+        sheet_spa = predict_missing(models["SPA"], img, (0.0, 0.0, float(W), float(H)),
+                                    cls_of["SPA"], imgsz, conf, device)
+        if not sheet_spa:
             stat["skip_noroom"] += 1
             continue
-        spa_coco = to_coco(spa_preds, W, H, sig, "SPA")
-        spa_coco["_v2v"] = {**stamp, "weights": stamp["spa"], "direction": "IMG->SPA"}
+        boxes = [(p["bbox"][0], p["bbox"][1], p["bbox"][0] + p["bbox"][2],
+                  p["bbox"][1] + p["bbox"][3]) for p in sheet_spa]
+        clusters = _cluster_units(boxes)
+        # ── 패스2: 세대별 크롭 재검출 → 시트 좌표 누적 ──
+        spa_all, str_all = [], []
+        pad = 40
+        for idxs in clusters:
+            if len(idxs) < min_unit_rooms:                   # 1방짜리 잡음 군집 제외
+                continue
+            ux0 = max(0, int(min(boxes[i][0] for i in idxs) - pad))
+            uy0 = max(0, int(min(boxes[i][1] for i in idxs) - pad))
+            ux1 = min(W, int(max(boxes[i][2] for i in idxs) + pad))
+            uy1 = min(H, int(max(boxes[i][3] for i in idxs) + pad))
+            crop = img.crop((ux0, uy0, ux1, uy1))
+            cw, ch = crop.size
+            su = predict_missing(models["SPA"], crop, (0.0, 0.0, float(cw), float(ch)),
+                                 cls_of["SPA"], spa_imgsz, conf, device)
+            tu = predict_missing(models["STR"], crop, (0.0, 0.0, float(cw), float(ch)),
+                                 cls_of["STR"], str_imgsz, conf, device)
+            if not su:
+                continue
+            spa_all.extend(_offset_pred(p, ux0, uy0) for p in su)
+            str_all.extend(_offset_pred(p, ux0, uy0) for p in tu)
+            stat["units"] += 1
+        if not spa_all:
+            stat["skip_noroom"] += 1
+            continue
+        spa_coco = to_coco(spa_all, W, H, sig, "SPA")
+        spa_coco["_v2v"] = {**stamp, "weights": stamp["spa"], "direction": "IMG->units->SPA"}
         (PRED_IMG_DIR / f"SPA_{sig}.json").write_text(
             json.dumps(spa_coco, ensure_ascii=False), encoding="utf-8")
         stat["SPA"] += 1
-        str_preds = predict_missing(models["STR"], img, full, cls_of["STR"], imgsz, conf, device)
-        if str_preds:
-            str_coco = to_coco(str_preds, W, H, sig, "STR")
-            str_coco["_v2v"] = {**stamp, "weights": stamp["str"], "direction": "IMG->STR"}
+        if str_all:
+            str_coco = to_coco(str_all, W, H, sig, "STR")
+            str_coco["_v2v"] = {**stamp, "weights": stamp["str"], "direction": "IMG->units->STR"}
             (PRED_IMG_DIR / f"STR_{sig}.json").write_text(
                 json.dumps(str_coco, ensure_ascii=False), encoding="utf-8")
             stat["STR"] += 1
@@ -243,16 +312,18 @@ def run_objocr(spa_weights: str, str_weights: str,
         if limit and n >= limit:
             break
         if n % 200 == 0:
-            print(f"  ...{n} objocr 예측 (방 {stat['SPA']}/구조 {stat['STR']}/"
-                  f"방없음 {stat['skip_noroom']})")
+            print(f"  ...{n} objocr (세대 {stat['units']}/방시트 {stat['SPA']}/"
+                  f"구조시트 {stat['STR']}/방없음 {stat['skip_noroom']})")
     sp_list = list(split) if not isinstance(split, str) else [split]
-    prov = {"kind": "v2v_infer_objocr", "created": exp._now(), "git_commit": git,
-            "env": exp.env_provenance(), "split": sp_list, "imgsz": imgsz, "conf": conf,
-            "device": device, "limit": limit, "weights": wfp, "predicted": n, "detail": stat}
+    prov = {"kind": "v2v_infer_objocr_units", "created": exp._now(), "git_commit": git,
+            "env": exp.env_provenance(), "split": sp_list, "spa_imgsz": spa_imgsz,
+            "str_imgsz": str_imgsz, "sheet_imgsz": imgsz, "conf": conf, "device": device,
+            "limit": limit, "weights": wfp, "predicted": n, "detail": stat}
     (PRED_IMG_DIR / "_provenance.json").write_text(
         json.dumps(prov, ensure_ascii=False, indent=2), encoding="utf-8")
-    exp.append_index({"kind": "v2v_infer_objocr", "git_commit": git, "conf": conf,
-                      "imgsz": imgsz, "spa_weights": wfp["SPA"].get("sha256"),
+    exp.append_index({"kind": "v2v_infer_objocr_units", "git_commit": git, "conf": conf,
+                      "spa_imgsz": spa_imgsz, "str_imgsz": str_imgsz,
+                      "spa_weights": wfp["SPA"].get("sha256"),
                       "str_weights": wfp["STR"].get("sha256"), "predicted": n, **stat})
     return {"predicted": n, "detail": stat, "out": str(PRED_IMG_DIR),
             "provenance": str(PRED_IMG_DIR / "_provenance.json")}
