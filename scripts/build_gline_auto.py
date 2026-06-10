@@ -160,20 +160,31 @@ def build_graphs(source: str = "dir", src_dir: Path | None = None,
     보정필요→사용가능 전환. SVG 없으면 skip(선행[①] 먼저 돌려야 함)."""
     GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
     disp, reasons, warns, info = Counter(), Counter(), Counter(), Counter()
-    n_units = n_plans = n_missing = 0
+    n_units = n_plans = n_missing = n_err = 0
     t0 = time.time()
     for plan_id, phouse, dr in _iter_plans(source, src_dir, house):
         if limit and n_plans >= limit:
             break
         n_plans += 1
-        for st in _states_from_dr(dr, plan_id, phouse):
+        try:                                                      # 위상/세대분리 실패 도면 스킵
+            _states = list(_states_from_dr(dr, plan_id, phouse))
+        except Exception as e:  # noqa: BLE001
+            print(f"  [skip-plan] {plan_id}: states 실패 {e}")
+            n_err += 1
+            continue
+        for st in _states:
             svg_path = T.REC_DIR / f"{st.plan_id}.svg"
             if not svg_path.exists():                             # 선행(SVG 변환) 안 된 세대
                 n_missing += 1
                 continue
-            svg = svg_path.read_text(encoding="utf-8")            # 저장 SVG(사람 보정 반영분 포함)
-            st_svg = T.state_from_svg(svg, dr, st.plan_id, st.house)
-            g = GG.build(st_svg, dr)                              # SVG → 그래프 (enhance_roles_g 포함)
+            try:                                                  # 한 세대 기하 실패가 전체 빌드를 안 죽이게
+                svg = svg_path.read_text(encoding="utf-8")        # 저장 SVG(사람 보정 반영분 포함)
+                st_svg = T.state_from_svg(svg, dr, st.plan_id, st.house)
+                g = GG.build(st_svg, dr)                          # SVG → 그래프 (enhance_roles_g 포함)
+            except Exception as e:  # noqa: BLE001
+                print(f"  [skip-unit] {st.plan_id}: build 실패 {e}")
+                n_err += 1
+                continue
             g["unit_id"] = st.plan_id
             g["corrected"] = False                                # 자동 베이스라인
             disp[_disposition(g)] += 1
@@ -192,7 +203,7 @@ def build_graphs(source: str = "dir", src_dir: Path | None = None,
         "source": source, "source_dir": (str(src_dir) if source == "dir" else None),
         "house": house or "ALL",
         "open_min_ratio": config.OPEN_MIN_RATIO, "open_max_gap_px": config.OPEN_MAX_GAP_PX,
-        "n_plans": n_plans, "n_units": n_units, "n_svg_missing": n_missing,
+        "n_plans": n_plans, "n_units": n_units, "n_svg_missing": n_missing, "n_err": n_err,
         # ── 자동 분류(T-라인 구조) + 보정 회계([[gline-correction-not-verification]]) ──
         "분류_자동": {"사용": use, "보정필요": fix, "제외": excl},
         "사용가능_현재_자동": use,                 # 사람 손 없이 바로 사용가능

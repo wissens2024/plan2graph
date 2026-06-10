@@ -347,10 +347,12 @@ def build(state, dr) -> dict:
     fix_by = _assign(dr, rooms_xy, "objects", gap=10.0)
     walls = _derive_walls(rooms_xy, sc)
 
-    # 세대 외곽 bbox(정규화 좌표 기준)
+    # 세대 외곽 bbox — 개별 폴리곤 bounds의 합집합 bbox(= unary_union.bounds와 동일).
+    #   union을 쓰면 V2V 예측 등 invalid 폴리곤에서 TopologyException → .bounds만 쓰므로 직접 계산(안전).
     if polys:
-        from shapely.ops import unary_union
-        ux0, uy0, ux1, uy1 = unary_union(polys).bounds
+        _bs = [p.bounds for p in polys]
+        ux0 = min(b[0] for b in _bs); uy0 = min(b[1] for b in _bs)
+        ux1 = max(b[2] for b in _bs); uy1 = max(b[3] for b in _bs)
     else:
         ux0, uy0, ux1, uy1 = 0.0, 0.0, 1.0, 1.0
     UW, UH = max(ux1 - ux0, 1.0), max(uy1 - uy0, 1.0)
