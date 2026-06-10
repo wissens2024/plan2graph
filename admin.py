@@ -528,17 +528,18 @@ if which.startswith("🏢"):
     rows = _aihub_manifest(_mpath.stat().st_size)
     AIHUB_LABEL = {
         ("use", "dual"): "✅ 사용 · dual(직접변환)",
-        ("use", "dual_dedup_merge"): "✅ 사용 · dual(중복라벨복구)",
+        ("use", "dual_dedup_merge"): "✅ 사용 · dual(직접변환)",   # 중복라벨복구 → dual로 통합(별 카테고리 제거)
         ("use", "v2v_str_recovered"): "✅ 사용 · 방만→V2V STR복구",
         ("use", "v2v_spa_recovered"): "✅ 사용 · 구조만→V2V SPA복구",
         ("fix", "convert_failed"): "🛠 보정필요 · 변환실패(dual)",
-        ("fix", "spa_only_pending"): "🛠 복구대상 · 방만(V2V 대기)",
-        ("fix", "str_only_pending"): "🛠 복구대상 · 구조만(V2V 대기)",
+        ("fix", "spa_only_pending"): "🛠 보정필요 · 방만(V2V 대기)",
+        ("fix", "str_only_pending"): "🛠 보정필요 · 구조만(V2V 대기)",
         ("fix", "objocr"): "🛠 보정필요 · OBJ/OCR만(공간라벨 없음)",
         ("excl", "nonfp"): "🚫 제외 · 비-FP(평면도 아님)",
-        ("excl", "duplicate"): "🔁 제외 · 중복(사본)",
+        ("excl", "duplicate"): "🚫 제외 · 중복(사본)",
     }
-    _AIHUB_ORDER = list(AIHUB_LABEL.values())
+    # 처분 버킷 접두어(✅사용/🛠보정필요/🚫제외)는 G검수(🧩)와 동일. 중복키 라벨은 1개로 dedup.
+    _AIHUB_ORDER = list(dict.fromkeys(AIHUB_LABEL.values()))
 
     def _albl(row):
         return AIHUB_LABEL.get((row["disposition"], row["reason"]),

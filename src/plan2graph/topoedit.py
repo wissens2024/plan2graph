@@ -1122,8 +1122,9 @@ def render_editor(show_title: bool = True) -> None:
     # 세대·도면 카운트는 정본 gline_status에서 직접 — 2차 회계 금지·한 화면 한 회계(상단 지표와 같은 소스).
     _gs = _ds2.gline_status(GRAPHS_DIR)
     # 라벨·이모지 = T 검수(🏢)와 동일 vocabulary(✅사용/🛠보정필요/🚫제외/✍보정완료).
+    # 처분 버킷 명칭 = T검수(🏢)와 동일(✅사용/🛠보정필요/🚫제외/✍보정완료/🆕미생성).
     _CATEMO = {"전체": "📋 전체", "todo": "🆕 미생성", "fix": "🛠 보정필요",
-               "use": "✅ 사용(자동)", "done": "✍ 보정완료", "excl": "🚫 제외"}
+               "use": "✅ 사용", "done": "✍ 보정완료", "excl": "🚫 제외"}
     _CATORDER = ["전체", "todo", "fix", "use", "done", "excl"]
 
     def _draw_n(c):   # 도면수: 변환 버킷=gline_status.draw, 미생성(todo)=소스 도면수
