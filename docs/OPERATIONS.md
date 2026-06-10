@@ -65,7 +65,7 @@ V2V/생성 튜닝(conf·imgsz·model·epochs·thresh)은 전부 **CLI 인자** �
 - **구조화 로그**: 긴 작업은 `nohup ... > logs/<job>.log 2>&1 &`. 끝에 요약(처리/채택/격리/오류 사유별). 이 로그 한 파일만 회신하면 진단 가능.
 - **run manifest**: release/eval은 manifest.json(파라미터·counts·날짜) 남김 → 무엇으로 돌렸는지 재현·비교.
 
-## 4. Mask R-CNN(V2V) 오류·튜닝 대응 — 가장 리스크 큰 단계
+## 4. YOLO-seg(V2V) 오류·튜닝 대응 — 가장 리스크 큰 단계 (※"Mask R-CNN"=옛 명칭, 실제=YOLO-seg)
 **단계적 게이트(각 단계서 멈춰 확인 → 큰 실패 조기 차단):**
 ```bash
 # 1) 학습셋 export 소량 + 좌표정렬 육안확인(노트북서 이미 검증한 방식)

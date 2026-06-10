@@ -9,7 +9,7 @@
 > 단순 room-door-room 그래프로는 정교한 도면 생성에 부족하다 → geometry-rich graph.
 
 ## 0. 2층 원칙
-- **Layer 1 (원시)** = 검출기(Mask R-CNN/YOLO)가 뽑고 **사람이 위상편집에서 교정**.
+- **Layer 1 (원시)** = 검출기(**YOLO-seg**, ultralytics)가 뽑고 **사람이 위상편집에서 교정**.
   편집·저장 단위(**SVG = 단일 진실**). 사람은 여기만 만진다.
 - **Layer 2 (파생)** = SVG에서 **추출기가 계산**한 geometry-rich graph(JSON). 모델 입력.
   **파생 필드는 사람이 입력하지 않는다**(중복·모순 방지). `topoedit.extract_topology` 확장.
@@ -32,15 +32,24 @@
 - 그래서 사용/보정필요 숫자는 시간에 따라 **계속 변한다** → 검수 화면 **분류 콤보에 도면·세대 숫자가 반드시 표시**돼야 한다.
 - 구현(`scripts/build_gline_auto.py`): `--stage svg`(① SVG 변환) · `--stage build`(② 빌드, 반복) · 무인자(①후②).
 
-## 1. 검출기 매핑 (현 환경 실제 클래스)
-| Layer1 요소 | 검출 | 클래스(config) | 품질 |
+## 1. 검출 기술 사용처 (R-CNN vs YOLO vs OCR — 실제 구현 기준)
+> ⚠️ **실제 구현 = YOLO-seg(ultralytics)** (`v2v_infer.py`·`yolo_train.py`, `from ultralytics import YOLO`).
+> 문서 일부의 "Mask R-CNN"은 **옛 계획 명칭**으로 실제와 불일치 → 본 표가 실제다. (Mask R-CNN은
+> STR(문) 약점 보강용 **앙상블 옵션**으로만 검토 — 새 학습 필요, 미구현.)
+
+| Layer1 요소 | **검출 기술** | 클래스(config) | 강/약 |
 |---|---|---|---|
-| room polygon | Mask R-CNN (SPA) | `공간_*` 13종 | mAP~0.90, 정밀 폴리곤 |
-| door | Mask R-CNN (STR) | `구조_출입문` | arc 폴리곤(방향 내재) |
-| window | Mask R-CNN (STR) | `구조_창호` | 발코니/실외기실 창호는 통로 승격 |
-| wall | (STR `구조_벽체` **약함**) | — | **검출 대신 방 폴리곤 경계서 유도** |
-| fixture | YOLO (OBJ) | `객체_{변기,세면대,싱크대,욕조,가스레인지}` | 박스 |
-| role hint | OCR | `OCR` | 사람 확정 |
+| room polygon | **YOLO-seg (SPA)** | `공간_*` 13종 | 강 (mAP~0.90, 정밀 폴리곤) |
+| door | **YOLO-seg (STR)** | `구조_출입문` | **약** → 강화 대상(해상도·용량·R-CNN 앙상블) |
+| window | **YOLO-seg (STR)** | `구조_창호` | **약**. 발코니/실외기실 창호는 통로 승격 |
+| wall | **기하 규칙**(검출 아님) | `구조_벽체`(검출 약함) | 안정 — **방 폴리곤 경계서 유도**(geomgraph) |
+| fixture | **YOLO (OBJ)** | `객체_{변기,세면대,싱크대,욕조,가스레인지}` | 박스 → 욕실/주방 역할 유도 |
+| role hint | **OCR (RapidOCR)** | `OCR`(방 이름)·치수(scale) | 보조 |
+| 문 연결·개방통로·발코니 | **기하 규칙**(`topology`) | — | door probe·open_passages·balcony |
+
+- **이미지만 있어도 성립**: 라벨 없는 도면도 `이미지 → YOLO-seg 검출 → Drawing → SVG → 빌드(그래프)`로 처리(objocr·str_only 흡수).
+- **union not replace**: 사람 검수 **실라벨이 있으면 그게 예측보다 정확 → 우선 사용**, 없으면 검출로 채움.
+- **T·G 공용 엔진**: 같은 V2V 검출 코드를 두 라인이 공유(T=라벨복구→그래프, G=검출→SVG→그래프).
 
 ## 2. Layer 1 — 원시 (SVG, 사람 교정)
 ```jsonc
