@@ -467,7 +467,9 @@ if which.startswith("🧩"):
     _c4[2].metric("🚫 제외", f"{_a['excl']:,}")
     _c4[3].metric("✍ 보정완료 (사람)", f"{_a['done']:,}")
     _c4[4].metric("📦 사용가능", f"{_a['usable_now']:,}", f"상한 {_a['usable_max']:,}")
-    st.caption(f"**G 단일 데이터셋 = staging/gline** (자동 베이스라인 + 사람 보정 한 폴더, ADR-0003). "
+    st.caption(f"**도면 {_a['n_drawings']:,} → 세대 {_a['total']:,}** (AI-Hub 한 도면=여러 세대 타일. "
+               f"위 숫자는 모두 **세대** 단위). "
+               f"**G 단일 데이터셋 = staging/gline** (자동+사람 보정 한 폴더, ADR-0003). "
                f"사용가능 {_a['usable_now']:,} = 자동 사용 {_a['use']:,} + 사람 보정완료 {_a['done']:,}. "
                f"보정필요 {_a['fix']:,} → 보정완료가 데이터를 키운다(증량). 제외 {_a['excl']:,}는 보증 불가. "
                "사람 보정은 아래 편집기에서 **보정완료**(corrected=true 저장).")

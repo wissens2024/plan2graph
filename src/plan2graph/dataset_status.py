@@ -128,8 +128,10 @@ def gline_status(graphs_dir: Path) -> dict:
     """G-라인 보정 회계(단일 소스 staging/gline) — corrected=true=보정완료(사람), 나머지=자동 분류.
     [[gline-correction-not-verification]]·[[gline-single-source]] 2축. 반환:
     {total, use, fix, excl, done, usable_now, usable_max, reasons, warns}."""
+    import re
     use = fix = excl = done = total = 0
     reasons, warns = Counter(), Counter()
+    drawings = set()                                   # 도면(시트) — 한 도면에 여러 세대 타일
     if graphs_dir.is_dir():
         for f in graphs_dir.glob("*.json"):
             try:
@@ -137,6 +139,7 @@ def gline_status(graphs_dir: Path) -> dict:
             except Exception:  # noqa: BLE001
                 continue
             total += 1
+            drawings.add(re.sub(r"_u\d+$", "", g.get("plan_id") or f.stem))
             if g.get("corrected"):
                 done += 1                          # 사람 보정완료 = 사용 확정
                 continue
@@ -154,7 +157,8 @@ def gline_status(graphs_dir: Path) -> dict:
                     warns[w] += 1
             else:
                 use += 1
-    return {"total": total, "use": use, "fix": fix, "excl": excl, "done": done,
+    return {"total": total, "n_drawings": len(drawings),
+            "use": use, "fix": fix, "excl": excl, "done": done,
             "usable_now": use + done, "usable_max": use + fix + done,
             "reasons": dict(reasons.most_common()), "warns": dict(warns.most_common())}
 
