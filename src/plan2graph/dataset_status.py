@@ -124,43 +124,149 @@ def scan_status(graphs_dir: Path) -> dict:
             "reasons": dict(reasons.most_common()), "by_id": by_id}
 
 
+def _gline_disp(g: dict) -> str:
+    """G 그래프 1건(세대) → 처분 1개 ∈ {done, use, fix, excl}. gline_status와 동일 규칙.
+    corrected=true=보정완료(사람), 나머지는 validation으로 자동 분류.
+    [[gline-correction-not-verification]]·[[gline-single-source]]."""
+    if g.get("corrected"):
+        return "done"                              # 사람 보정완료 = 사용 확정
+    v = g.get("validation") or {}
+    passed = v.get("passed")
+    if passed is None:                             # 옛 레코드 폴백
+        passed = (g.get("meta", {}).get("status") == "success")
+    if not passed:
+        return "excl"
+    if v.get("warnings"):
+        return "fix"
+    return "use"
+
+
 def gline_status(graphs_dir: Path) -> dict:
     """G-라인 보정 회계(단일 소스 staging/gline) — corrected=true=보정완료(사람), 나머지=자동 분류.
     [[gline-correction-not-verification]]·[[gline-single-source]] 2축. 반환:
-    {total, use, fix, excl, done, usable_now, usable_max, reasons, warns}."""
+    {total, use, fix, excl, done, usable_now, usable_max, reasons, warns,
+     draw:{use,fix,excl,done}, by_house:{HOUSE:{세대·도면 버킷}}}.
+    세대(json 1건)와 도면(plan_id에서 _u\\d+ 제거) 둘 다 집계 — T 정본과 같은 단위 병기."""
     import re
-    use = fix = excl = done = total = 0
+    cnt = Counter()                                    # 세대(unit) 버킷
     reasons, warns = Counter(), Counter()
-    drawings = set()                                   # 도면(시트) — 한 도면에 여러 세대 타일
+    # 도면(시트) 버킷 — 한 도면에 여러 세대 타일. 도면의 처분 = 그 세대들 중 우선순위 1개.
+    _DRAW_PRIO = {"excl": 0, "fix": 1, "done": 2, "use": 3}  # 작은 값이 우선(센 사유)
+    draw_disp: dict[str, str] = {}
+    house_unit: dict[str, Counter] = {}
+    house_draw_disp: dict[str, dict[str, str]] = {}
     if graphs_dir.is_dir():
         for f in graphs_dir.glob("*.json"):
             try:
                 g = json.loads(f.read_text(encoding="utf-8"))
             except Exception:  # noqa: BLE001
                 continue
-            total += 1
-            drawings.add(re.sub(r"_u\d+$", "", g.get("plan_id") or f.stem))
-            if g.get("corrected"):
-                done += 1                          # 사람 보정완료 = 사용 확정
-                continue
-            v = g.get("validation") or {}
-            passed = v.get("passed")
-            if passed is None:                     # 옛 레코드 폴백
-                passed = (g.get("meta", {}).get("status") == "success")
-            if not passed:
-                excl += 1
-                for r in v.get("reasons", []):
+            d = _gline_disp(g)
+            cnt[d] += 1
+            pid = g.get("plan_id") or f.stem
+            draw = re.sub(r"_u\d+$", "", pid)
+            house = pid.split("_")[0] if "_" in pid else "?"
+            house_unit.setdefault(house, Counter())[d] += 1
+            # 도면 대표 처분(전체·house별) — 우선순위 더 센 것으로 갱신
+            if draw not in draw_disp or _DRAW_PRIO[d] < _DRAW_PRIO[draw_disp[draw]]:
+                draw_disp[draw] = d
+            hd = house_draw_disp.setdefault(house, {})
+            if draw not in hd or _DRAW_PRIO[d] < _DRAW_PRIO[hd[draw]]:
+                hd[draw] = d
+            if d == "excl":
+                for r in (g.get("validation") or {}).get("reasons", []):
                     reasons[r] += 1
-            elif v.get("warnings"):
-                fix += 1
-                for w in v.get("warnings", []):
+            elif d == "fix":
+                for w in (g.get("validation") or {}).get("warnings", []):
                     warns[w] += 1
-            else:
-                use += 1
-    return {"total": total, "n_drawings": len(drawings),
+    use, fix, excl, done = cnt["use"], cnt["fix"], cnt["excl"], cnt["done"]
+    draw_cnt = Counter(draw_disp.values())
+    by_house = {}
+    for h, uc in house_unit.items():
+        dc = Counter(house_draw_disp.get(h, {}).values())
+        by_house[h] = {
+            "unit": {"use": uc["use"], "fix": uc["fix"], "excl": uc["excl"], "done": uc["done"]},
+            "draw": {"use": dc["use"], "fix": dc["fix"], "excl": dc["excl"], "done": dc["done"]},
+        }
+    return {"total": use + fix + excl + done, "n_drawings": len(draw_disp),
             "use": use, "fix": fix, "excl": excl, "done": done,
             "usable_now": use + done, "usable_max": use + fix + done,
+            "draw": {"use": draw_cnt["use"], "fix": draw_cnt["fix"],
+                     "excl": draw_cnt["excl"], "done": draw_cnt["done"]},
+            "by_house": by_house,
             "reasons": dict(reasons.most_common()), "warns": dict(warns.most_common())}
+
+
+def gline_plan_status(graphs_dir: Path) -> dict[str, str]:
+    """도면(plan_id, _u 제거) → 대표 처분 ∈ {use,fix,excl,done}. G 검수화면 분류 드롭다운용.
+    상단 지표(gline_status)와 같은 소스·같은 규칙 → 한 화면 두 회계 불일치 제거."""
+    import re
+    prio = {"excl": 0, "fix": 1, "done": 2, "use": 3}
+    out: dict[str, str] = {}
+    if graphs_dir.is_dir():
+        for f in graphs_dir.glob("*.json"):
+            try:
+                g = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                continue
+            draw = re.sub(r"_u\d+$", "", g.get("plan_id") or f.stem)
+            d = _gline_disp(g)
+            if draw not in out or prio[d] < prio[out[draw]]:
+                out[draw] = d
+    return out
+
+
+def aihub_t_status(manifest_path: Path) -> dict:
+    """T-라인 AI-Hub 회계(정본 manifest) — 처분 use/fix/excl, 도면·세대 병기, by_house.
+    gline_status와 같은 접근법(x['use']=세대, x['draw']['use']=도면)으로 종합 비교에서 동일 처리.
+    세대 규칙: use=Σlen(graph_ids), excl·duplicate=원본(dup_of) 세대수, 그 외=0(못 세면 0).
+    도면 = manifest 행 1개(받은 raw PNG 1장). [[dataset-essence-is-numbers-categories]]."""
+    rows = []
+    p = Path(manifest_path)
+    if p.exists():
+        for ln in p.read_text(encoding="utf-8").splitlines():
+            if ln.strip():
+                try:
+                    rows.append(json.loads(ln))
+                except Exception:  # noqa: BLE001
+                    continue
+    fp_units = {}                                  # 지문 → 세대수(graph 보유 행) — 중복본이 참조
+    for r in rows:
+        n = len(r.get("graph_ids") or [])
+        if n:
+            fp_units[r.get("fingerprint")] = n
+
+    def _units(r):                                 # 행 1개의 세대 수(사용자 확정 규칙)
+        n = len(r.get("graph_ids") or [])
+        if n:
+            return n
+        if r.get("reason") == "duplicate":         # 중복본 = 원본 세대수
+            return fp_units.get(r.get("dup_of"), 0)
+        return 0                                    # 변환 안 됨/평면도 아님 → 못 세면 0
+
+    draw, unit = Counter(), Counter()
+    house_draw: dict[str, Counter] = {}
+    house_unit: dict[str, Counter] = {}
+    for r in rows:
+        disp = r.get("disposition")
+        if disp not in ("use", "fix", "excl"):
+            continue
+        h = r.get("house") or "?"
+        n = _units(r)
+        draw[disp] += 1
+        unit[disp] += n
+        house_draw.setdefault(h, Counter())[disp] += 1
+        house_unit.setdefault(h, Counter())[disp] += n
+    by_house = {}
+    for h in set(house_draw) | set(house_unit):
+        dd, du = house_draw.get(h, Counter()), house_unit.get(h, Counter())
+        by_house[h] = {"draw": {k: dd[k] for k in ("use", "fix", "excl")},
+                       "unit": {k: du[k] for k in ("use", "fix", "excl")}}
+    return {"total": unit["use"] + unit["fix"] + unit["excl"],
+            "total_draw": draw["use"] + draw["fix"] + draw["excl"],
+            "use": unit["use"], "fix": unit["fix"], "excl": unit["excl"], "done": 0,
+            "draw": {"use": draw["use"], "fix": draw["fix"], "excl": draw["excl"], "done": 0},
+            "by_house": by_house}
 
 
 if __name__ == "__main__":

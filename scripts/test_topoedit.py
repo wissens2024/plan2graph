@@ -67,7 +67,7 @@ def main() -> None:
     assert out_png.exists() and out_png.stat().st_size > 0, "렌더 PNG 비어있음"
     print(f"[render] saved {out_png} ({out_png.stat().st_size}B)")
 
-    rec = te.to_record(st, status="검증완료", curator="test", notes="e2e", ts="2026-06-07 00:00:00")
+    rec = te.to_record(st, status="보정완료", curator="test", notes="e2e", ts="2026-06-07 00:00:00")
     p = te.save_record(rec)
     rec2 = te.load_record(unit_id)
     assert rec2, "재로드 None"
@@ -83,7 +83,7 @@ def main() -> None:
           f"edges={len(rec2['edges'])}; state 복원 OK")
 
     led = te.load_ledger()
-    assert led.get(unit_id, {}).get("status") == "검증완료", "ledger 미기록"
+    assert led.get(unit_id, {}).get("status") == "보정완료", "ledger 미기록"
     print(f"[ledger] {unit_id} → {led[unit_id]['status']}")
 
     print("\n✅ E2E PASS — 스캔·로드·편집·렌더·영속 전부 정상")

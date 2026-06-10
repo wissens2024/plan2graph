@@ -277,147 +277,6 @@ def _record(**kw):
     review.record_decision(base)
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# 🧩 위상 큐레이션 — extract2 자동추출을 원본 위에서 사람이 교정·검증 → gold 저장
-#   APT 전량 워크플로우(미검수/자동/검증완료/모호/제외). Phase0=표시·상태,
-#   Phase1=클릭 노드/엣지 편집(streamlit-image-coordinates 필요).
-# ════════════════════════════════════════════════════════════════════════════
-@st.cache_resource(max_entries=24, show_spinner="유닛 자동추출(extract2)...")
-def _gold_unit(sheet_id: str, unit_i: int):
-    """extract2.load_unit 캐시 — (dr, png, u_idx, G, n_units). G에 shapely poly 포함."""
-    from plan2graph import extract2
-    return extract2.load_unit(sheet_id, unit_i)
-
-
-def _curate_aihub():
-    import time as _time
-    from plan2graph import extract2, goldset
-
-    st.title("🧩 위상 큐레이션 (AI-Hub · APT)")
-    st.caption("자동추출(extract2)을 **원본 위에서** 사람이 교정·검증해 위상+기하를 최대 상세로 "
-               "gold 데이터셋에 담는다. 추출이 맞으면 [검증완료], 틀리면 교정 후 저장.")
-
-    units = goldset.load_index()
-    if not units:
-        st.warning("APT 유닛 인덱스가 없습니다. 서버에서 먼저:\n\n"
-                   "```\npython scripts/build_apt_index.py\n```")
-        return
-
-    led = goldset.load_ledger()
-    cnt = goldset.status_counts([u["unit_id"] for u in units])
-    done = cnt.get("검증완료", 0)
-    st.progress(done / max(1, len(units)),
-                text=f"검증완료 {done:,} / 전체 {len(units):,}  ·  "
-                     f"미검수 {cnt.get('미검수', 0):,} · 자동 {cnt.get('자동', 0):,} · "
-                     f"모호 {cnt.get('모호', 0):,} · 제외 {cnt.get('제외', 0):,}")
-
-    # ── 필터 + 네비게이션 ──
-    flt = st.sidebar.selectbox("상태 필터", ["전체"] + list(goldset.STATUSES), index=0)
-    pool = [u for u in units
-            if flt == "전체" or goldset.status_of(u["unit_id"], led) == flt]
-    if not pool:
-        st.info(f"'{flt}' 상태인 유닛이 없습니다.")
-        return
-    st.sidebar.caption(f"필터 결과: {len(pool):,}개 (방수 오름차순)")
-
-    if "cur_i" not in st.session_state:
-        st.session_state.cur_i = 0
-    st.session_state.cur_i = max(0, min(st.session_state.cur_i, len(pool) - 1))
-
-    c1, c2, c3 = st.sidebar.columns(3)
-    if c1.button("◀ 이전"):
-        st.session_state.cur_i = max(0, st.session_state.cur_i - 1)
-    if c2.button("다음 ▶"):
-        st.session_state.cur_i = min(len(pool) - 1, st.session_state.cur_i + 1)
-    if c3.button("⏭ 미검수"):
-        nxt = next((k for k in range(st.session_state.cur_i + 1, len(pool))
-                    if goldset.status_of(pool[k]["unit_id"], led) == "미검수"), None)
-        if nxt is not None:
-            st.session_state.cur_i = nxt
-    sel_uid = st.sidebar.selectbox(
-        "유닛 직접 선택", [u["unit_id"] for u in pool], index=st.session_state.cur_i,
-        format_func=lambda x: f"{x}  [{goldset.status_of(x, led)}]")
-    st.session_state.cur_i = [u["unit_id"] for u in pool].index(sel_uid)
-
-    u = pool[st.session_state.cur_i]
-    uid, sid, ui = u["unit_id"], u["sheet_id"], u["unit_i"]
-    st.markdown(f"### {uid}  ·  방 {u['n_rooms']}개  ·  "
-                f"상태 **{goldset.status_of(uid, led)}**  "
-                f"({st.session_state.cur_i + 1}/{len(pool)})")
-
-    # ── 자동추출 + 원본∥오버레이 ──
-    try:
-        dr, png, u_idx, G, n_units = _gold_unit(sid, ui)
-    except Exception as e:
-        st.error(f"추출 실패: {e}")
-        st.exception(e)
-        return
-    st.caption(f"유닛 {ui}/{n_units - 1} · 방노드 {len(u_idx)} · "
-               f"dr: rooms={len(dr.rooms)} doors={len(dr.doors)} "
-               f"windows={len(dr.windows)} objects={len(dr.objects)} texts={len(dr.texts)}")
-    if len(dr.objects) == 0:
-        st.warning("⚠ OBJ(기구) 0개 — 욕실/화장실·주방 역할 유도 신호 없음. "
-                   "이 시트는 OBJ 미병합(V2V 복구 대상)일 수 있음.")
-
-    st.pyplot(extract2.render_review(dr, png, G), clear_figure=True)
-
-    # ── 추출 결과 표(노드·엣지) ──
-    cc1, cc2 = st.columns(2)
-    with cc1:
-        st.markdown("**노드(공간)**")
-        st.dataframe([{"id": n, "base": G.nodes[n]["base"], "role": G.nodes[n]["role"],
-                       "면적㎡": G.nodes[n].get("area"),
-                       "기구": ",".join(G.nodes[n].get("fx", []))} for n in G],
-                     use_container_width=True, height=240)
-    with cc2:
-        st.markdown("**엣지(연결)**")
-        st.dataframe([{"a": G.nodes[a]["role"], "b": G.nodes[b]["role"],
-                       "via": d["via"]} for a, b, d in G.edges(data=True)],
-                     use_container_width=True, height=240)
-        bb = sum(1 for a, b in G.edges
-                 if G.nodes[a]["base"] == "침실" and G.nodes[b]["base"] == "침실")
-        st.caption(f"침실-침실 직접연결: **{bb}** (0이 정상 — 복도/전실 경유여야)")
-
-    st.info("✏️ 클릭 기반 노드/엣지 교정은 **Phase 1**(서버에 `streamlit-image-coordinates` "
-            "설치 후). 지금은 추출이 정확한 유닛을 [검증완료]로 gold 저장할 수 있습니다.")
-
-    # ── 결정(상태 + gold 저장) ──
-    note = st.text_input("메모(모호·교정필요 사유 등)", key=f"note_{uid}")
-    b1, b2, b3, b4 = st.columns(4)
-
-    def _save(status):
-        rec = goldset.build_record(uid, sid, ui, dr, G, house=u.get("house", "APT"),
-                                   status=status, curator="admin", notes=note,
-                                   verified_at=_time.strftime("%Y-%m-%d %H:%M:%S"))
-        goldset.save_record(rec)
-        goldset.set_status(uid, status, curator="admin", notes=note,
-                           at=_time.strftime("%Y-%m-%d %H:%M:%S"))
-
-    if b1.button("✅ 검증완료(저장)", type="primary"):
-        _save("검증완료")
-        st.session_state.cur_i = min(len(pool) - 1, st.session_state.cur_i + 1)
-        st.rerun()
-    if b2.button("🤔 모호(보류)"):
-        goldset.set_status(uid, "모호", curator="admin", notes=note,
-                           at=_time.strftime("%Y-%m-%d %H:%M:%S"))
-        st.rerun()
-    if b3.button("🚫 제외"):
-        goldset.set_status(uid, "제외", curator="admin", notes=note,
-                           at=_time.strftime("%Y-%m-%d %H:%M:%S"))
-        st.rerun()
-    if b4.button("💾 자동저장(미확정)"):
-        _save("자동")
-        st.toast("자동추출 레코드 저장(검증 전)")
-
-    existing = goldset.load_record(uid)
-    if existing:
-        with st.expander(f"▸ 저장된 gold 레코드 보기 ({existing['meta']['status']})"):
-            st.json({"meta": existing["meta"],
-                     "n_nodes": len(existing["nodes"]),
-                     "n_edges": len(existing["edges"]),
-                     "node0": existing["nodes"][0] if existing["nodes"] else None})
-
-
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
 st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
 _MENU = ["🧮 종합 현황",
@@ -445,8 +304,7 @@ except ModuleNotFoundError:
     which = st.sidebar.radio("메뉴", _MENU, index=0, label_visibility="collapsed")
 
 # ════════════════════════════════════════════════════════════════════════════
-# ✏️ 위상 편집(신규) — 원본 위에서 사람이 위상 직접 구축(자동추론 0) → gold
-#   기존 자동추출(extract2)·골드(goldset) 미사용. 자체 데이터 소스(독립).
+# 🧩 AI-Hub 검수 (G) — 원본 위에서 사람이 위상 직접 구축(자동추론 0) → staging/gline
 # ════════════════════════════════════════════════════════════════════════════
 if which.startswith("🧩"):
     from plan2graph import topoedit
@@ -459,7 +317,9 @@ if which.startswith("🧩"):
     def _gline_acct(_sig):
         return _ds.gline_status(_te.GRAPHS_DIR)
     _gd = _te.GRAPHS_DIR
-    _sig = (len(list(_gd.glob("*.json"))), int(_gd.stat().st_mtime)) if _gd.exists() else (0, 0)
+    # schema 태그("g2")는 회계 dict 키 추가 시 캐시 무효화용 — _sig가 동일해도
+    # 콜리(gline_status)의 반환 스키마가 바뀌면 stale 캐시로 KeyError가 나므로 버전 고정.
+    _sig = ("g2", len(list(_gd.glob("*.json"))), int(_gd.stat().st_mtime)) if _gd.exists() else ("g2", 0, 0)
     _a = _gline_acct(_sig)
     _c4 = st.columns(5)
     _c4[0].metric("✅ 사용 (자동)", f"{_a['use']:,}")
@@ -467,8 +327,11 @@ if which.startswith("🧩"):
     _c4[2].metric("🚫 제외", f"{_a['excl']:,}")
     _c4[3].metric("✍ 보정완료 (사람)", f"{_a['done']:,}")
     _c4[4].metric("📦 사용가능", f"{_a['usable_now']:,}", f"상한 {_a['usable_max']:,}")
+    _dw = _a.get("draw", {})
     st.caption(f"**도면 {_a['n_drawings']:,} → 세대 {_a['total']:,}** (AI-Hub 한 도면=여러 세대 타일. "
-               f"위 숫자는 모두 **세대** 단위). "
+               f"위 지표는 모두 **세대** 단위). "
+               f"**도면 기준**: 사용 {_dw.get('use',0):,} · 보정필요 {_dw.get('fix',0):,} · "
+               f"제외 {_dw.get('excl',0):,} · 보정완료 {_dw.get('done',0):,}. "
                f"**G 단일 데이터셋 = staging/gline** (자동+사람 보정 한 폴더, ADR-0003). "
                f"사용가능 {_a['usable_now']:,} = 자동 사용 {_a['use']:,} + 사람 보정완료 {_a['done']:,}. "
                f"보정필요 {_a['fix']:,} → 보정완료가 데이터를 키운다(증량). 제외 {_a['excl']:,}는 보증 불가. "
@@ -485,43 +348,50 @@ if which.startswith("🧮"):
 
     st.title("🧮 검수 현황(종합)")
 
-    # ── 데이터셋 기본 비교: T-라인 vs G-라인 (세대 단위·같은 위치) ──
-    #   세대 = 데이터셋 예제 단위(한 도면=여러 세대 타일). 여기는 '세대'로 통일해 직접 비교.
-    from plan2graph import topoedit as _te, sources as _src
-    import re as _re
+    # ── 데이터셋 기본 비교: T-라인 vs G-라인 (같은 처분 버킷·도면+세대 병기) ──
+    #   정본 = T manifest 처분(사용/보정필요/제외). G도 같은 버킷·규칙으로 정렬해 직접 비교.
+    #   세대 규칙: 못 세면 0, 제외·중복은 원본 세대수(dataset_status.aihub_t_status).
+    from plan2graph import topoedit as _te
+    import pandas as _pd
+    _tman = config.DATA_DIR / "staging" / "aihub" / "manifest.jsonl"
 
     @st.cache_data(show_spinner="라인 비교 집계...")
-    def _line_compare(_gsig, _tsig):
+    def _line_acct(_gsig, _tsig):
         from plan2graph import dataset_status as _ds
-        g = _ds.gline_status(_te.GRAPHS_DIR)                  # G: 세대 단위 전량 분류
-        tdir = _src.graphs_dir("aihub")                      # T: 채택(사용) 세대만 보관
-        tu, td = 0, set()
-        if tdir.is_dir():
-            for f in tdir.glob("*.json"):
-                tu += 1
-                td.add(_re.sub(r"_u\d+$", "", f.stem))
-        return g, tu, len(td)
+        return _ds.aihub_t_status(_tman), _ds.gline_status(_te.GRAPHS_DIR)
     _gn = len(list(_te.GRAPHS_DIR.glob("*.json"))) if _te.GRAPHS_DIR.exists() else 0
-    _tdir = _src.graphs_dir("aihub")
-    _tn = len(list(_tdir.glob("*.json"))) if _tdir.is_dir() else 0
-    _g, _tu, _td = _line_compare(_gn, _tn)
+    _tn = _tman.stat().st_size if _tman.exists() else 0
+    _t, _g = _line_acct(_gn, _tn)
 
-    st.markdown("#### 데이터셋 비교 — **세대 단위**")
-    _ct, _cg = st.columns(2)
-    with _ct:
-        st.markdown("**T-라인** · 자동변환(채택만 보관)")
-        st.caption(f"도면 {_td:,} → 세대 {_tu:,}")
-        st.metric("✅ 사용 세대", f"{_tu:,}")
-        st.caption("보정/제외 세대는 보관 안 함(채택 시 가르고 버림)")
-    with _cg:
-        st.markdown("**G-라인 (g0)** · 전량 분류 보관")
-        st.caption(f"도면 {_g['n_drawings']:,} → 세대 {_g['total']:,}")
-        _c3 = st.columns(3)
-        _c3[0].metric("✅ 사용", f"{_g['use']:,}")
-        _c3[1].metric("🛠 보정필요", f"{_g['fix']:,}")
-        _c3[2].metric("🚫 제외", f"{_g['excl']:,}")
-    st.caption("※ 위는 **세대**(데이터셋 기본 단위). T는 채택(사용)만 남겨 비교 숫자가 사용 세대뿐이고, "
-               "G는 전량을 사용/보정필요/제외로 분류해 보관. 도면=원본 시트(여러 세대 타일).")
+    st.markdown("#### 데이터셋 비교 — T-라인 vs G-라인 (**같은 처분 · 도면+세대 병기**)")
+    _HOUSE_KO = {"APT": "APT(아파트)", "DEH": "DEH(단독주택)", "ROW": "ROW(연립주택)"}
+    _hf = st.selectbox("거주형태", ["전체", "APT", "DEH", "ROW"],
+                       format_func=lambda k: "전체" if k == "전체" else _HOUSE_KO.get(k, k),
+                       key="cmp_house")
+
+    def _cell(acct, bucket, kind):                    # kind: 'draw'(도면) | 'unit'(세대)
+        if _hf == "전체":
+            return acct.get("draw", {}).get(bucket, 0) if kind == "draw" else acct.get(bucket, 0)
+        return acct.get("by_house", {}).get(_hf, {}).get(kind, {}).get(bucket, 0)
+
+    _BUCKETS = [("use", "✅ 사용"), ("fix", "🛠 보정필요"),
+                ("excl", "🚫 제외"), ("done", "✍ 보정완료(사람)")]
+    _rows = []
+    for _bk, _bl in _BUCKETS + [("__tot__", "합계")]:
+        if _bk == "__tot__":
+            _td_, _tu_, _gd_, _gu_ = (sum(_cell(_t, b, "draw") for b, _ in _BUCKETS),
+                                      sum(_cell(_t, b, "unit") for b, _ in _BUCKETS),
+                                      sum(_cell(_g, b, "draw") for b, _ in _BUCKETS),
+                                      sum(_cell(_g, b, "unit") for b, _ in _BUCKETS))
+        else:
+            _td_, _tu_ = _cell(_t, _bk, "draw"), _cell(_t, _bk, "unit")
+            _gd_, _gu_ = _cell(_g, _bk, "draw"), _cell(_g, _bk, "unit")
+        _rows.append({"처분": _bl, "T 도면": f"{_td_:,}", "T 세대": f"{_tu_:,}",
+                      "G 도면": f"{_gd_:,}", "G 세대": f"{_gu_:,}"})
+    st.dataframe(_pd.DataFrame(_rows), hide_index=True, use_container_width=True)
+    st.caption("같은 처분 버킷·도면+세대 병기로 직접 비교. **T 세대**: 사용=Σ변환세대 · 제외·중복=원본 세대수 · "
+               "보정필요=0(미변환이라 못 셈). **G**: 자동생성 그래프 전량을 같은 규칙으로 분류. "
+               "보정완료(사람)=증량분(T는 아직 없음). 도면=받은 원본 시트(여러 세대 타일).")
     st.divider()
 
     st.caption("아래 — **도면(받은 원본) 단위** · AI-Hub · CubiCasa5k · RPLAN 처분 비교. "
@@ -638,17 +508,19 @@ if which.startswith("🏢"):
     st.title("🏢 AI-Hub 검수 (T) — 자동변환 그래프")
     _aim_t = config.DATA_DIR / "staging" / "aihub" / "manifest.jsonl"
     if _aim_t.exists():
+        from plan2graph import dataset_status as _dst
         @st.cache_data(show_spinner=False)
         def _aih_disp_t(_sz):
-            from collections import Counter as _Ctr
-            return dict(_Ctr(json.loads(_l)["disposition"]
-                             for _l in _aim_t.read_text(encoding="utf-8").splitlines() if _l.strip()))
+            return _dst.aihub_t_status(_aim_t)        # 도면+세대·처분 (정본 회계)
         _dt = _aih_disp_t(_aim_t.stat().st_size)
+        _dwt = _dt.get("draw", {})
         _ct = st.columns(3)
-        _ct[0].metric("✅ 사용", f"{_dt.get('use', 0):,}")
-        _ct[1].metric("🛠 보정 필요", f"{_dt.get('fix', 0):,}")
-        _ct[2].metric("🚫 제외", f"{_dt.get('excl', 0):,}")
-        st.caption("변환 완성도 레버(자동): ② 기하룰(개방통로·발코니·문매칭) · ③ 임계(간격·비율) · "
+        _ct[0].metric("✅ 사용", f"{_dwt.get('use', 0):,}", f"세대 {_dt.get('use', 0):,}", delta_color="off")
+        _ct[1].metric("🛠 보정 필요", f"{_dwt.get('fix', 0):,}", f"세대 {_dt.get('fix', 0):,}", delta_color="off")
+        _ct[2].metric("🚫 제외", f"{_dwt.get('excl', 0):,}", f"세대 {_dt.get('excl', 0):,}", delta_color="off")
+        st.caption(f"위 큰 숫자=**도면**(받은 원본), 아래=**세대**. 합 도면 {_dt.get('total_draw',0):,} · "
+                   f"세대 {_dt.get('total',0):,} (사용=Σ변환세대·제외 중복=원본 세대수·보정필요=0). "
+                   "변환 완성도 레버(자동): ② 기하룰(개방통로·발코니·문매칭) · ③ 임계(간격·비율) · "
                    "④ 무결성 기준(R1~R5) · ① 검출 재학습(V2V/STR) · 라벨 합집합 재변환 → 보정필요를 사용으로.")
     st.caption("AI-Hub 도면을 원본 PNG로 확인 — 채택분(dual)·제외분(부분/완전배제) 사유 육안 검증.")
     if not config.RAW_SOURCE_ROOT.is_dir():

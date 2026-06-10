@@ -64,7 +64,7 @@ def main() -> None:
     assert G.has_edge(target.id, conn), "사람표시 open 연결 미반영"
     assert G.number_of_edges() >= 1, "문 엣지 0(추출 실패)"
 
-    p = te.save_svg(st, dr, status="검증완료", curator="test", ts="2026-06-07 00:00:00")
+    p = te.save_svg(st, dr, status="보정완료", curator="test", ts="2026-06-07 00:00:00")
     assert p.exists() and p.suffix == ".svg"
     re_regions, _, _ = te.parse_svg(p.read_text(encoding="utf-8"))
     assert len(re_regions) == len(regions), "저장 SVG 재파싱 불일치"

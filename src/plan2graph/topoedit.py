@@ -10,7 +10,7 @@
   - 원시 라벨(SPA/STR/OBJ/OCR)과 PNG만 읽는다. coco·geometry 파서는 '데이터 판독'이지
     추론이 아니다(폴리곤화까지만). 위상은 전부 사람이 만든다.
   - 노드 = 라벨된 방(원시). 엣지 = 빈 상태에서 시작 → 사람이 연결공간·문·역할을 박는다.
-  - 결과는 신규 포맷(topo-human-v1)으로 data/staging/topo_human/ 에 저장(기존 골드와 분리).
+  - 결과는 신규 포맷(topo-human-v1)으로 data/staging/gline/ 에 저장(단일 진실, ADR-0003).
 
 구성: 데이터 로더 · 편집 상태/연산(순수) · 영속 · matplotlib 렌더(헤드리스) · Streamlit 화면.
 """
@@ -49,7 +49,7 @@ DRAW_BASES = ("복도", "전실", "발코니", "다목적공간", "실외기실"
               "기타", "거실", "주방", "침실", "화장실", "현관")
 VIA_KINDS = ("door", "open")   # via 도메인(자동 도출값). door=탐지된 문 사이, open=문 없음.
 #   사람이 고르지 않음 — derive_via가 문 테이블 조인으로 결정(corridor/entrance는 폐기).
-STATUSES = ("미검수", "검증완료", "모호", "제외")
+STATUSES = ("미검수", "보정완료", "모호", "제외")
 # 사람이 지정하는 역할(라벨 base에서 세분) — 욕실/화장실, 안방/침실, 전용 등
 ROLES = ("거실", "주방", "현관", "침실", "안방", "화장실", "욕실", "전용화장실",
          "전용욕실", "드레스룸", "파우더룸", "발코니", "실외기실", "다목적공간", "복도", "전실",
@@ -495,19 +495,19 @@ def write_svg(st: State, dr: Drawing) -> Path:
     return p
 
 
-def save_svg(st: State, dr: Drawing, *, status: str = "검증완료",
+def save_svg(st: State, dr: Drawing, *, status: str = "보정완료",
              curator: str = "", notes: str = "", ts: str | None = None) -> Path:
-    """SVG 기록 + 상태(ledger) 기록 + (검증완료면) 그래프 저장 → '사용' 그래프 +1."""
+    """SVG 기록 + 상태(ledger) 기록 + (보정완료면) 그래프 저장 → '사용' 그래프 +1."""
     p = write_svg(st, dr)
     set_status(st.plan_id, status, curator=curator, notes=notes,
                ts=ts or datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    if status == "검증완료":
+    if status == "보정완료":
         save_graph(st, dr)
     return p
 
 
 def save_graph(st: State, dr: Drawing) -> Path:
-    """검증완료 → geometry-rich 그래프 1건 저장(= '사용' 그래프 데이터셋에 추가). corrected=True."""
+    """보정완료 → geometry-rich 그래프 1건 저장(= '사용' 그래프 데이터셋에 추가). corrected=True."""
     from . import geomgraph
     GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
     g = geomgraph.build(st, dr)
@@ -536,7 +536,7 @@ def _ring(poly) -> list:
         return []
 
 
-def to_record(st: State, *, status: str = "검증완료", curator: str = "",
+def to_record(st: State, *, status: str = "보정완료", curator: str = "",
               notes: str = "", ts: str | None = None) -> dict:
     nodes = [{
         "id": n.id, "base": n.base, "role": n.role,
@@ -1107,29 +1107,24 @@ def render_editor(show_title: bool = True) -> None:
         return _ahs.load(recs[s])
     _src_tag = "aihub"
 
-    # ── 분류(검수 카테고리) — 카테고리로 작업 큐 선택 + 카테고리별 숫자 ──
+    # ── 분류(처분 카테고리) — 상단 지표와 같은 소스(gline_status)로 통일. 한 화면 두 회계 금지.
+    #   도면별 처분 = gline_plan_status(그래프 validation·corrected). 그래프 없는 도면 = 미생성.
+    #   버킷 어휘·계산을 T 정본(사용/보정필요/제외)과 일치 → 비교 가능. [[gline-single-source]]
     from collections import Counter as _Ctr
-    _gids = {p.stem for p in GRAPHS_DIR.glob("*.json")} if GRAPHS_DIR.exists() else set()
-    _sids = {p.stem for p in REC_DIR.glob("*.svg")} if REC_DIR.exists() else set()
-    _eids = {u for u, r in load_ledger().items() if r.get("status") == "제외"}
+    from plan2graph import dataset_status as _ds2
+    _pdisp = _ds2.gline_plan_status(GRAPHS_DIR)        # {도면: use/fix/excl/done}
 
     def _plan_cat(pid):
-        if any(u.startswith(pid + "_u") for u in _gids):
-            return "검증완료(사용)"
-        if any(u.startswith(pid + "_u") for u in _eids):
-            return "제외"
-        if any(u.startswith(pid + "_u") for u in _sids):
-            return "보정중"
-        return "미검수"
+        return _pdisp.get(pid, "todo")                # 그래프 미생성 = 작업 대기
 
     _allids = ids
     _catcnt = _Ctr(_plan_cat(p) for p in _allids)
-    # 카테고리 라벨 — T(AI-Hub 검수 T)와 동일한 이모지·버킷 vocabulary로 통일.
-    # (값은 _plan_cat의 bare key 유지 → 필터 로직 불변, 표시만 정렬)
-    _CATEMO = {"전체": "📋 전체", "미검수": "🆕 미검수", "보정중": "🛠 보정중",
-               "검증완료(사용)": "✅ 사용(검증완료)", "제외": "🚫 제외"}
+    # 라벨·이모지 = T 검수(🏢)와 동일 vocabulary(✅사용/🛠보정필요/🚫제외/✍보정완료).
+    _CATEMO = {"전체": "📋 전체", "todo": "🆕 미생성", "fix": "🛠 보정필요",
+               "use": "✅ 사용(자동)", "done": "✍ 보정완료", "excl": "🚫 제외"}
+    _CATORDER = ["전체", "todo", "fix", "use", "done", "excl"]
     _catf = c_cat.selectbox(
-        "분류", ["전체", "미검수", "보정중", "검증완료(사용)", "제외"],
+        "분류", _CATORDER,
         key="te_catf",
         format_func=lambda c: (f"{_CATEMO['전체']} ({len(_allids):,})" if c == "전체"
                                else f"{_CATEMO.get(c, c)} ({_catcnt.get(c, 0):,})"))
@@ -1179,10 +1174,10 @@ def render_editor(show_title: bool = True) -> None:
         t3.metric("방·연결·엣지 · 면적", f"{nroom}·{nconn}·{len(stt.edges)} · {tot_m2:.0f}㎡")
     else:
         t3.metric("방 · 연결공간 · 엣지", f"{nroom} · {nconn} · {len(stt.edges)}")
-    tb1, tb2 = t4.columns(2)                       # 검증완료·처음부터 한 줄
-    if tb1.button("검증완료", use_container_width=True):
-        save_svg(stt, dr, status="검증완료", curator="admin")
-        st.toast("검증완료로 저장")
+    tb1, tb2 = t4.columns(2)                       # 보정완료·처음부터 한 줄
+    if tb1.button("보정완료", use_container_width=True):
+        save_svg(stt, dr, status="보정완료", curator="admin")
+        st.toast("보정완료로 저장")
     if tb2.button("처음부터", use_container_width=True):
         delete_record(unit_id)
         states.pop(unit_id, None)
