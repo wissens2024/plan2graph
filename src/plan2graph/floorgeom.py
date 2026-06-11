@@ -146,23 +146,30 @@ def layout_stats(G, rects=None):
     }
 
 
-def _shared_edge(r1, r2):
-    """두 사각형이 공유하는 벽 구간 → ('v'|'h', 좌표, lo, hi) 또는 None."""
+def share_wall(r1, r2, min_len=0.3, coincide=1e-3):
+    """두 사각형 (x,y,w,h)이 공유하는 벽 구간 → ('v'|'h', 좌표, lo, hi) 또는 None.
+    **인접 판정 단일정의** — 측정(cadrender.verify)과 최적화(realizer) 둘 다 이 함수를 쓴다(nail 4).
+    min_len·coincide 단위는 입력 좌표계(m 또는 px)."""
     x1, y1, w1, h1 = r1
     x2, y2, w2, h2 = r2
     # 수직 벽(좌우로 인접): x 경계 일치 + y 겹침
     for xa, xb in ((x1 + w1, x2), (x2 + w2, x1)):
-        if abs(xa - xb) < 1e-3:
+        if abs(xa - xb) < coincide:
             lo, hi = max(y1, y2), min(y1 + h1, y2 + h2)
-            if hi - lo > 0.3:
+            if hi - lo > min_len:
                 return ("v", xa, lo, hi)
     # 수평 벽(상하로 인접): y 경계 일치 + x 겹침
     for ya, yb in ((y1 + h1, y2), (y2 + h2, y1)):
-        if abs(ya - yb) < 1e-3:
+        if abs(ya - yb) < coincide:
             lo, hi = max(x1, x2), min(x1 + w1, x2 + w2)
-            if hi - lo > 0.3:
+            if hi - lo > min_len:
                 return ("h", ya, lo, hi)
     return None
+
+
+def _shared_edge(r1, r2):
+    """treemap(m 단위) 인접 — share_wall의 m-기본값 래퍼(기존 호출 보존)."""
+    return share_wall(r1, r2, min_len=0.3, coincide=1e-3)
 
 
 def render_floorplan_fig(G, title: str = "", width=12.0, height=9.0):

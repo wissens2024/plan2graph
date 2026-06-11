@@ -1469,17 +1469,43 @@ if which.startswith("📗"):
             st.caption(f"방 구성(program): {prog}")
             rooms = _gc.program_to_rooms(prog, _priors())
             edges = _gc.convention_edges(rooms)
-            boxes = _gc.correct(rooms, edges)
+            from plan2graph import rules_arch as _ra          # T-라인과 동일 arch 룰엔진
+            rooms, edges, _archfx = _ra.apply_arch_program(rooms, edges)
+            if _archfx:
+                st.caption("🏛 건축관행 룰 적용: " + " · ".join(_archfx))
+            # 🤖 학습된 생성형 기하 AI(geom_g0, G 실측 학습)가 좌표 생성 — treemap 아님
+            @st.cache_resource(show_spinner="기하 AI 로드(geom_g0)...")
+            def _geom_net():
+                return _gg.load("geom_g0")
+            boxes = _gg.generate(_geom_net(), rooms)
             v = _gc.verify(rooms, edges, boxes)
             st.image(_gg.render(rooms, boxes),
-                     caption=f"자기교정 도면 — 방 {len(rooms)} · 인접실현 "
+                     caption=f"🤖 생성형 AI 도면(geom_g0) — 방 {len(rooms)} · 인접실현 "
                              f"{v['adj_rate']*100:.0f}% · 겹침 {v['n_overlap']}")
             c1, c2, c3 = st.columns(3)
             c1.metric("방 수", len(rooms))
             c2.metric("인접 실현율", f"{v['adj_rate']*100:.0f}%")
             c3.metric("겹침", v["n_overlap"])
-            st.caption("g0(실측 21,613세대) 면적 prior + 관례 인접 → squarified 자기교정. "
-                       "인접 미실현 쌍은 위상 라우팅 대상(2층 자기교정).")
+            st.caption("**학습된 기하 AI(geom_g0)가 좌표 생성** → 공용 verify·자기교정·DXF. "
+                       "treemap 아님. 출력이 거칠면 = 학습 개선 대상(2층 자기교정·재학습).")
+
+            # 🖼 공용코어(cadrender) 경로 — T와 **동일 verify+자기교정+DXF** (G 완성)
+            from plan2graph import cadrender as _cr
+            _geom = _cr.autocorrect(_cr.from_floorgeom(rooms, boxes, edges))
+            st.markdown("**🖼 생성형 도면 / 📐 AutoCAD** (T와 동일 공용코어 — 같은 자로 비교)")
+            _gc1, _gc2 = st.columns([3, 1])
+            _gc1.pyplot(_cr.render_fig(_geom), clear_figure=True)
+            with _gc2:
+                try:
+                    st.download_button("📐 AutoCAD(DXF)", _cr.render_dxf(_geom),
+                                       file_name="gline_plan.dxf", mime="application/dxf")
+                except RuntimeError as _e:
+                    st.caption(f"DXF 불가: {_e}")
+            with st.expander(f"🔧 자기교정 {len(_geom.correct_log)}바퀴 · 잔여 {len(_geom.issues)}건"):
+                for _rd in _geom.correct_log:
+                    st.caption(f"{_rd['iter']}바퀴: 검출 {len(_rd['found'])} · 수정 {len(_rd['fixed'])}")
+                for _is in _geom.issues:
+                    st.caption(f"　🔎 잔여: {_is}")
         except Exception as e:  # noqa: BLE001
             st.error(f"기하 생성 실패: {e}")
 

@@ -24,18 +24,22 @@ import config  # noqa: E402
 from plan2graph.topology import EXTERIOR, _space_nodes  # noqa: E402
 from plan2graph.rules import check_integrity  # noqa: E402
 from plan2graph.rules_legal import check_legal  # noqa: E402
+from plan2graph import rules_arch  # noqa: E402
 
 HABITABLE = ("거실", "침실")
 
 
 def verify(G: nx.Graph) -> dict:
-    """규제 AI 검증: 위상 무결성 + 법규. 위반 목록 통합."""
+    """규제 AI 검증: 위상 무결성 + 법규 + 건축관행(arch). 위반 목록 통합."""
     integ = check_integrity(G)
     legal = check_legal(G)
+    arch = rules_arch.check_arch(G)
     v = [{"kind": "integrity", **x} for x in integ["violations"]]
     v += [{"kind": "legal", **x} for x in legal["violations"]]
+    v += [{"kind": "arch", **x} for x in arch]
     return {"passed": len(v) == 0, "n": len(v), "violations": v,
-            "integrity_ok": integ["passed"], "legal_ok": legal["passed"]}
+            "integrity_ok": integ["passed"], "legal_ok": legal["passed"],
+            "arch_ok": len(arch) == 0}
 
 
 def local_repair(G: nx.Graph, rng: random.Random, adj_score=None) -> list[str]:
@@ -76,12 +80,14 @@ def generate_compliant(gen_fn, program: dict, max_tries: int = 5,
     best, best_v, history = None, 1e9, []
     for attempt in range(max_tries):
         G = gen_fn(program, rng)
+        v_raw = verify(G)                                  # 생성 직후(arch 반영 전)
+        arch_fixes = rules_arch.apply_arch(G) if repair else []   # A5 확장정책·A4·A2 반영
         v0 = verify(G)
         fixes = local_repair(G, rng, adj_score) if (repair and not v0["passed"]) else []
         v1 = verify(G)
-        history.append({"attempt": attempt, "violations_before": v0["n"],
-                        "fixes": fixes, "violations_after": v1["n"],
-                        "passed": v1["passed"]})
+        history.append({"attempt": attempt, "violations_before": v_raw["n"],
+                        "arch_fixes": arch_fixes, "fixes": fixes,
+                        "violations_after": v1["n"], "passed": v1["passed"]})
         if v1["n"] < best_v:
             best, best_v = G, v1["n"]
         if v1["passed"]:
@@ -130,7 +136,7 @@ if __name__ == "__main__":
     print("program:", cg["program"])
     for h in hist:
         print(f"  시도{h['attempt']}: 위반 {h['violations_before']}→{h['violations_after']} "
-              f"수정={h['fixes']} 통과={h['passed']}")
+              f"arch={h.get('arch_fixes', [])} 수정={h['fixes']} 통과={h['passed']}")
     print("최종 규제 통과:", verify(G)["passed"])
 
     # 2) 루프 효과(test programs)

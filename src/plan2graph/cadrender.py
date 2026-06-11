@@ -55,6 +55,7 @@ class DoorG:
     hinge: tuple | None = None
     swing_deg: float | None = None
     is_entrance: bool = False
+    rooms: tuple | None = None   # 잇는 두 방 id (인접실현 검사용; 없으면 None)
 
 
 @dataclass
@@ -111,11 +112,13 @@ def from_geomgraph(g: dict) -> Geometry:
     doors = []
     for d in (g.get("doors") or []):
         o = d.get("orientation") or {}
+        cn = d.get("connects") or d.get("rooms")
         doors.append(DoorG(pos=tuple(d.get("position") or (0, 0)),
                            width_px=float(d.get("width_px") or 30.0),
                            hinge=tuple(o["hinge"]) if o.get("hinge") else None,
                            swing_deg=o.get("swing_dir_deg"),
-                           is_entrance=bool(d.get("is_entrance"))))
+                           is_entrance=bool(d.get("is_entrance")),
+                           rooms=tuple(cn) if cn and len(cn) == 2 else None))
     windows = []
     for win in (g.get("windows") or []):
         windows.append(WindowG(pos=tuple(win.get("position") or (0, 0)),
@@ -155,7 +158,7 @@ def from_floorgeom(rooms, boxes, edges, *, width_m=12.0, height_m=9.0,
         if i < len(centers) and j < len(centers):
             doors.append(DoorG(pos=((centers[i][0] + centers[j][0]) / 2,
                                     (centers[i][1] + centers[j][1]) / 2),
-                               width_px=W * 0.04))
+                               width_px=W * 0.04, rooms=(i, j)))
     return Geometry(plan_id="tline", house="?", scale_mm_per_px=scale_mm,
                     bbox=(0, 0, W, H), rooms=rms, walls=walls, doors=doors, windows=[])
 
@@ -188,7 +191,7 @@ def from_tline_graph(G, *, width_m=12.0, height_m=9.0, px_per_m=100.0) -> Geomet
     for u, v in G.edges:                                # 문 = 인접 두 방 중점
         if u in ctr and v in ctr:
             doors.append(DoorG(pos=((ctr[u][0] + ctr[v][0]) / 2, (ctr[u][1] + ctr[v][1]) / 2),
-                              width_px=W * 0.04))
+                              width_px=W * 0.04, rooms=(u, v)))
     return Geometry(plan_id=str((getattr(G, "graph", {}) or {}).get("plan_id", "tline")),
                     house="?", scale_mm_per_px=s_mm, bbox=(0, 0, W, H),
                     rooms=rms, walls=walls, doors=doors, windows=[])
@@ -212,21 +215,82 @@ def _pt_in_poly(pt, poly):
     return inside
 
 
+def _bbox(poly):
+    xs = [p[0] for p in poly]; ys = [p[1] for p in poly]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _rect(poly):
+    """폴리곤 → (x,y,w,h) bbox(px). treemap은 정확, 실측폴리곤은 근사."""
+    x0, y0, x1, y1 = _bbox(poly)
+    return (x0, y0, x1 - x0, y1 - y0)
+
+
+def rooms_adjacent(rA, rB):
+    """두 방이 벽을 공유하는가 → share_wall 구간(px) 또는 None.
+    **realizer와 같은 정의**(floorgeom.share_wall, nail 4). min_len=문 폭."""
+    from . import floorgeom as _fg
+    if not (rA and rB and rA.polygon and rB.polygon):
+        return None
+    door_px = 30.0  # ≈0.3m@100ppm — floorgeom._shared_edge(0.3m)와 동일 임계
+    return _fg.share_wall(_rect(rA.polygon), _rect(rB.polygon),
+                          min_len=door_px, coincide=0.5)
+
+
 def verify(geom: Geometry) -> list[str]:
-    """렌더 무결성 검사 — 문제를 사람이 읽는 문자열로."""
+    """렌더 무결성 검사 — 문제를 사람이 읽는 문자열로. **T·G 공용 단일 자(尺).**
+    인접실현(병목)·고립을 문 off-wall보다 먼저 본다(문스냅이 미실현을 화장빨로 덮지 못하게)."""
     iss = []
     if not geom.scale_mm_per_px:
         iss.append("R8 치수불가(scale 없음)")
-    for d in geom.doors:                       # R3 문이 어느 방 안/경계에도 안 닿음
+    by_id = {r.id: r for r in geom.rooms}
+
+    # R6 인접 미실현 — 위상엣지(문의 방쌍)인데 두 방이 벽을 안 맞댐(=문 못 냄). 병목 지표.
+    realized_of = {r.id: 0 for r in geom.rooms}
+    for d in geom.doors:
+        if not d.rooms:
+            continue
+        a, b = d.rooms
+        ra, rb = by_id.get(a), by_id.get(b)
+        if ra is None or rb is None:
+            continue
+        if rooms_adjacent(ra, rb):
+            realized_of[a] = realized_of.get(a, 0) + 1
+            realized_of[b] = realized_of.get(b, 0) + 1
+        else:
+            iss.append(f"R6 인접미실현 {ra.role}-{rb.role}")
+
+    # R7 방 고립 — 문(위상엣지)은 있는데 실현된 인접이 0개(=실제로 들어갈 문 없음)
+    has_edge = set()
+    for d in geom.doors:
+        if d.rooms:
+            has_edge.update(d.rooms)
+    for r in geom.rooms:
+        if r.id in has_edge and realized_of.get(r.id, 0) == 0:
+            iss.append(f"R7 방고립 {r.role}")
+
+    # R3 문 off-wall — 단, 두 방이 실제 인접일 때만(미실현은 R6가 잡음; 스냅으로 덮지 않음)
+    for d in geom.doors:
         if geom.rooms and not any(_near_poly(d.pos, r.polygon, 25) for r in geom.rooms):
-            iss.append(f"R3 문 off-wall @ {tuple(round(v) for v in d.pos)}")
-    for r in geom.rooms:                        # R4 기구가 방 밖
+            adj = d.rooms and rooms_adjacent(by_id.get(d.rooms[0]), by_id.get(d.rooms[1]))
+            if adj or not d.rooms:
+                iss.append(f"R3 문 off-wall @ {tuple(round(v) for v in d.pos)}")
+
+    for r in geom.rooms:                        # R4 기구 방밖 / R2 폴리곤 결손
         for f in r.fixtures:
             fc = (f.bbox[0] + f.bbox[2] / 2, f.bbox[1] + f.bbox[3] / 2)
             if r.polygon and not _pt_in_poly(fc, r.polygon):
                 iss.append(f"R4 기구 방밖 {FIX_KO.get(f.cls, f.cls)}@{r.role}")
         if r.polygon and len(r.polygon) < 3:
             iss.append(f"R2 방 폴리곤 결손 {r.role}")
+
+    # A3 긴 현관(종횡비) = 전실 의심 — 형상으로만 측정 가능
+    for r in geom.rooms:
+        if r.role == "현관" and r.polygon:
+            x0, y0, x1, y1 = _bbox(r.polygon)
+            w, h = x1 - x0, y1 - y0
+            if min(w, h) > 0 and max(w, h) / min(w, h) >= 3.0:
+                iss.append(f"A3 긴현관(전실의심) 종횡비{max(w, h) / min(w, h):.1f}")
     return iss
 
 
@@ -267,8 +331,21 @@ def fix(geom: Geometry, issues: list[str]) -> tuple[Geometry, list[str]]:
             cy = (y0 + y1) / 2 if y1 - my < y0 + my else min(max(fy + fh / 2, y0 + my), y1 - my)
             f.bbox = (cx - fw / 2, cy - fh / 2, fw, fh)
             applied.append(f"기구 '{FIX_KO.get(f.cls, f.cls)}'@{ROLE_KO.get(r.role, r.role)} → 방 안으로 이동")
-    for d in geom.doors:                        # R3 문 off-wall → 최근접 방 경계로 스냅
-        if geom.rooms and not any(_near_poly(d.pos, r.polygon, 25) for r in geom.rooms):
+    by_id = {r.id: r for r in geom.rooms}
+    for d in geom.doors:                        # R3 문 off-wall → 스냅(단 nail-3 분기)
+        if not (geom.rooms and not any(_near_poly(d.pos, r.polygon, 25) for r in geom.rooms)):
+            continue
+        if d.rooms:                             # 방쌍 알면: 실제 인접일 때만 공유벽으로 스냅
+            seg = rooms_adjacent(by_id.get(d.rooms[0]), by_id.get(d.rooms[1]))
+            if not seg:
+                continue                        # 미실현 인접 → 스냅 금지(R6로 남김; 화장빨 방지)
+            orient, coord, lo, hi = seg
+            mid = (lo + hi) / 2
+            old = d.pos
+            d.pos = (coord, mid) if orient == "v" else (mid, coord)
+            applied.append(f"문 '{ROLE_KO.get(by_id[d.rooms[0]].role, '')}-"
+                           f"{ROLE_KO.get(by_id[d.rooms[1]].role, '')}' → 공유벽 스냅")
+        else:                                   # 방쌍 모름(G 실측 등) → 기존 최근접 벽 스냅
             old, best, bd = d.pos, d.pos, 1e9
             for r in geom.rooms:
                 for i in range(len(r.polygon)):
