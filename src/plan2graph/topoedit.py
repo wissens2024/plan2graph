@@ -1211,7 +1211,7 @@ def render_editor(show_title: bool = True) -> None:
 
     # ── 도구(가로 라디오, 이모지X). 면적보정은 항상 접근 가능 — 축척이 틀려 전체 면적이
     #    안 맞는 경우도 사용자가 들어가 고쳐야 하므로 숨기지 않는다(헤더 전체면적으로 판단). ──
-    tool = st.radio("도구", ["보기", "영역그리기", "역할", "연결", "기하(창·문·기구)", "면적보정"],
+    tool = st.radio("도구", ["보기", "영역그리기", "역할", "연결", "문방향", "기하(창·문·기구)", "면적보정"],
                     horizontal=True, key=f"tool_{unit_id}")
 
     bg, mp_xy, (dw, dh) = bake_background(dr, png, stt)
@@ -1494,6 +1494,57 @@ def render_editor(show_title: bool = True) -> None:
                     else ("color:#F2A900" if v == "트임" else ""), subset=["종류"])
                 panel.dataframe(sty, hide_index=True, use_container_width=True,
                                 height=(len(erows) + 1) * 35 + 3)
+        elif tool == "문방향":                             # 문 여닫이 방향 + 누락 문(트임→문) 보정
+            import math
+            cand = [e for e in stt.edges if e.get("via") in ("door", "open")]
+            if not cand:
+                with canvas_col:
+                    st.image(bg)
+                panel.info("문/트임 연결이 없습니다. '연결' 도구로 두 방을 먼저 이으세요.")
+            else:
+                def _elab(i):
+                    e = cand[i]
+                    v = "문" if e.get("via") == "door" else "트임"
+                    sw = e.get("door_swing_deg")
+                    return (f"{_disp_id(e['a'])} {stt.nodes[e['a']].role} ↔ "
+                            f"{_disp_id(e['b'])} {stt.nodes[e['b']].role} "
+                            f"[{v}{', ' + str(sw) + '°' if sw is not None else ''}]")
+                _i = panel.selectbox("문/연결 선택", list(range(len(cand))),
+                                     format_func=_elab, key=f"de_{unit_id}")
+                etgt = cand[min(_i, len(cand) - 1)]
+                a, b = etgt["a"], etgt["b"]
+                if etgt.get("via") == "open":
+                    panel.caption("이 연결은 **트임**(문 없음). 문이면 아래 버튼으로 지정 후 방향 클릭.")
+                    if panel.button("🚪 문으로 지정 (누락 문)", use_container_width=True,
+                                    key=f"mkdoor_{unit_id}"):
+                        etgt["via"] = "door"
+                        write_svg(stt, dr)
+                        _rerun(st)
+                ca = (stt.nodes[a].cx, stt.nodes[a].cy)
+                cb = (stt.nodes[b].cx, stt.nodes[b].cy)
+                dpos = etgt.get("door_pos") or [round((ca[0] + cb[0]) / 2, 1),
+                                                round((ca[1] + cb[1]) / 2, 1)]
+                panel.caption(f"현재 여닫이: **{etgt.get('door_swing_deg', '미지정')}°**\n\n"
+                              "**문이 열리는 쪽**을 도면에서 클릭 → 그 방향이 여닫이로 저장됩니다.")
+                with canvas_col:
+                    disp = bake_background(dr, png, stt, highlight=a)[0]
+                    val = _img_coords(disp, key=f"ic_{unit_id}_door")
+                if val and val.get("x") is not None and (val["x"], val["y"]) != buf["last"]:
+                    buf["last"] = (val["x"], val["y"])
+                    px, py = _cv_to_orig(val["x"], val["y"], mp)
+                    etgt["door_swing_deg"] = round(math.degrees(math.atan2(py - dpos[1],
+                                                                           px - dpos[0])), 1)
+                    etgt["door_pos"] = dpos
+                    write_svg(stt, dr)
+                    st.toast(f"문 여닫이 {etgt['door_swing_deg']}° 저장")
+                    _rerun(st)
+                if etgt.get("door_swing_deg") is not None:
+                    if panel.button("이 문 방향 지우기", use_container_width=True,
+                                    key=f"dclr_{unit_id}"):
+                        etgt.pop("door_swing_deg", None)
+                        etgt.pop("door_pos", None)
+                        write_svg(stt, dr)
+                        _rerun(st)
         else:                                              # 영역 그리기(폴리곤)
             cv_base = panel.selectbox("그릴 공간 종류(=역할)", DRAW_BASES, key="cbase")
             panel.caption(f"여기서 고른 종류가 그대로 **역할**이 됨(나중에 역할에서 변경).\n\n"
