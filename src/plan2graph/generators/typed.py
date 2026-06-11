@@ -183,7 +183,12 @@ class TypedSetTransformerGen(Generator):
         import torch
         self.torch = torch
         self.model = _build_model()
-        self.model.load_state_dict(payload["state"])
+        # 어휘 append(SPACE_CLASSES 13→16 등) 백워드 호환 — 구버전 체크포인트 그대로 사용
+        from plan2graph.train_gen import _load_state_compat
+        self.compat_adapted = _load_state_compat(self.model, payload["state"])
+        if self.compat_adapted:
+            print("[TypedSetTransformerGen] 구버전 체크포인트 부분 로드:",
+                  "; ".join(self.compat_adapted))
         self.model.eval()
         self.p_window = payload.get("p_window", {})
         self.run_id = payload.get("run_id")

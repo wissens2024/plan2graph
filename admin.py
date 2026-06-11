@@ -1265,6 +1265,10 @@ if which.startswith("📘"):
                 prog = _t2g.parse(gtext)["program"]
                 st.caption(f"제약 program: {prog}")
                 ng = _load_ng(str(_ckpt))
+                _compat = getattr(getattr(ng, "ng", None), "compat_adapted", None)
+                if _compat:
+                    st.caption("ℹ️ 구버전 체크포인트 부분 로드(어휘 append 호환): "
+                               + "; ".join(_compat))
                 _typed = getattr(ng, "arch", "") == "set-transformer-typed"
                 st.caption("주거형태조건: "
                            f"{ght if (_typed and ght != '자동') else '미적용(비-typed 또는 자동)'}")

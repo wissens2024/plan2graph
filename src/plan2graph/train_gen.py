@@ -135,6 +135,33 @@ def _build_model(emb=48, hid=96, layers=2, heads=4):
     return EdgeModel()
 
 
+def _load_state_compat(model, state):
+    """체크포인트 state_dict를 현재 모델에 로드 — **어휘 append 백워드 호환**.
+
+    SPACE_CLASSES가 끝에 append되어(13→16, config 주석: append-only·재정렬 금지) 임베딩이
+    [old,dim]→[new,dim](old<new)로 커진 경우, 앞 old행만 복사하고 추가 행은 초기값으로 둔다.
+    추가 클래스(복도·전실·파우더룸)는 검출 라벨에 없어 T 생성엔 안 쓰이므로 결과 동일.
+    반환: (적응된 항목 설명 리스트). dim0만 커진 케이스만 적응, 그 외 mismatch는 strict=False가 처리.
+    """
+    own = model.state_dict()
+    fixed, adapted = {}, []
+    for k, v in state.items():
+        ov = own.get(k)
+        if ov is not None and ov.shape != v.shape:
+            if (v.dim() == ov.dim() and v.shape[1:] == ov.shape[1:]
+                    and v.shape[0] < ov.shape[0]):              # 어휘 append(앞쪽 정렬)
+                nw = ov.clone()
+                nw[:v.shape[0]] = v
+                fixed[k] = nw
+                adapted.append(f"{k} {tuple(v.shape)}→{tuple(ov.shape)} (앞 {v.shape[0]}행 복사)")
+                continue
+            adapted.append(f"{k} 건너뜀 {tuple(v.shape)}≠{tuple(ov.shape)}")
+            continue
+        fixed[k] = v
+    model.load_state_dict(fixed, strict=False)
+    return adapted
+
+
 def train(pretrain: str | None, finetune: str, epochs: int = 30, lr: float = 1e-3,
           neg_ratio: int = 3, out: Path = None, seed: int = 42,
           pretrain_epochs: int = None, batch_size: int = 64):
@@ -274,7 +301,11 @@ class NeuralGenerator:
         # 모델 크기 가변 지원: condition.model 있으면 그 크기로 빌드(없으면 기본 48/96/2/4 = 구버전 호환)
         _mc = (ckpt.get("condition", {}) or {}).get("model") or {}
         self.model = _build_model(**_mc)
-        self.model.load_state_dict(ckpt["state"])
+        # 어휘 append(예: SPACE_CLASSES 13→16) 백워드 호환 — 구버전 체크포인트 그대로 사용
+        self.compat_adapted = _load_state_compat(self.model, ckpt["state"])
+        if self.compat_adapted:
+            print("[NeuralGenerator] 구버전 체크포인트 부분 로드:",
+                  "; ".join(self.compat_adapted))
         self.model.eval()
         self.p_window = ckpt.get("p_window", {})
         self.run_id = ckpt.get("run_id")          # 평가 프로비넌스(어느 학습조건인가)
