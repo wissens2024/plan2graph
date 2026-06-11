@@ -438,8 +438,8 @@ if which.startswith("🏢"):
     # (_aim_t 정의는 아래 '변환 보정' 기능에서 쓰이므로 유지 — 메트릭 렌더만 제거)
     _aim_t = config.DATA_DIR / "staging" / "aihub" / "manifest.jsonl"
     st.caption("AI-Hub 도면(받은 원본 PNG)을 육안 검증 — 사용(dual+V2V 복구)·보정필요·제외(중복 사본·비-FP) 사유 확인. "
-               "**도면 1장 = 여러 세대**라 도면수 ≠ 세대수 — 세대는 셀 수 있는 것만: "
-               "사용=변환세대 전개 · 보정필요=미변환(0) · 제외 중복=원본 세대수(같은 평면도라 원본 세대로 카운트).")
+               "**도면 1장 = 여러 세대**라 도면수 ≠ 세대수 — 세대 = **실제 추출된 그래프**만: "
+               "사용=변환세대 전개 · 보정필요=미변환(0) · 제외=0(중복은 원본과 같은 세대라 중복집계 안 함·비FP는 세대 없음).")
     if not config.RAW_SOURCE_ROOT.is_dir():
         st.error(f"원본 RAW 없음: {config.RAW_SOURCE_ROOT}\n"
                  "PLAN2GRAPH_RAW 환경변수를 SPA/STR zip이 있는 경로로 설정 후 재실행.")
