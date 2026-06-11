@@ -30,6 +30,37 @@ def reason_label(rule: str) -> str:
     return RULE_KO.get(rule, rule or "사유 미기록")
 
 
+# ── G회계 디스크 영속 캐시 ───────────────────────────────────────────────────
+# gline_status/gline_plan_status는 graphs/*.json(현재 40k·~1.8GB) 전수 파싱이라 1회 ~33s.
+# 대시보드 rerun(위젯 조작·option_menu)마다 재호출되면 CPU가 계속 100%로 묶임(실측 버그).
+# 결과를 작은 JSON으로 영속 캐시(키=파일수+디렉터리 mtime) → rerun·재시작에도 즉시 반환.
+# 파일 추가/삭제(빌드·freeze·사람 보정 corrected 저장)로 mtime 바뀌면 자동 무효화(정합 유지).
+def _acct_key(graphs_dir: Path) -> list:
+    if not graphs_dir.is_dir():
+        return [0, 0]
+    n = sum(1 for _ in graphs_dir.glob("*.json"))      # 이름만 — read 없음(빠름)
+    return [n, int(graphs_dir.stat().st_mtime)]
+
+
+def _acct_cached(graphs_dir: Path, name: str, compute):
+    """compute()를 디스크 캐시. 키 일치 시 캐시 반환, 아니면 계산 후 저장."""
+    cache = graphs_dir.parent / f"_cache_{name}.json"   # graphs/ 밖(parent)에 둠 → mtime 영향 없음
+    key = _acct_key(graphs_dir)
+    if cache.exists():
+        try:
+            d = json.loads(cache.read_text(encoding="utf-8"))
+            if d.get("key") == key:
+                return d["v"]
+        except Exception:  # noqa: BLE001
+            pass
+    v = compute()
+    try:
+        cache.write_text(json.dumps({"key": key, "v": v}, ensure_ascii=False), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+    return v
+
+
 # ── 처분(disposition): 도면 1장 → 대표 사유 1개로 상호배타 배정 ──────────────────
 # 격리 레코드는 사유가 여럿 겹칠 수 있어(합>격리수), 그대로 사유별로 쪼개면 칸이 겹쳐
 # '합=다운로드'가 깨진다. 그래서 우선순위 총순서로 '제일 센/근본 사유 1개'만 배정해
@@ -141,12 +172,15 @@ def _gline_disp(g: dict) -> str:
     return "use"
 
 
-def gline_status(graphs_dir: Path) -> dict:
+def gline_status(graphs_dir: Path, use_cache: bool = True) -> dict:
     """G-라인 보정 회계(단일 소스 staging/gline) — corrected=true=보정완료(사람), 나머지=자동 분류.
     [[gline-correction-not-verification]]·[[gline-single-source]] 2축. 반환:
     {total, use, fix, excl, done, usable_now, usable_max, reasons, warns,
      draw:{use,fix,excl,done}, by_house:{HOUSE:{세대·도면 버킷}}}.
-    세대(json 1건)와 도면(plan_id에서 _u\\d+ 제거) 둘 다 집계 — T 정본과 같은 단위 병기."""
+    세대(json 1건)와 도면(plan_id에서 _u\\d+ 제거) 둘 다 집계 — T 정본과 같은 단위 병기.
+    40k 전수 파싱(~33s)이라 디스크 캐시(use_cache) — rerun·재시작에도 즉시(_acct_cached)."""
+    if use_cache:
+        return _acct_cached(graphs_dir, "gline_status", lambda: gline_status(graphs_dir, use_cache=False))
     import re
     cnt = Counter()                                    # 세대(unit) 버킷
     reasons, warns = Counter(), Counter()
@@ -197,9 +231,13 @@ def gline_status(graphs_dir: Path) -> dict:
             "reasons": dict(reasons.most_common()), "warns": dict(warns.most_common())}
 
 
-def gline_plan_status(graphs_dir: Path) -> dict[str, str]:
+def gline_plan_status(graphs_dir: Path, use_cache: bool = True) -> dict[str, str]:
     """도면(plan_id, _u 제거) → 대표 처분 ∈ {use,fix,excl,done}. G 검수화면 분류 드롭다운용.
-    상단 지표(gline_status)와 같은 소스·같은 규칙 → 한 화면 두 회계 불일치 제거."""
+    상단 지표(gline_status)와 같은 소스·같은 규칙 → 한 화면 두 회계 불일치 제거.
+    40k 전수 파싱(~33s)이라 디스크 캐시(use_cache) — rerun·재시작에도 즉시(_acct_cached)."""
+    if use_cache:
+        return _acct_cached(graphs_dir, "gline_plan_status",
+                            lambda: gline_plan_status(graphs_dir, use_cache=False))
     import re
     prio = {"excl": 0, "fix": 1, "done": 2, "use": 3}
     out: dict[str, str] = {}
