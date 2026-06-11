@@ -435,6 +435,8 @@ if which.startswith("🏢"):
 
     st.title("🏢 AI-Hub 검수 (T) — 자동변환 그래프")
     # 상단 데이터셋 합계(사용/보정필요/제외)는 종합현황에 있어 중복 → 제거. 검수 본연(원본 육안)만.
+    # (_aim_t 정의는 아래 '변환 보정' 기능에서 쓰이므로 유지 — 메트릭 렌더만 제거)
+    _aim_t = config.DATA_DIR / "staging" / "aihub" / "manifest.jsonl"
     st.caption("AI-Hub 도면을 원본 PNG로 확인 — 채택분(dual)·제외분(부분/완전배제) 사유 육안 검증.")
     if not config.RAW_SOURCE_ROOT.is_dir():
         st.error(f"원본 RAW 없음: {config.RAW_SOURCE_ROOT}\n"
