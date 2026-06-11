@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing as mp
 import re
 import sys
 import time
@@ -265,6 +266,195 @@ def build_corpus(source: str = "dir", src_dir: Path | None = None,
     return man
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 병렬 빌드 (multiprocessing.Pool) — 직렬과 '비트 단위 동일한' 데이터셋, 안전 설계
+#
+# 왜 안전한가(직렬 고집 불필요):
+#   1) 세대(unit) 간 의존성 0 — 각 세대는 '자기 이름 파일' graphs/{id}.json 하나에만 쓴다
+#      → 동시에 같은 파일을 건드릴 일이 없음(쓰기 레이스 불가).
+#   2) 분류·구성 숫자는 '합'(commutative) — 워커별 부분 Counter를 부모가 합산 → 순서 무관, 결과 동일.
+#   3) 오류 격리 — 도면/세대 단위 try/except. 한 세대 실패가 풀 전체를 안 죽인다(직렬과 동일 의미).
+#   4) 멱등 재개(--resume) — 이미 만들어진 출력(.svg/.json)은 '재사용(카운트만)'하고 재빌드 안 함.
+#      → 중간에 죽어도 '전부 다시'가 아니라 '남은 것만' 다시(그 부분만 보완). 완료분 보존.
+#
+# ⚠️ 지난 사고(graphs 오염)는 병렬 자체가 아니라 '전체 파이프라인 프로세스 N개를 같은 폴더에
+#    중복 실행'한 운영 실수였다(records·graphs·manifest 공유자원 레이스). 그건 계속 금지.
+#    여기 병렬은 '한 프로세스 내' Pool — 공유 가변상태 없음.
+#
+# Linux(fork)에서 워커는 부모의 모듈 import·config를 그대로 상속 → 기동 오버헤드 작음.
+# 병렬은 aihub(zip 코퍼스) 전용(rec=picklable). dir(로컬 스모크)은 직렬 폴백.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_WK: dict = {}   # 워커 설정(initializer가 채움) — fork 후 자식별 1회
+
+
+def _wk_init(open_min_ratio, open_max_gap, stage, resume):
+    """Pool 워커 초기화 — config 튜닝 override를 자식에도 심고(파라미터 일관성), 단계·재개 플래그 보관."""
+    if open_min_ratio is not None:
+        config.OPEN_MIN_RATIO = open_min_ratio
+    if open_max_gap is not None:
+        config.OPEN_MAX_GAP_PX = open_max_gap
+    _WK["stage"], _WK["resume"] = stage, resume
+
+
+def _process_plan(rec: dict) -> dict:
+    """워커 본체 — 한 도면(시트) 처리. aihub rec → dr → 세대별 SVG/그래프 생성 + 부분 카운터 반환.
+    직렬 svg_convert/build_graphs의 세대 루프와 '같은 로직'(파일 1개=1세대, 카운터 누적).
+    실패는 도면/세대 단위로 격리(반환 카운터에 n_err로만 남고 풀은 계속)."""
+    from plan2graph import aihub_source as A
+    stage, resume = _WK["stage"], _WK["resume"]
+    out = {k: Counter() for k in ("disp", "reasons", "warns", "info", "comp", "comp_draw")}
+    for k in ("n_plans", "n_units", "n_units_svg", "n_missing", "n_err", "svg_written"):
+        out[k] = 0
+    plan_id = rec.get("plan_id", "?")
+    prov = _provenance(rec)
+    src = prov["source"]
+    try:
+        dr, _png = A.load(rec)                                 # 워커가 자기 도면을 zip에서 로드(read-only)
+    except Exception:  # noqa: BLE001
+        out["n_err"] += 1
+        return out                                            # 도면 로드 실패 격리
+    out["n_plans"] = 1
+    out["comp_draw"][src] += 1
+    try:
+        states = list(_states_from_dr(dr, plan_id, rec["house"]))
+    except Exception:  # noqa: BLE001
+        out["n_err"] += 1
+        return out                                            # 위상/세대분리 실패 도면 스킵
+    for st in states:
+        svg_path = T.REC_DIR / f"{st.plan_id}.svg"
+        # ── ① SVG 변환 ──
+        if stage in ("svg", "all"):
+            if not (resume and svg_path.exists()):            # 재개: 이미 있으면 재생성 안 함
+                try:
+                    for nid, role in T.suggest_roles(st, dr).items():
+                        T.set_role(st, nid, role)
+                    svg_path.write_text(T.to_svg(st, dr), encoding="utf-8")
+                    out["svg_written"] += 1
+                except Exception:  # noqa: BLE001
+                    out["n_err"] += 1
+                    continue
+            out["n_units_svg"] += 1
+        # ── ② 빌드(SVG→그래프) ──
+        if stage in ("build", "all"):
+            gpath = GRAPHS_DIR / f"{st.plan_id}.json"
+            if resume and gpath.exists():                     # 재개: 재빌드 대신 읽어서 '카운트만'(완료분 보존)
+                try:
+                    g = json.loads(gpath.read_text(encoding="utf-8"))
+                except Exception:  # noqa: BLE001
+                    out["n_err"] += 1
+                    continue
+            else:
+                if not svg_path.exists():                     # 선행(SVG) 안 된 세대
+                    out["n_missing"] += 1
+                    continue
+                try:
+                    st_svg = T.state_from_svg(svg_path.read_text(encoding="utf-8"),
+                                              dr, st.plan_id, st.house)
+                    g = GG.build(st_svg, dr)
+                except Exception:  # noqa: BLE001
+                    out["n_err"] += 1
+                    continue
+                g["unit_id"] = st.plan_id
+                g["corrected"] = False
+                g["provenance"] = prov
+                gpath.write_text(json.dumps(g, ensure_ascii=False), encoding="utf-8")
+            out["comp"][src] += 1
+            out["disp"][_disposition(g)] += 1
+            for r in g["validation"]["reasons"]:
+                out["reasons"][r] += 1
+            for w in g["validation"]["warnings"]:
+                out["warns"][w] += 1
+            for ii in g["validation"].get("info", []):
+                out["info"][ii] += 1
+            out["n_units"] += 1
+    return out
+
+
+def build_parallel(source: str = "aihub", src_dir: Path | None = None,
+                   house: str | None = None, limit: int | None = None,
+                   stage: str = "all", jobs: int = 4, resume: bool = False) -> dict:
+    """병렬 드라이버 — 도면(시트) 단위로 Pool 분산. 직렬과 동일 산출/매니페스트.
+    stage: svg=①만 · build=②만 · all=①후② (도면당 dr 1회 로드로 가장 효율적).
+    resume=True면 이미 만들어진 .svg/.json 재사용(중간 실패 후 '남은 것만' 보완)."""
+    if source != "aihub":
+        print("  [info] --jobs 병렬은 aihub 전용 — dir 소스는 직렬 실행")
+        return build_corpus(source, src_dir, house, limit) if stage == "all" else (
+            svg_convert(source, src_dir, house, limit) if stage == "svg"
+            else build_graphs(source, src_dir, house, limit))
+    try:
+        ctx = mp.get_context("fork")                          # 부모 상태 상속(저오버헤드). Linux 전용
+    except ValueError:
+        print("  [info] fork 미지원(비-Linux) → 직렬 폴백")
+        return build_corpus(source, src_dir, house, limit) if stage == "all" else (
+            svg_convert(source, src_dir, house, limit) if stage == "svg"
+            else build_graphs(source, src_dir, house, limit))
+
+    from plan2graph import aihub_source as A
+    T.REC_DIR.mkdir(parents=True, exist_ok=True)
+    GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
+    recs = list(A.scan(house=house))                          # 경량 rec(picklable) — dr은 워커가 로드
+    if limit:
+        recs = recs[:limit]
+    total = len(recs)
+    agg = {k: Counter() for k in ("disp", "reasons", "warns", "info", "comp", "comp_draw")}
+    tot = {k: 0 for k in ("n_plans", "n_units", "n_units_svg", "n_missing", "n_err", "svg_written")}
+    t0 = time.time()
+    print(f"▶ 병렬 빌드 stage={stage} jobs={jobs} resume={resume} — {total} 도면", flush=True)
+    # fork면 자식이 config를 상속하나, 명시 전달로 일관성 보장(CLI 튜닝 override 포함)
+    init_args = (getattr(config, "OPEN_MIN_RATIO", None),
+                 getattr(config, "OPEN_MAX_GAP_PX", None), stage, resume)
+    with ctx.Pool(jobs, initializer=_wk_init, initargs=init_args) as pool:
+        done = 0
+        for out in pool.imap_unordered(_process_plan, recs, chunksize=8):
+            for k in agg:
+                agg[k] += out[k]
+            for k in tot:
+                tot[k] += out[k]
+            done += 1
+            if done % 1000 == 0:
+                el = time.time() - t0
+                rate = (tot["n_units"] / el) if el else 0
+                print(f"  [{done}/{total}] units={tot['n_units']} err={tot['n_err']} "
+                      f"{el:.0f}s ({rate:.0f}/s)", flush=True)
+
+    # ── 매니페스트(직렬 build_graphs와 동일 포맷) ──
+    if stage == "svg":                                        # 선행만 — svg_convert와 동일 반환(MANIFEST 미기록)
+        man = {"stage": "svg_convert", "source": source, "source_dir": None,
+               "house": house or "ALL", "n_plans": tot["n_plans"],
+               "n_units_svg": tot["n_units_svg"], "built_sec": round(time.time() - t0, 1)}
+        print(f"① 병렬 SVG 변환 완료: {tot['n_units_svg']} units → {T.REC_DIR}")
+        return man
+    disp = agg["disp"]
+    use, fix, excl = disp.get("use", 0), disp.get("fix", 0), disp.get("excl", 0)
+    man = {
+        "schema_version": GG.SCHEMA_VERSION, "stage": "build", "corrected": False,
+        "source": source, "source_dir": None, "house": house or "ALL",
+        "open_min_ratio": config.OPEN_MIN_RATIO, "open_max_gap_px": config.OPEN_MAX_GAP_PX,
+        "n_plans": tot["n_plans"], "n_units": tot["n_units"],
+        "n_svg_missing": tot["n_missing"], "n_err": tot["n_err"],
+        "분류_자동": {"사용": use, "보정필요": fix, "제외": excl},
+        "사용가능_현재_자동": use,
+        "사용가능_상한_전부보정시": use + fix,
+        "증량여지_보정필요→보정완료": fix,
+        "제외_보증불가": excl,
+        "제외_사유": dict(agg["reasons"].most_common()),
+        "보정필요_경고": dict(agg["warns"].most_common()),
+        "정보_측정결손": dict(agg["info"].most_common()),
+        "구성_세대": dict(agg["comp"].most_common()),
+        "구성_도면": dict(agg["comp_draw"].most_common()),
+        "parallel_jobs": jobs, "resumed": resume,
+        "built_sec": round(time.time() - t0, 1),
+    }
+    if stage == "all":
+        man["n_units_svg"] = tot["n_units_svg"]
+    MANIFEST.write_text(json.dumps(man, ensure_ascii=False, indent=2), encoding="utf-8")
+    if tot["n_missing"]:
+        print(f"  [주의] SVG 없는 세대 {tot['n_missing']} skip — '--stage svg'(선행) 먼저.")
+    print(f"② 병렬 빌드 완료: {tot['n_units']} units, 분류 {man['분류_자동']} → {GRAPHS_DIR}")
+    return man
+
+
 def revalidate() -> dict:
     """저장된 gline 그래프를 **현재 검증기로 재검증** — validation/meta 갱신 + 매니페스트 재생성.
     재빌드 없이 분류 정책 변경(예: 문폭없음 강등)을 반영. 기하 재계산 없음 → 빠름."""
@@ -371,6 +561,12 @@ if __name__ == "__main__":
                     help="개방통로 최대 간격 px(클수록 더 멀어도 연결). 기본 config")
     ap.add_argument("--stage", choices=("svg", "build", "all"), default="all",
                     help="svg=① 선행(SVG 변환)만 · build=② 빌드(SVG→그래프)만(기존 SVG에서·반복용) · all=둘 다")
+    ap.add_argument("--jobs", type=int, default=1,
+                    help="병렬 워커 수(>1=multiprocessing.Pool, 도면단위 분산, aihub 전용·Linux fork). "
+                         "1=직렬(기본). 서버 28코어면 24 권장.")
+    ap.add_argument("--resume", action="store_true",
+                    help="멱등 재개 — 이미 만든 .svg/.json은 재사용(카운트만), 안 만든 것만 빌드. "
+                         "중간 실패 후 '남은 것만' 보완(전부 다시 X). 깨끗한 새 빌드면 끄세요.")
     ap.add_argument("--revalidate", action="store_true",
                     help="재빌드 없이 저장 그래프를 현재 검증기로 재검증·매니페스트 갱신")
     ap.add_argument("--freeze", metavar="VER", default=None,
@@ -390,11 +586,14 @@ if __name__ == "__main__":
         if a.source == "dir" and not a.dir:
             ap.error("--source dir 는 코퍼스 디렉터리 인자가 필요합니다. 정식 빌드는 --source aihub(115 zip).")
         _sd = Path(a.dir) if a.dir else None
-        if a.stage == "svg":                       # ① 선행만
+        if a.jobs > 1:                             # 병렬(도면단위 Pool) — 직렬과 동일 산출
+            man = build_parallel(source=a.source, src_dir=_sd, house=a.house,
+                                 limit=a.limit, stage=a.stage, jobs=a.jobs, resume=a.resume)
+        elif a.stage == "svg":                     # ① 선행만(직렬)
             man = svg_convert(source=a.source, src_dir=_sd, house=a.house, limit=a.limit)
-        elif a.stage == "build":                   # ② 빌드만(기존 SVG에서)
+        elif a.stage == "build":                   # ② 빌드만(기존 SVG에서·직렬)
             man = build_graphs(source=a.source, src_dir=_sd, house=a.house, limit=a.limit)
-        else:                                       # all = ① 후 ②
+        else:                                       # all = ① 후 ②(직렬)
             man = build_corpus(source=a.source, src_dir=_sd, house=a.house, limit=a.limit)
     print(json.dumps(man, ensure_ascii=False, indent=2))
     if "분류_자동" in man:                          # 빌드/올/재검증 결과
