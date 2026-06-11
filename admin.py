@@ -513,12 +513,11 @@ if which.startswith("🏢"):
     disp = [(lab, _cnt[lab]) for lab in _AIHUB_ORDER if _cnt.get(lab, 0)]
     keymap = {"📋 전체": len(rows)}                       # 분류 → 도면수
     keymap.update(dict(disp))
-    # 분류 → 세대수 — 정본 규칙(dataset_status) 재사용(못세면0·중복=원본). 도면+세대 병기.
+    # 분류 → 세대수 — 정본 규칙(dataset_status) 재사용(변환 그래프만 셈·중복은 0). 도면+세대 병기.
     from plan2graph import dataset_status
-    _fpu = dataset_status.aihub_fp_units(rows)
     _ukey = _C()
     for _r in rows:
-        _ukey[_albl(_r)] += dataset_status.aihub_row_units(_r, _fpu)
+        _ukey[_albl(_r)] += dataset_status.aihub_row_units(_r)
     keymap_unit = {"📋 전체": sum(_ukey.values())}        # 분류 → 세대수
     keymap_unit.update(dict(_ukey))
     # ── 상단 통일 컨트롤(사이드바→본문): 분류 | 거주형태 + 보기 모드. G검수(🧩)와 동일 구조. ──
