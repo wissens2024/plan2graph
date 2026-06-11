@@ -35,7 +35,7 @@ class Rule:
     needs_scale: bool
 
 
-# ── 규칙 DB (API로 근거 확보, DECISIONS_NEEDED에 전문가 확인 항목 표시) ──────────
+# ── 규칙 DB (API로 근거 확보, docs/ROADMAP.md §8 열린 질문에 전문가 확인 항목 표시) ──
 RULES: list[Rule] = [
     Rule("L1_daylight_window", "거실·침실 채광창 보유", "강행",
          "건축물의 피난·방화구조 등의 기준에 관한 규칙", "제17조제1항", "279461",

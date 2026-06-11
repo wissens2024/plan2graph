@@ -140,7 +140,7 @@ def _write_card(records, splits, n_sheets, out_dir: Path) -> None:
     lines.append("## 알려진 한계")
     lines.append(f"- **scale 부분 확보**: {n_scaled:,}세대 ㎡ 변환(치수선 OCR). 나머지는 픽셀² → "
                  "면적 의존 법규는 ㎡ 확보분에만 적용, 나머지는 scale_quarantine.csv.")
-    lines.append("- **`공간_기타` 노이즈**: 기타가 최다 노드. 벽두께·자투리 단편이 개방통로로 세대에 편입돼 노드 수를 부풀림. 면적 임계 필터 검토 중(DECISIONS_NEEDED).")
+    lines.append("- **`공간_기타` 노이즈**: 기타가 최다 노드. 벽두께·자투리 단편이 개방통로로 세대에 편입돼 노드 수를 부풀림. 면적 임계 필터 검토 중(ROADMAP §8).")
     lines.append("- **개방통로(open) 임계 민감도**: gap≤60px·미피복비율≥0.30 기준. 드물게 과연결(>60방)은 방수 상한으로 격리. 손검증 20장 정량 측정은 후속.")
     lines.append("- **문-방 추론 정확도**: 합성 단위테스트 통과·시각 게이트 확인 단계.")
     lines.append("- **다세대 시트 분해**: 한 PNG의 여러 세대를 연결요소로 분해. 드물게 인접 세대가 오결합될 수 있음.")

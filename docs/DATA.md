@@ -106,4 +106,4 @@ data/
 https://plan2graph.aines.kr — 🧮종합현황 · 🏢AI-Hub(T) · 🧩AI-Hub(G) · 🏠CubiCasa · 📐RPLAN · 📘T도면생성 · 📗G도면생성. 기동 `bash scripts/start_dashboard.sh`(115).
 
 ---
-관련: [ARCHITECTURE.md](ARCHITECTURE.md)(AI기술·모델·파이프라인) · [EXPERIMENTS.md](EXPERIMENTS.md)(결과) · [adr/](adr/) · [NOTES.md](NOTES.md)(역사 로그) · [DECISIONS_NEEDED.md](DECISIONS_NEEDED.md)
+관련: [ARCHITECTURE.md](ARCHITECTURE.md)(AI기술·모델·파이프라인) · [EXPERIMENTS.md](EXPERIMENTS.md)(결과) · [adr/](adr/) · [NOTES.md](NOTES.md)(역사 로그) · [ROADMAP.md §8](ROADMAP.md)(열린 질문)

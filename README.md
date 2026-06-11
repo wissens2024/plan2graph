@@ -104,8 +104,9 @@ bash scripts/start_dashboard.sh        # → https://plan2graph.aines.kr/  (로�
 | [V2V](docs/V2V.md) | V2V 검출 모델·실험 원장(fix→use) |
 | [CORRECTION_GUIDE](docs/CORRECTION_GUIDE.md) | 사람 보정 가이드 |
 | [NOTES](docs/NOTES.md) | 가정↔실제·결정 로그(역사) |
-| [DECISIONS_NEEDED](docs/DECISIONS_NEEDED.md) | 사람 확인 필요 항목 |
 | [adr/](docs/adr/) | 설계 결정 기록(ADR-0001~0005) |
+
+> 사람 확인이 필요한 열린 질문은 [ROADMAP §8](docs/ROADMAP.md#8-열린-질문-도메인사람-확인-필요).
 
 ## 기술 스택
 
@@ -113,4 +114,4 @@ Python 3.11 · `shapely`(기하) · `networkx`(그래프) · COCO · `owlready2`
 
 ## 출처·라이선스
 
-AI-Hub 건축도면 데이터(dataSetSn=71465) · CubiCasa5k · RPLAN. 상업적 활용/기술이전 가능 여부는 [docs/DECISIONS_NEEDED.md](docs/DECISIONS_NEEDED.md) 참조.
+AI-Hub 건축도면 데이터(dataSetSn=71465) · CubiCasa5k · RPLAN. 상업적 활용/기술이전 가능 여부는 [docs/ROADMAP.md §8 열린 질문](docs/ROADMAP.md#8-열린-질문-도메인사람-확인-필요) 참조.

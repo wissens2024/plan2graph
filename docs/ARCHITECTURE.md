@@ -103,4 +103,4 @@
 - 서버 115(env p2g, GPU1만 학습/추론). 빌드·학습 명령은 [OPERATIONS.md](OPERATIONS.md).
 
 ---
-관련: [DATA.md](DATA.md) · [EXPERIMENTS.md](EXPERIMENTS.md) · [OPERATIONS.md](OPERATIONS.md) · [adr/](adr/)(0001~0005) · [DECISIONS_NEEDED.md](DECISIONS_NEEDED.md) · [NOTES.md](NOTES.md)(역사 로그)
+관련: [DATA.md](DATA.md) · [EXPERIMENTS.md](EXPERIMENTS.md) · [OPERATIONS.md](OPERATIONS.md) · [adr/](adr/)(0001~0005) · [ROADMAP.md §8](ROADMAP.md)(열린 질문) · [NOTES.md](NOTES.md)(역사 로그)
