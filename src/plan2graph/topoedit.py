@@ -41,6 +41,28 @@ OUT_DIR = config.DATA_DIR / "staging" / "gline"
 REC_DIR = OUT_DIR / "records"
 LEDGER = OUT_DIR / "_ledger.jsonl"
 GRAPHS_DIR = OUT_DIR / "graphs"      # 자동+사람보정 공존. 사람 보정완료=corrected=true(= 사용 확정)
+_CACHE_DIR = OUT_DIR / "_cache"      # 무거운 집계 디스크 캐시(재기동에도 유지 → 30초 멈춤 방지)
+
+
+def _disk_cached(key: str, sig, compute):
+    """sig가 같으면 디스크 캐시 반환, 다르면 compute()→저장. st.cache_data(메모리)와 달리
+    **재기동에도 살아남아** 첫 진입 30초 재집계를 막는다(데이터 바뀌면 sig 변경→자동 갱신)."""
+    import pickle
+    p = _CACHE_DIR / f"{key}.pkl"
+    if p.exists():
+        try:
+            d = pickle.loads(p.read_bytes())
+            if d.get("sig") == sig:
+                return d["val"]
+        except Exception:  # noqa: BLE001
+            pass
+    val = compute()
+    try:
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(pickle.dumps({"sig": sig, "val": val}))
+    except Exception:  # noqa: BLE001
+        pass
+    return val
 
 SCHEMA = "topo-human-v1"
 CONNECTOR_BASES = ("복도", "전실")
@@ -1133,7 +1155,9 @@ def render_editor(show_title: bool = True) -> None:
 
     @st.cache_data(show_spinner="분류 집계(라벨 구성 × 처분, 최초 1회)...")
     def _label_combo(_sz, _gn, _gm):
-        return _ds2.gline_label_combo(_mpath, GRAPHS_DIR)   # G-라인 실제 데이터(gline graphs)
+        # 디스크 캐시 경유 → 대시보드 재기동해도 30초 재집계 안 함(sig=크기·개수·mtime)
+        return _disk_cached("gline_label_combo", (_sz, _gn, _gm),
+                            lambda: _ds2.gline_label_combo(_mpath, GRAPHS_DIR))
     _gn = sum(1 for _ in GRAPHS_DIR.glob("*.json")) if GRAPHS_DIR.is_dir() else 0
     _gm = int(GRAPHS_DIR.stat().st_mtime) if GRAPHS_DIR.is_dir() else 0
     _cmb = _label_combo(_mpath.stat().st_size if _mpath.exists() else 0, _gn, _gm)
