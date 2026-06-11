@@ -1510,16 +1510,26 @@ if which.startswith("📗"):
             # 생성형 AI 좌표 → 자기교정 → **두 출력**: ① 도면(화면 이미지) ② AutoCAD(DXF)
             from plan2graph import cadrender as _cr
             _geom = _cr.autocorrect(_cr.from_floorgeom(rooms, boxes, edges))
-            st.markdown(f"#### 생성형 AI 도면 — `{_sel_geom}`")
+            st.markdown(f"#### 생성형 AI 도면 — `{_sel_geom}` (같은 도면, 두 방식)")
+            # ① 이미지(matplotlib 렌더) — 한 번 그려 PNG 바이트로(보기 + 받기 동일 소스)
+            import io as _io
+            import matplotlib.pyplot as _plt
+            _fig = _cr.render_fig(_geom)
+            _pbuf = _io.BytesIO()
+            _fig.savefig(_pbuf, format="png", dpi=150, bbox_inches="tight")
+            _plt.close(_fig)
+            _png = _pbuf.getvalue()
             _gc1, _gc2 = st.columns([3, 1])
-            _gc1.pyplot(_cr.render_fig(_geom), clear_figure=True)      # ① 도면(이미지)
+            _gc1.image(_png)                                           # ① 이미지(보기)
             with _gc2:
-                try:                                                   # ② 같은 도면의 CAD 파일
-                    st.download_button("📐 AutoCAD(DXF) 받기", _cr.render_dxf(_geom),
+                st.download_button("🖼 이미지(PNG) 받기", _png,          # ① matplotlib 렌더
+                                   file_name="gline_plan.png", mime="image/png")
+                try:
+                    st.download_button("📐 AutoCAD(DXF) 받기", _cr.render_dxf(_geom),  # ② ezdxf 렌더
                                        file_name="gline_plan.dxf", mime="application/dxf")
-                    st.caption("이미지는 CAD에서 못 쓰니 **같은 도면을 DXF로** 내보냅니다.")
                 except RuntimeError as _e:
                     st.caption(f"DXF 불가: {_e}")
+                st.caption("① PNG=보기용 · ② DXF=CAD 편집용\n(같은 도면, 렌더 방식만 다름)")
             c1, c2, c3 = st.columns(3)
             c1.metric("방 수", len(rooms))
             c2.metric("인접 실현율", f"{v['adj_rate']*100:.0f}%")
