@@ -1462,11 +1462,12 @@ if which.startswith("📗"):
                 st.rerun()
     st.divider()
 
-    # ── 3. 도면 생성 — 자연어 → 자기교정 기하 도면 ──
-    st.header("3. 도면 생성 — 자연어 → 자기교정 기하 도면")
-    st.caption("요구를 입력하고 생성 버튼을 누르면 도면이 나옵니다. (누르기 전엔 아무것도 렌더하지 않음)")
+    # ── 3. 도면 생성 — 자연어 → 생성형 AI 도면(자기교정) ──
+    st.header("3. 도면 생성 — 자연어 → 생성형 AI 도면(자기교정)")
+    st.caption("요구를 입력하고 생성 버튼을 누르면 **생성형 AI가 도면을 만들고**, 자기교정 루프가 "
+               "문제를 찾아 고칩니다(아래 로그). (누르기 전엔 아무것도 렌더하지 않음)")
     gtext2 = st.text_input("요구(자연어)", "신혼부부 아파트 침실2 욕실1 거실 주방", key="geo_text")
-    if st.button("🏠 기하 도면 생성"):
+    if st.button("🏠 도면 생성 (생성형 AI)"):
         try:
             from plan2graph import text2graph as _t2g, geom_correct as _gc, geom_gen as _gg
 
@@ -1509,11 +1510,23 @@ if which.startswith("📗"):
                                        file_name="gline_plan.dxf", mime="application/dxf")
                 except RuntimeError as _e:
                     st.caption(f"DXF 불가: {_e}")
-            with st.expander(f"🔧 자기교정 {len(_geom.correct_log)}바퀴 · 잔여 {len(_geom.issues)}건"):
+            with st.expander(f"🔧 자기교정 {len(_geom.correct_log)}바퀴 · 잔여 {len(_geom.issues)}건"
+                             " — 검사·수정 내역(무엇을 찾아 무엇을 고쳤나)", expanded=True):
                 for _rd in _geom.correct_log:
-                    st.caption(f"{_rd['iter']}바퀴: 검출 {len(_rd['found'])} · 수정 {len(_rd['fixed'])}")
+                    if _rd.get("done"):
+                        st.markdown(f"**{_rd['iter']}바퀴** · 검사 0건 → ✅ 완료(깨끗)")
+                    else:
+                        st.markdown(f"**{_rd['iter']}바퀴** · 검사 {len(_rd['found'])}건 발견 → "
+                                    f"{len(_rd['fixed'])}건 수정")
+                        for _fx in _rd["fixed"]:
+                            st.caption(f"　🔧 고침: {_fx}")
+                        for _fd in _rd["found"]:
+                            st.caption(f"　🔎 검출: {_fd}")
+                st.markdown(f"**잔여 {len(_geom.issues)}건**"
+                            + (" — ⚠ 보정필요(자기교정으로 못 고친 문제)" if _geom.issues
+                               else " — ✅ 깨끗"))
                 for _is in _geom.issues:
-                    st.caption(f"　🔎 잔여: {_is}")
+                    st.caption(f"　⚠ 잔여: {_is}")
         except Exception as e:  # noqa: BLE001
             st.error(f"기하 생성 실패: {e}")
 
