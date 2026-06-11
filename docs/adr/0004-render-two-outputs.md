@@ -18,7 +18,7 @@ Deciders: wissens2024
    - **AutoCAD 도면** = `render_dxf`(ezdxf) → DXF. 레이어 분리(WALL/DOOR/WINDOW/FIXTURE/DIM/TEXT/ROOM)·치수·실명.
 2. **T·G 공용 코어, 어댑터만 다름**(ADR-0002 스키마 분리 유지 — 출력만 공용 = 도면 품질 비교):
    - G: `from_geomgraph(g-0.3)` — 실측형(진짜 벽·문·창·기구).
-   - T: `from_tline_graph(G)` — `floorgeom.layout_rooms`(treemap) → **박스형 그대로**("이상한 집" 유지). geo모델 불요.
+   - T: 위상 → **생성형 기하 AI(`geom_gen`, geom_g0)** 로 좌표 생성(목표). ⚠️ 옛 `from_tline_graph`+`floorgeom.layout_rooms`(treemap)는 **폐기 예정 임시** — T 버튼 AI 이전 후 제거. [[treemap-deprecated-generative-is-goal]]
 3. **자기교정 루프** `autocorrect`(검사→고치기→재검사, 동일 패턴): `verify`(겹침·문off-wall·기구 방밖·scale)
    → `fix`(기구 방안 clamp·문 벽 스냅) → 재검사. **라운드별 기록(`correct_log`)을 GUI에 표시**
    (몇 바퀴·무엇을 고쳤나 — 사용자가 GUI만 봐도 보임).

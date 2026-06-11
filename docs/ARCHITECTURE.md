@@ -16,7 +16,7 @@
 |---|---|---|
 | 원천 | 검출→자동 변환(SVG 없음) | 이미지/라벨→SVG→추출(SVG=단일진실) |
 | 스키마 | `layout.nodes` (type, src-target) `schema.py` | `rooms` 2층 g-0.3 (role, polygon) `geomgraph.py` |
-| 기하 생성 | 규칙기반 treemap `floorgeom.py` | **학습 기하모델** `train_geom`·`geom_gen` |
+| 기하 생성 | **생성형 기하 AI** `geom_gen`(geom_g0) ← 목표 (옛 treemap `floorgeom`은 폐기 예정 임시) | **생성형 기하 AI** `train_geom`·`geom_gen` |
 | 데이터 | `releases/tline/` (v0,v2,global) | `releases/gline/` (g0,g1,g_global) |
 | 모델 | `runs/tline/` | `runs/gline/` |
 
@@ -81,7 +81,7 @@
 - **T·G 공용 렌더 코어** `cadrender.py`: `from_geomgraph`(G)·`from_floorgeom`(T) → 공통 `Geometry` → `render_fig`/`render_dxf`.
 - **자기교정 루프**(`autocorrect`=verify→fix→재검사): R1 겹침·R2 벽틈·R3 문 off-wall·R4 기구 방밖·R5 외곽 미폐합·R6 폭이상·R7 고립방·R8 치수불가. 잔여는 렌더에 경고(보정필요).
 - 생성 경로(G): NL → `text2graph` program → 방 구성 → g0 면적 prior → 관례 인접 → `geom_correct` 자기교정 → 도면. GUI 📗(번호 흐름 1.파이프라인 2.모델 3.생성 4.데이터그래프보기).
-- ⚠️ 병목 = 배치 실현(treemap 50%대) — 학습 기하모델·자기교정 고도화 대상.
+- ⚠️ 병목 = 배치 실현(인접 미실현 R6) — **생성형 기하 AI(`geom_gen`) 품질↑(재학습)** 이 진짜 레버. (treemap 회귀 아님 — treemap은 폐기 예정 임시.) [[treemap-deprecated-generative-is-goal]]
 
 ---
 

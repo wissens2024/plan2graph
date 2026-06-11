@@ -1,8 +1,10 @@
 # ADR-0002: T-라인 / G-라인 분리 — 두 생성 패러다임을 폴더·GUI에서 격리하고 도면 품질로 합쳐 비교
 
-Status: Accepted
+Status: Accepted (기하 부분 방향정정 2026-06-11)
 Date: 2026-06-09
 Deciders: wissens2024
+
+> **⚠️ 방향 정정(2026-06-11):** **treemap은 폐기 예정 임시 스파이크**다 — 사업계획서엔 없고(계획 목표 = "온톨로지 기반 **공간배치 생성 AI**"), 빨리 도면을 보여주려 급조한 규칙기반 placeholder였다. **기하 좌표는 T·G 둘 다 생성형 AI(`geom_gen`, 학습모델 `geom_g0` 작동)가 생성**하는 게 목표다. 아래 "T-라인 = 규칙기반 treemap이 정체성"은 임시 구현 기준 서술이며, **T 버튼을 AI로 옮긴 뒤 treemap 코드는 제거**한다(단 `floorgeom.share_wall`은 공용 verify(인접 실현)용이라 유지). 라인 분리(폴더·GUI)·"도면품질로만 비교" 원칙은 유효. [[treemap-deprecated-generative-is-goal]]
 
 ## Context
 도면 생성에 **두 가지 방식**이 생겼다. 둘은 데이터셋·스키마·SVG·생성 방식이 **전부 다른 별개 패러다임**이다.
