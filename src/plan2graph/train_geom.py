@@ -123,7 +123,27 @@ def _adj_loss(pred, adjs, torch):
     return tot / n if n else torch.tensor(0.0)
 
 
-def train(pretrain, finetune, epochs=30, lr=1e-3, batch_size=64, seed=42):
+def _overlap_loss(pred, mask, torch):
+    """겹침 억제(척력) — 같은 세대 두 방 박스의 겹침 면적을 벌점.
+
+    현재 손실엔 인력(_adj_loss)만 있고 척력이 없어 모든 방이 중앙으로 붕괴한다.
+    이 항이 빠진 '밀어냄'을 더해, 인접한 방은 벽을 맞대되 겹치지는 않게 한다.
+    """
+    cx, cy, w, h = pred[..., 0], pred[..., 1], pred[..., 2], pred[..., 3]
+    x0, x1 = cx - w / 2, cx + w / 2
+    y0, y1 = cy - h / 2, cy + h / 2
+    ox = (torch.minimum(x1[:, :, None], x1[:, None, :])
+          - torch.maximum(x0[:, :, None], x0[:, None, :])).clamp(min=0)   # [B,R,R]
+    oy = (torch.minimum(y1[:, :, None], y1[:, None, :])
+          - torch.maximum(y0[:, :, None], y0[:, None, :])).clamp(min=0)
+    area = ox * oy
+    pair = mask[:, :, None] & mask[:, None, :]                            # 두 방 다 유효
+    eye = torch.eye(area.size(1), dtype=torch.bool, device=area.device)
+    pair = pair & ~eye                                                    # 자기 자신 제외(대각)
+    return (area * pair).sum() / pair.sum().clamp(min=1)
+
+
+def train(pretrain, finetune, epochs=30, lr=1e-3, batch_size=64, seed=42, run_id=None):
     import torch
     torch.manual_seed(seed)
     dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -149,14 +169,16 @@ def train(pretrain, finetune, epochs=30, lr=1e-3, batch_size=64, seed=42):
                 role, scal, box, mask, adjs = _batchify(bu, torch)
                 role, scal, box, mask = [t.to(dev) for t in (role, scal, box, mask)]
                 pred = net(role, scal, mask)
-                loss = mse(pred[mask], box[mask]) + 0.1 * _adj_loss(pred, adjs, torch)
+                loss = (mse(pred[mask], box[mask])
+                        + 0.1 * _adj_loss(pred, adjs, torch)        # 인력: 인접하면 가까이
+                        + 0.5 * _overlap_loss(pred, mask, torch))   # 척력: 겹치면 밀어냄(중앙붕괴 방지)
                 opt.zero_grad(); loss.backward(); opt.step()
                 tl += loss.item(); nb += 1
             if ep == 0 or ep == ne - 1 or ep % 10 == 0:
                 print(f"  {name} ep{ep} loss={tl/max(nb,1):.4f}")
             last = {"stage": name, "ep": ep, "loss": tl / max(nb, 1)}
 
-    rid = f"geom_{finetune}" + (f"_pre-{pretrain}" if pretrain else "")
+    rid = run_id or (f"geom_{finetune}" + (f"_pre-{pretrain}" if pretrain else ""))
     out = config.run_write_dir(rid)
     out.mkdir(parents=True, exist_ok=True)
     torch.save({"state": net.state_dict(), "roles": ROLES, "maxr": MAXR}, out / "checkpoint.pt")
@@ -174,7 +196,8 @@ if __name__ == "__main__":
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--batch-size", type=int, default=64)
+    ap.add_argument("--run-id", default=None, help="저장 run_id 강제(미지정 시 geom_{ft}[_pre-{pre}])")
     a = ap.parse_args()
     t0 = time.time()
-    train(a.pretrain, a.finetune, a.epochs, seed=a.seed, batch_size=a.batch_size)
+    train(a.pretrain, a.finetune, a.epochs, seed=a.seed, batch_size=a.batch_size, run_id=a.run_id)
     print(f"({(time.time()-t0)/60:.1f}min)")
