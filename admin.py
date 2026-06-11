@@ -1289,23 +1289,31 @@ if which.startswith("📘"):
                                 f"{'✅통과' if v_on['passed'] else '❌'}")
                     st.pyplot(_rv.render_graph_fig(G_on, title="loop on", node_size=1500,
                               font_size=11, layout="kamada"), use_container_width=True)
-                st.markdown("**패널3 — 실제 도면 (geometry · 규칙기반 1세대) — 같은 위상 → 좌표 배치**")
-                from plan2graph import floorgeom as _fg
-                d1, d2 = st.columns(2)
-                with d1:
-                    st.pyplot(_fg.render_floorplan_fig(G_off, title="loop off"),
-                              use_container_width=True)
-                with d2:
-                    st.pyplot(_fg.render_floorplan_fig(G_on, title="loop on"),
-                              use_container_width=True)
-                st.caption("방=유형 색사각형 · 검은테=벽 · 흰 틈=문(위상 엣지+경계공유) · 외벽 현관/창. "
-                           "면적은 유형별 표준비(실측 scale 확보 전 근사). "
-                           "좌표회귀·diffusion·RL은 §5 로드맵.")
-                # ── 🖼 생성형 도면 + 📐 AutoCAD(DXF) — treemap 박스를 cadrender로(박스형 유지·geo모델 없음) ──
-                from plan2graph import cadrender as _cr
-                st.markdown("**🖼 생성형 도면 / 📐 AutoCAD** (treemap 박스형 유지 · geo모델 없음 — G와 비교용)")
+                st.markdown("**패널3 — 실제 도면 (생성형 기하 AI · geom_g0) — 같은 위상 → 좌표**")
+                from plan2graph import (geom_gen as _gg, geom_correct as _gc,
+                                        cadrender as _cr)
+
+                @st.cache_data(show_spinner="g0 실측 면적 prior(최초 1회)...")
+                def _t_priors():
+                    return _gc.role_area_priors("g0")
+
+                @st.cache_resource(show_spinner="기하 AI 로드(geom_g0)...")
+                def _t_geom_net():
+                    return _gg.load("geom_g0")
+
+                # T 위상(neural 그래프) → rooms → 생성형 기하 AI가 좌표 생성 (treemap 아님)
+                _rooms, _edges = _gc.tline_graph_to_rooms(G_on, _t_priors())
+                _boxes = _gg.generate(_t_geom_net(), _rooms)
+                _v = _gc.verify(_rooms, _edges, _boxes)
+                st.image(_gg.render(_rooms, _boxes),
+                         caption=f"🤖 생성형 AI 도면(geom_g0) — 방 {len(_rooms)} · 인접실현 "
+                                 f"{_v['adj_rate']*100:.0f}% · 겹침 {_v['n_overlap']}")
+                st.caption("**학습된 기하 AI(geom_g0)가 좌표 생성** → 공용 verify·자기교정·DXF. "
+                           "treemap 아님. 출력이 거칠면 = 학습 개선 대상(2층 자기교정·재학습).")
+                # ── 🖼 생성형 도면 + 📐 AutoCAD(DXF) — 공용코어(cadrender), G와 동일 자 ──
+                st.markdown("**🖼 생성형 도면 / 📐 AutoCAD** (G와 동일 공용코어 — 같은 자로 비교)")
                 try:
-                    _tgeom = _cr.autocorrect(_cr.from_tline_graph(G_on))
+                    _tgeom = _cr.autocorrect(_cr.from_floorgeom(_rooms, _boxes, _edges))
                     _tc1, _tc2 = st.columns([3, 1])
                     _tc1.pyplot(_cr.render_fig(_tgeom), clear_figure=True)
                     with _tc2:
@@ -1321,16 +1329,12 @@ if which.startswith("📘"):
                         st.caption(f"잔여 {len(_tgeom.issues)}건")
                 except Exception as _e:  # noqa: BLE001
                     st.caption(f"생성형/DXF 렌더 스킵: {_e}")
-                _st_on = _fg.layout_stats(G_on)
                 _m1, _m2, _m3 = st.columns(3)
-                _m1.metric("방 수", _st_on["rooms"])
-                _m2.metric("위상 인접 실현율", f"{_st_on['adj_rate'] * 100:.0f}%",
-                           help="위상에서 연결된 방쌍 중 실제 도면에서 벽을 공유(문 연결)한 비율 "
-                                "— 1세대 배치가 위상을 얼마나 지켰는지(도면 품질 지표)")
-                _m3.metric("실현된 인접(문)", f"{_st_on['adj_realized']} / {_st_on['adj_total']}")
-                st.caption("**도면 품질(§5 기준 일부)** — 인접 실현율: 위상의 방 연결이 좌표 도면에서 "
-                           "실제 인접(문)으로 구현된 비율. 1세대(treemap) 한계로 일부 인접은 비실현 "
-                           "→ 좌표회귀·RL이 올릴 여지(§5 로드맵).")
+                _m1.metric("방 수", len(_rooms))
+                _m2.metric("인접 실현율", f"{_v['adj_rate'] * 100:.0f}%",
+                           help="위상 연결 방쌍 중 AI 도면에서 실제 인접(문)으로 구현된 비율 "
+                                "— 도면 품질 지표(거칠면 학습 개선 대상)")
+                _m3.metric("겹침", _v["n_overlap"])
                 st.markdown("**패널4 — Symbolic 근거 (자기교정 로그)**")
                 st.table([{"시도": h["attempt"], "위반(전)": h["violations_before"],
                            "수정": ", ".join(h["fixes"]) or "—",

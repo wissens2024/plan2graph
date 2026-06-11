@@ -5,8 +5,9 @@
   ② render_dxf  → 건축 사무소 작업도면(레이어·치수·심볼)        (의존성: ezdxf)
 렌더 전 autocorrect(검사→고치기→재검사) 동일 패턴 적용([[geometry-realization-is-bottleneck]]).
 
-T·G 공용 코어. 입력은 공통 Geometry — G는 from_geomgraph, T는 from_floorgeom(나중).
-스키마는 분리 유지(ADR-0002), 렌더 출력만 공용(=도면 품질 비교).
+T·G 공용 코어. 입력은 공통 Geometry — 좌표는 생성형 기하 AI(geom_gen)가 만들고
+from_floorgeom(rooms,boxes,edges)로 Geometry화(T·G 공통). 실측 G 그래프는 from_geomgraph.
+스키마는 분리 유지(ADR-0002), 렌더 출력만 공용(=도면 품질 비교). (옛 treemap from_tline_graph 폐기)
 """
 from __future__ import annotations
 
@@ -167,36 +168,6 @@ def _on_border(p, W, H, tol=1.0):
     return abs(p[0]) < tol or abs(p[0] - W) < tol or abs(p[1]) < tol or abs(p[1] - H) < tol
 
 
-def from_tline_graph(G, *, width_m=12.0, height_m=9.0, px_per_m=100.0) -> Geometry:
-    """T-라인 위상그래프(networkx) → Geometry. floorgeom.layout_rooms(treemap)로 박스 배치.
-    geo모델 없음 — treemap 박스형 그대로. y축은 이미지좌표(y-down)로 변환(렌더 일관)."""
-    from . import floorgeom as _fg
-    rects = _fg.layout_rooms(G, width_m, height_m)     # {node:(x,y,w,h)} m, 좌하단 원점
-    W, H = width_m * px_per_m, height_m * px_per_m
-    s_mm = 1000.0 / px_per_m
-    rms, walls, doors, ctr = [], [], [], {}
-    for n, (x, y, w, h) in rects.items():
-        X0, Y0 = x * px_per_m, (height_m - (y + h)) * px_per_m   # y-up → y-down(상단원점)
-        X1, Y1 = (x + w) * px_per_m, (height_m - y) * px_per_m
-        poly = [(X0, Y0), (X1, Y0), (X1, Y1), (X0, Y1)]
-        role = (_fg._type(G.nodes[n]) or "기타").replace("공간_", "")
-        rms.append(RoomG(id=n, role=role, polygon=poly, area_m2=w * h,
-                         label_pt=((X0 + X1) / 2, (Y0 + Y1) / 2), fixtures=[]))
-        ctr[n] = ((X0 + X1) / 2, (Y0 + Y1) / 2)
-        for a, c in [((X0, Y0), (X1, Y0)), ((X1, Y0), (X1, Y1)),
-                     ((X1, Y1), (X0, Y1)), ((X0, Y1), (X0, Y0))]:
-            walls.append(WallG(seg=(a, c),
-                              type="exterior" if _on_border(a, W, H) and _on_border(c, W, H)
-                              else "interior"))
-    for u, v in G.edges:                                # 문 = 인접 두 방 중점
-        if u in ctr and v in ctr:
-            doors.append(DoorG(pos=((ctr[u][0] + ctr[v][0]) / 2, (ctr[u][1] + ctr[v][1]) / 2),
-                              width_px=W * 0.04, rooms=(u, v)))
-    return Geometry(plan_id=str((getattr(G, "graph", {}) or {}).get("plan_id", "tline")),
-                    house="?", scale_mm_per_px=s_mm, bbox=(0, 0, W, H),
-                    rooms=rms, walls=walls, doors=doors, windows=[])
-
-
 # ════════════════════════════════════════════════════════════════════════════
 # 자기교정 — verify(검사) → fix(고치기) → 재검사 (동일 패턴, G=실측 정리)
 # ════════════════════════════════════════════════════════════════════════════
@@ -232,7 +203,7 @@ def rooms_adjacent(rA, rB):
     from . import floorgeom as _fg
     if not (rA and rB and rA.polygon and rB.polygon):
         return None
-    door_px = 30.0  # ≈0.3m@100ppm — floorgeom._shared_edge(0.3m)와 동일 임계
+    door_px = 30.0  # ≈0.3m@100ppm — floorgeom.share_wall(min_len=0.3m)와 동일 임계
     return _fg.share_wall(_rect(rA.polygon), _rect(rB.polygon),
                           min_len=door_px, coincide=0.5)
 

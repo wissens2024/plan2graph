@@ -1,14 +1,14 @@
 """감독기(supervisor) — 생성 도면을 **cadrender 공용 Geometry + verify(단일 자)**로 채점.
 
 자 하나(nail 1): 인접실현·고립·종횡비(A3) 검사가 cadrender.verify 한 함수에 있고,
-T(from_tline_graph)·G(from_floorgeom)가 같은 자로 측정된다. floorgeom 직접측정은 폐기.
+T·G 모두 좌표는 **생성형 기하 AI(geom_gen, geom_g0)** → from_floorgeom으로 같은 자로 측정된다.
 raw(autocorrect 전=기하엔진 정직점수)와 post(autocorrect 후=최종 제품) 둘 다 찍는다(raw 병기).
 
 raw_pass = 생성 직후 도면이 통과인가(병목 직격), post_pass = 자기교정 후 통과인가.
-mean_adj_realization = 위상엣지가 실제 벽맞댐으로 실현된 비율(realizer가 올려야 할 그 숫자).
+mean_adj_realization = 위상엣지가 실제 벽맞댐으로 실현된 비율(생성 AI가 올려야 할 그 숫자).
 
-baseline 생성기로 동작(체크포인트 불요). ⚠ gline은 현재 geom_correct=treemap 베이스라인이지
-'학습 기하(from_geomgraph)'가 아님 — 학습-G 비교는 별도(실측 G 그래프 필요).
+T·G 차이는 **위상 출처만**: T=neural 위상모델 그래프, G=program+관례 인접. 좌표 생성기는 동일(geom_gen).
+geom_g0 체크포인트 필요(treemap 베이스라인 폐기). 학습-실측 G 비교는 from_geomgraph 별도.
 """
 from __future__ import annotations
 
@@ -41,36 +41,38 @@ def _cat(issue: str) -> str:
     return issue.split()[0] if issue else "?"
 
 
-def _tline_geom(prog, gen_fn, adj, seed):
+def _tline_geom(prog, gen_fn, adj, seed, net, priors):
+    from plan2graph import geom_correct as gc, geom_gen as gg
     G, _ = gen_loop.generate_compliant(gen_fn, prog, max_tries=5, repair=True,
                                        seed=seed, adj_score=adj)
-    return cr.from_tline_graph(G)
-
-
-def _gline_geom(prog, priors):
-    from plan2graph import geom_correct as gc, rules_arch as ra
-    rooms = gc.program_to_rooms(prog, priors)
-    edges = gc.convention_edges(rooms)
-    rooms, edges, _ = ra.apply_arch_program(rooms, edges)   # T와 동일 arch 룰
-    boxes = gc.correct(rooms, edges)
+    rooms, edges = gc.tline_graph_to_rooms(G, priors)   # T 위상 → rooms (treemap 아님)
+    boxes = gg.generate(net, rooms)                      # 생성형 기하 AI
     return cr.from_floorgeom(rooms, boxes, edges)
 
 
-def supervise(programs, line: str = "tline", seed: int = 0) -> dict:
+def _gline_geom(prog, priors, net):
+    from plan2graph import geom_correct as gc, rules_arch as ra, geom_gen as gg
+    rooms = gc.program_to_rooms(prog, priors)
+    edges = gc.convention_edges(rooms)
+    rooms, edges, _ = ra.apply_arch_program(rooms, edges)   # T와 동일 arch 룰
+    boxes = gg.generate(net, rooms)                          # 생성형 기하 AI(treemap 아님)
+    return cr.from_floorgeom(rooms, boxes, edges)
+
+
+def supervise(programs, line: str = "tline", seed: int = 0, run_id: str = "geom_g0") -> dict:
     """program 리스트 → 헤드라인 지표(raw·post·실현율·결함분류). line=tline|gline."""
     model = mb.fit(mb._load_split("v0", "train"))
     gen_fn, adj = gen_loop.baseline_gen_fn(model)
-    priors = None
-    if line == "gline":
-        from plan2graph import geom_correct as gc
-        priors = gc.role_area_priors("g0")
+    from plan2graph import geom_correct as gc, geom_gen as gg
+    priors = gc.role_area_priors("g0")
+    net = gg.load(run_id)                       # 생성형 기하 AI(T·G 공통 좌표 생성기)
     n = len(programs)
     raw_pass = post_pass = 0
     rate_sum = 0.0
     raw_cat, post_cat = Counter(), Counter()
     for i, prog in enumerate(programs):
-        geom = (_tline_geom(prog, gen_fn, adj, seed + i) if line == "tline"
-                else _gline_geom(prog, priors))
+        geom = (_tline_geom(prog, gen_fn, adj, seed + i, net, priors) if line == "tline"
+                else _gline_geom(prog, priors, net))
         raw = cr.verify(geom)
         real, tot = _adj_realization(geom)
         rate_sum += (real / tot) if tot else 1.0
@@ -123,7 +125,8 @@ if __name__ == "__main__":
         t = rows["tline"]["raw_defect_inputs"].get(c, 0)
         g = rows["gline"]["raw_defect_inputs"].get(c, 0)
         print(f"   {CATKO.get(c, c):14}{t:>9}{g:>12}")
-    print("⚠ gline=treemap 베이스라인(학습 기하 아님). 학습-G 비교는 from_geomgraph 별도.")
+    print("ℹ T·G 좌표 = 생성형 기하 AI(geom_g0). 차이는 위상 출처(T=neural / G=program). "
+          "학습-실측 G 비교는 from_geomgraph 별도.")
     out = config.release_dir(ver) / "supervise_report.json"
     out.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"저장: {out}")

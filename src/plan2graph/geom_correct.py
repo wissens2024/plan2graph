@@ -1,34 +1,9 @@
-"""기하 자기교정 — 모델 초안(겹침 가능)을 **겹침 없는 유효 배치**로.
+"""기하 입력·검증 헬퍼 — 생성형 기하 AI(geom_gen)의 방 구성·인접 시드·결과 검증.
 
-위상(인접)+실제 면적을 제약으로 squarified treemap 배치(겹침0·외곽채움 보장),
-floorgeom._squarify 재사용하되 면적=실제값·순서=위상 BFS. 인접 실현 검증.
-검증 실패(인접 미실현)는 위상 단계로 라우팅(2층 자기교정: 기하 좌표 vs 위상 그래프).
+program/위상 → rooms[(role, area_frac, nwin)]·관례 인접 edges 를 만들고(생성 AI 입력),
+AI가 낸 박스의 인접 실현율·겹침을 검증한다. (옛 treemap 배치 `correct`는 폐기 — 좌표는 geom_gen이 생성.)
 """
 from __future__ import annotations
-
-import collections
-
-from . import floorgeom
-
-
-def _bfs_order(n, edges, area, ent):
-    """현관(없으면 최대면적)에서 BFS — 인접 방이 treemap에서 가까이 놓이게."""
-    adj = collections.defaultdict(list)
-    for i, j in edges:
-        adj[i].append(j)
-        adj[j].append(i)
-    start = ent if ent is not None else max(range(n), key=lambda k: area[k], default=0)
-    order, seen, q = [], set(), [start]
-    while q:
-        x = q.pop(0)
-        if x in seen:
-            continue
-        seen.add(x)
-        order.append(x)
-        q.extend(sorted((m for m in adj[x] if m not in seen),
-                        key=lambda m: area[m], reverse=True))
-    order += [k for k in range(n) if k not in seen]
-    return order
 
 
 def role_area_priors(version="g0"):
@@ -61,6 +36,25 @@ def program_to_rooms(program: dict, priors: dict):
     return rooms
 
 
+def tline_graph_to_rooms(G, priors: dict):
+    """T-라인 위상그래프(networkx) → (rooms, edges) — 생성형 기하 AI(geom_gen) 입력.
+
+    rooms=[(role, area_frac, nwin)], edges=room-index 쌍(외부 노드 제외).
+    T 위상의 본질(neural 그래프)을 보존하고 좌표만 AI가 생성 — treemap 무관.
+    """
+    from plan2graph.topology import EXTERIOR
+    from plan2graph.floorgeom import _type
+    nodes = [n for n in G.nodes if n != EXTERIOR]
+    idx = {n: i for i, n in enumerate(nodes)}
+    rooms = [(((_type(G.nodes[n]) or "기타").replace("공간_", "")),
+              priors.get((_type(G.nodes[n]) or "기타").replace("공간_", ""), 0.05),
+              _NWIN.get((_type(G.nodes[n]) or "기타").replace("공간_", ""), 0))
+             for n in nodes]
+    edges = [(idx[u], idx[v]) for u, v in G.edges
+             if u != EXTERIOR and v != EXTERIOR and u in idx and v in idx]
+    return rooms, edges
+
+
 def convention_edges(rooms):
     """관례 인접: 현관↔거실, 거실↔나머지(거실 허브 star). 인접 구조 시드."""
     roles = [r[0] for r in rooms]
@@ -69,26 +63,6 @@ def convention_edges(rooms):
     hub = next((i for i, r in enumerate(roles) if r == "거실"), 0)
     edges = [(hub, i) for i in range(len(roles)) if i != hub]
     return edges
-
-
-def correct(rooms, edges, width=12.0, height=9.0):
-    """rooms:[(role, area_frac, nwin)], edges:[(i,j)] → 겹침없는 박스 [cx,cy,w,h](0..1)."""
-    n = len(rooms)
-    if n == 0:
-        return []
-    area = [max(float(r[1]), 0.005) for r in rooms]
-    roles = [r[0] for r in rooms]
-    ent = next((i for i, r in enumerate(roles) if r == "현관"), None)
-    order = _bfs_order(n, edges, area, ent)
-    tot = sum(area[i] for i in order) or 1.0
-    sizes = [area[i] / tot * (width * height) for i in order]
-    rects = floorgeom._squarify(sizes, 0.0, 0.0, width, height)
-    pos = {node: r for node, r in zip(order, rects)}
-    out = []
-    for i in range(n):
-        x, y, w, h = pos.get(i, (0, 0, 0, 0))
-        out.append([(x + w / 2) / width, (y + h / 2) / height, w / width, h / height])
-    return out
 
 
 def _adjacent(b1, b2, tol=0.01):
@@ -141,10 +115,10 @@ if __name__ == "__main__":   # g0 한 세대의 위상으로 자기교정→렌�
     ix = {nid: k for k, nid in enumerate(ids)}
     edges = [(ix[e["from"]], ix[e["to"]]) for e in g["edges"]
              if e["from"] in ix and e["to"] in ix]
-    boxes = correct(rooms, edges)
+    boxes = geom_gen.generate(geom_gen.load("geom_g0"), rooms)   # 생성형 기하 AI(treemap 아님)
     v = verify(rooms, edges, boxes)
     png = geom_gen.render(rooms, boxes)
-    out = Path("artifacts") / "geom_correct_sample.png"
+    out = Path("artifacts") / "geom_gen_sample.png"
     out.parent.mkdir(exist_ok=True)
     out.write_bytes(png)
     print(f"{g['unit_id']} rooms={len(rooms)} edges={len(edges)}  verify={v}")
