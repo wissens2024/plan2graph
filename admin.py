@@ -1253,6 +1253,15 @@ if which.startswith("📘"):
         gseed = _g2.number_input("시드", 0, 9999, 1, key="ns_seed")
         ght = _g3.selectbox("주거형태", ["자동", "APT", "DEH", "ROW"], key="ns_house",
                             help="type조건 모델일 때만 적용")
+        from plan2graph import geom_gen as _ggsel
+        _tgeom_runs = _ggsel.available_runs() or ["geom_g0"]
+
+        def _tck_mtime(_r):
+            _p = config.run_dir(_r) / "checkpoint.pt"
+            return _p.stat().st_mtime if _p.exists() else 0.0
+        _tg_def = max(range(len(_tgeom_runs)), key=lambda i: _tck_mtime(_tgeom_runs[i]))
+        _t_sel_geom = st.selectbox("기하 모델 (생성형 AI)", _tgeom_runs, index=_tg_def, key="ns_geom",
+                                   help="좌표 생성 기하 AI. 백그라운드 학습이 끝나면 자동 등장·최신 기본.")
         if st.button("🏗 생성 (Neuro-Symbolic)"):
             from plan2graph import text2graph as _t2g, gen_loop as _gl
 
@@ -1293,7 +1302,7 @@ if which.startswith("📘"):
                                 f"{'✅통과' if v_on['passed'] else '❌'}")
                     st.pyplot(_rv.render_graph_fig(G_on, title="loop on", node_size=1500,
                               font_size=11, layout="kamada"), use_container_width=True)
-                st.markdown("**패널3 — 실제 도면 (생성형 기하 AI · geom_g0) — 같은 위상 → 좌표**")
+                st.markdown(f"**패널3 — 실제 도면 (생성형 기하 AI · {_t_sel_geom}) — 같은 위상 → 좌표**")
                 from plan2graph import (geom_gen as _gg, geom_correct as _gc,
                                         cadrender as _cr)
 
@@ -1301,19 +1310,19 @@ if which.startswith("📘"):
                 def _t_priors():
                     return _gc.role_area_priors("g0")
 
-                @st.cache_resource(show_spinner="기하 AI 로드(geom_g0)...")
-                def _t_geom_net():
-                    return _gg.load("geom_g0")
+                @st.cache_resource(show_spinner="기하 AI 로드...")
+                def _t_geom_net(_run):
+                    return _gg.load(_run)
 
                 # T 위상(neural 그래프) → rooms → 생성형 기하 AI가 좌표 생성 (treemap 아님)
                 _rooms, _edges = _gc.tline_graph_to_rooms(G_on, _t_priors())
-                _boxes = _gg.generate(_t_geom_net(), _rooms)
+                _boxes = _gg.generate(_t_geom_net(_t_sel_geom), _rooms)
                 _v = _gc.verify(_rooms, _edges, _boxes)
                 st.image(_gg.render(_rooms, _boxes),
-                         caption=f"🤖 생성형 AI 도면(geom_g0) — 방 {len(_rooms)} · 인접실현 "
+                         caption=f"🤖 생성형 AI 도면({_t_sel_geom}) — 방 {len(_rooms)} · 인접실현 "
                                  f"{_v['adj_rate']*100:.0f}% · 겹침 {_v['n_overlap']}")
-                st.caption("**학습된 기하 AI(geom_g0)가 좌표 생성** → 공용 verify·자기교정·DXF. "
-                           "treemap 아님. 출력이 거칠면 = 학습 개선 대상(2층 자기교정·재학습).")
+                st.caption(f"**학습된 기하 AI({_t_sel_geom})가 좌표 생성** → 공용 verify·자기교정·DXF. "
+                           "출력이 거칠면 = 학습 개선 대상(2층 자기교정·재학습).")
                 # ── 🖼 생성형 도면 + 📐 AutoCAD(DXF) — 공용코어(cadrender), G와 동일 자 ──
                 st.markdown("**🖼 생성형 도면 / 📐 AutoCAD** (G와 동일 공용코어 — 같은 자로 비교)")
                 try:
@@ -1467,9 +1476,19 @@ if which.startswith("📗"):
     st.caption("요구를 입력하고 생성 버튼을 누르면 **생성형 AI가 도면을 만들고**, 자기교정 루프가 "
                "문제를 찾아 고칩니다(아래 로그). (누르기 전엔 아무것도 렌더하지 않음)")
     gtext2 = st.text_input("요구(자연어)", "신혼부부 아파트 침실2 욕실1 거실 주방", key="geo_text")
+    from plan2graph import geom_gen as _gg
+    _geom_runs = _gg.available_runs() or ["geom_g0"]
+
+    def _ck_mtime(_r):
+        _p = config.run_dir(_r) / "checkpoint.pt"
+        return _p.stat().st_mtime if _p.exists() else 0.0
+    _gdefault = max(range(len(_geom_runs)), key=lambda i: _ck_mtime(_geom_runs[i]))
+    _sel_geom = st.selectbox("기하 모델 (생성형 AI)", _geom_runs, index=_gdefault,
+                             help="학습된 생성형 기하 AI 모델. **백그라운드 학습이 끝나면 자동으로 "
+                                  "목록에 나타나고 최신(최근 학습)이 기본 선택**됩니다 — 골라서 바로 확인.")
     if st.button("🏠 도면 생성 (생성형 AI)"):
         try:
-            from plan2graph import text2graph as _t2g, geom_correct as _gc, geom_gen as _gg
+            from plan2graph import text2graph as _t2g, geom_correct as _gc
 
             @st.cache_data(show_spinner="g0 실측 면적 prior 집계(최초 1회)...")
             def _priors():
@@ -1482,21 +1501,21 @@ if which.startswith("📗"):
             rooms, edges, _archfx = _ra.apply_arch_program(rooms, edges)
             if _archfx:
                 st.caption("🏛 건축관행 룰 적용: " + " · ".join(_archfx))
-            # 🤖 학습된 생성형 기하 AI(geom_g0, G 실측 학습)가 좌표 생성 — treemap 아님
-            @st.cache_resource(show_spinner="기하 AI 로드(geom_g0)...")
-            def _geom_net():
-                return _gg.load("geom_g0")
-            boxes = _gg.generate(_geom_net(), rooms)
+            # 🤖 선택한 학습 기하 AI가 좌표 생성 (treemap 아님)
+            @st.cache_resource(show_spinner="기하 AI 로드...")
+            def _geom_net(_run):
+                return _gg.load(_run)
+            boxes = _gg.generate(_geom_net(_sel_geom), rooms)
             v = _gc.verify(rooms, edges, boxes)
             st.image(_gg.render(rooms, boxes),
-                     caption=f"🤖 생성형 AI 도면(geom_g0) — 방 {len(rooms)} · 인접실현 "
+                     caption=f"🤖 생성형 AI 도면({_sel_geom}) — 방 {len(rooms)} · 인접실현 "
                              f"{v['adj_rate']*100:.0f}% · 겹침 {v['n_overlap']}")
             c1, c2, c3 = st.columns(3)
             c1.metric("방 수", len(rooms))
             c2.metric("인접 실현율", f"{v['adj_rate']*100:.0f}%")
             c3.metric("겹침", v["n_overlap"])
-            st.caption("**학습된 기하 AI(geom_g0)가 좌표 생성** → 공용 verify·자기교정·DXF. "
-                       "treemap 아님. 출력이 거칠면 = 학습 개선 대상(2층 자기교정·재학습).")
+            st.caption(f"**학습된 기하 AI({_sel_geom})가 좌표 생성** → 공용 verify·자기교정·DXF. "
+                       "출력이 거칠면 = 학습 개선 대상(2층 자기교정·재학습).")
 
             # 🖼 공용코어(cadrender) 경로 — T와 **동일 verify+자기교정+DXF** (G 완성)
             from plan2graph import cadrender as _cr
