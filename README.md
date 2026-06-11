@@ -27,29 +27,59 @@
   - 🧮 검수 현황(종합) · 🏢 AI-Hub / 🏠 CubiCasa / 📐 RPLAN 도면검수 · 📏 scale 검수 · 📊 결과 대시보드
 - **로컬**: 코드·문서 편집용. **대용량 데이터는 서버 단일 보관**(로컬엔 git 저장소만).
 
-## 구조
+## 폴더 구조
 
 ```
 plan2graph/
-├─ README.md                  # 본 개요
-├─ config.py  admin.py  doctor.py  requirements*.txt
-├─ docs/                       # 문서 (아래 목록)
-├─ src/plan2graph/             # 패키지 (adapters/{rplan,cubicasa}, schema, rules …)
-├─ scripts/                    # 운영·셋업 (start_dashboard·*_setup·run_matrix·verify_dedup·systemd)
-├─ tests/                      # 테스트
-├─ legal/                      # 법규 규칙 DB (catalog/law_manifest/rules.json — 채광 등 법규 검증)
-├─ ontology/                   # OWL 온톨로지 (floorplan.owl — 공간추론·SWRL; *.owl 미추적, 재생성)
-├─ fonts/                      # NanumGothic.ttf — matplotlib·대시보드 한글 렌더
-├─ artifacts/                  # 코드 그림 출력: visualize 오버레이 PNG + gate 채점(PNG는 .gitignore)
-├─ data/                       # 데이터 (대부분 .gitignore, 서버 보관)
-│   ├─ raw/{aihub,cubicasa5k,rplan}      # 원본 다운로드
-│   ├─ staging/{aihub,cubicasa5k,rplan}  # 작업본: graphs + manifest + ledger
-│   ├─ releases/{v0,v2}        # 동결 릴리스(v0=클린 dual, v2=dual+V2V+CubiCasa사전학습; 균형 test 공유)
-│   └─ interim/  v2v/
-└─ runs/                       # 실험 원장(provenance·비교표)
+├─ README.md                         # 본 개요
+├─ admin.py                          # ★ Streamlit 대시보드 엔트리(검수·생성·실험 콘솔 전체)
+├─ topoedit_app.py                   # 위상 편집 standalone 앱(G-라인 골드 큐레이션)
+├─ config.py                         # 경로·환경 설정(PLAN2GRAPH_* 환경변수 추상화)
+├─ doctor.py                         # 환경 진단(의존성·경로·GPU 점검)
+├─ requirements.txt  requirements-server.txt
+├─ docs/                             # 문서(아래 「문서」 표) + adr/(설계결정 0001~0005)
+├─ src/plan2graph/                   # ★ 핵심 패키지(역할별 모듈은 아래 「핵심 모듈」)
+│   ├─ adapters/                     #   글로벌 출처 어댑터(common·cubicasa·rplan·rplan_vector)
+│   └─ generators/                   #   생성모델 구현(base·baseline·set_transformer·typed)
+├─ scripts/                          # 운영·학습·셋업·검증(아래 「스크립트」)
+├─ tests/                            # 테스트
+├─ legal/                            # 법규 규칙 DB(catalog·law_manifest·rules.json — 채광 등)
+├─ ontology/                         # OWL 온톨로지(floorplan.owl — 공간추론·SWRL; *.owl 미추적, 재생성)
+├─ fonts/                            # NanumGothic.ttf — matplotlib·대시보드 한글 렌더
+├─ artifacts/                        # 코드 그림 출력(visualize 오버레이·gate 채점 PNG; .gitignore)
+├─ data/                             # 데이터(대부분 .gitignore, 서버 115 단일 보관)
+│   ├─ raw/{aihub,cubicasa5k,rplan}      # 받은 원본(보존·불변) + sample·_archives
+│   ├─ staging/                          # 작업본 = 현재 단일 진실(graphs+manifest+ledger)
+│   │   ├─ {aihub,cubicasa5k,rplan}      #   T-라인 출처별 스테이징
+│   │   └─ gline/                        #   G-라인 스테이징(records=SVG · graphs · _manifest)
+│   ├─ releases/                         # 동결 릴리스(staging에서 recipe로 freeze)
+│   │   ├─ tline/{v0,v2,global_all,global_rplan,global_cubicasa}
+│   │   ├─ gline/{g0,g_global …(g1 빌드 후)}
+│   │   ├─ recipes/                      #   freeze 레시피(재현용)
+│   │   └─ _frozen_test.json             #   균형 소버린 test(전 버전 공유·동결)
+│   ├─ v2v/                              # V2V 검출 산출(predicted·predicted_img·coco_spa·coco_str)
+│   ├─ constraints/  gold/  interim/     # 제약룰 채굴 · 골드 큐레이션 · 중간물
+└─ runs/                             # 실험 원장
+    ├─ tline/  gline/                #   라인별 생성모델 체크포인트·eval
+    ├─ segment/                      #   V2V(YOLO-seg) 학습 가중치
+    └─ index.jsonl                   #   단일 실험 원장(experiments.agg_summary 소스)
 ```
 
-원칙: **raw(원본) → staging(작업) → releases(동결)**. 코드·문서는 git, 대용량 데이터는 서버(115) 단일.
+원칙: **raw(원본·불변) → staging(작업·현재 단일진실) → releases(동결 조합)**. T-라인/G-라인은 폴더·GUI에서 완전 분리하고 **도면 품질로만 합쳐 비교**([ADR-0002](docs/adr/0002-tline-gline-separation.md)). 코드·문서는 git, 대용량 데이터는 **서버(115) 단일 보관**(로컬엔 git 저장소만).
+
+## 핵심 모듈 (`src/plan2graph/`, 역할별)
+
+| 역할 | 모듈 |
+|---|---|
+| **출처·적재·dedup** | `sources` · `aihub_source` · `coco` · `unpack` · `build_aihub` · `dedup_global` · `recover_dedup_merge` · `adapters/{common,cubicasa,rplan,rplan_vector}` |
+| **그래프 변환(위상)** | `schema`(스키마 단일정의) · `topology`(문·발코니·개방통로 추론) · `geomgraph` · `build_dataset`(T-라인 변환) · `migrate_schema_02` · `migrate_to_staging` |
+| **검수·처분 회계** | `dataset_status`(처분 회계 = 콤보 숫자 단일소스) · `review` · `visualize` · `inspect_excluded` · `cubicasa_inspect` · `rplan_inspect` |
+| **V2V(비전 검출)** | `v2v_infer`(SPA/STR 예측 + objocr 세대크롭 2-패스) · `v2v_export`(COCO 학습셋) |
+| **G-라인(SVG·위상편집)** | `topoedit`(사람 위상 편집·골드 큐레이션) · `scripts/build_gline_auto`(원본→SVG→그래프→freeze) |
+| **기하·도면 생성** | `floorgeom`(T=규칙기반 treemap) · `geom_gen`·`geom_correct`·`geometry`·`geomgraph`(G=학습 기하) · `cadrender`(생성형 SVG/PNG + ezdxf DXF) |
+| **생성모델(학습·평가)** | `train_gen`·`train_combine`·`train_geom` · `gen_loop`(자기교정) · `eval_gen` · `model_baseline` · `text2graph` · `experiments`(원장 집계) · `generators/*` |
+| **온톨로지·법규** | `ontology`(OWL) · `rules`(위상 무결성) · `rules_legal`·`rules_swrl`·`law_api`·`legal_harvest` · `constraints`(제약룰 채굴) |
+| **릴리스·분할·게이트** | `release`(freeze) · `split`(train/val/test) · `gate`(정확도 게이트) · `scale_ocr`(치수선 scale 역산) |
 
 ## 스크립트 (`scripts/`)
 
@@ -65,6 +95,15 @@ plan2graph/
 ```bash
 bash scripts/start_dashboard.sh        # → https://plan2graph.aines.kr/  (로그: logs/streamlit.log)
 ```
+
+### 데이터셋 빌드 (T-라인 / G-라인)
+
+| 스크립트 | 하는 일 |
+|---|---|
+| **`build_gline_auto.py`** | **G-라인** 파이프라인. `--stage svg`(원본→SVG, records/) → `--stage build`(SVG→그래프, graphs/) → `--freeze g0\|g1`(provenance 필터로 동결: g0=dual, g1=+spa만·구조만·objocr). 단일스레드 CPU. |
+| `reconvert_aihub.sh` | **T-라인** AI-Hub 재변환(라벨→그래프, `build_dataset`/`build_aihub` 래퍼) → `staging/aihub`. |
+| `build_geom*.py` | 기하 모델 빌드(`build_geom`·`build_geom_corrected`·`build_geom_global`). |
+| `define_frozen_test.py` | 균형 소버린 frozen test 정의(아래 「검증·유틸」). |
 
 ### 학습·실험 (GPU1만 — 운영 GPU0 보호)
 
