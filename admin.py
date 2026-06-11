@@ -1253,15 +1253,8 @@ if which.startswith("📘"):
         gseed = _g2.number_input("시드", 0, 9999, 1, key="ns_seed")
         ght = _g3.selectbox("주거형태", ["자동", "APT", "DEH", "ROW"], key="ns_house",
                             help="type조건 모델일 때만 적용")
-        from plan2graph import geom_gen as _ggsel
-        _tgeom_runs = _ggsel.available_runs() or ["geom_g0"]
-
-        def _tck_mtime(_r):
-            _p = config.run_dir(_r) / "checkpoint.pt"
-            return _p.stat().st_mtime if _p.exists() else 0.0
-        _tg_def = max(range(len(_tgeom_runs)), key=lambda i: _tck_mtime(_tgeom_runs[i]))
-        _t_sel_geom = st.selectbox("기하 모델 (생성형 AI)", _tgeom_runs, index=_tg_def, key="ns_geom",
-                                   help="좌표 생성 기하 AI. 백그라운드 학습이 끝나면 자동 등장·최신 기본.")
+        st.caption(f"🧩 **T의 모델 = 위상 모델**(§2에서 선택): `{_rid}` — {_desc}. "
+                   "좌표 렌더는 공용 기하 백엔드(최신 학습본)를 자동 사용합니다.")
         if st.button("🏠 도면 생성 (생성형 AI)"):
             from plan2graph import (text2graph as _t2g, gen_loop as _gl, geom_gen as _gg,
                                     geom_correct as _gc, cadrender as _cr)
@@ -1297,10 +1290,14 @@ if which.startswith("📘"):
                                                      seed=int(gseed))
                 # 위상 → rooms → 생성형 기하 AI 좌표 → 공용 자기교정 → 두 출력(이미지+DXF)
                 _rooms, _edges = _gc.tline_graph_to_rooms(G_on, _t_priors())
-                _boxes = _gg.generate(_t_geom_net(_t_sel_geom), _rooms)
+                _geom_runs = _gg.available_runs() or ["geom_g0"]    # 좌표 렌더 공용 백엔드(최신)
+                _geom_run = max(_geom_runs, key=lambda r: (
+                    (config.run_dir(r) / "checkpoint.pt").stat().st_mtime
+                    if (config.run_dir(r) / "checkpoint.pt").exists() else 0.0))
+                _boxes = _gg.generate(_t_geom_net(_geom_run), _rooms)
                 _v = _gc.verify(_rooms, _edges, _boxes)
                 _geom = _cr.autocorrect(_cr.from_floorgeom(_rooms, _boxes, _edges))
-                st.markdown(f"#### 생성형 AI 도면 — `{_t_sel_geom}` (같은 도면, 두 방식)")
+                st.markdown(f"#### 생성형 AI 도면 — 위상모델 `{_rid}` (같은 도면, 두 방식)")
                 import io as _io
                 import matplotlib.pyplot as _plt
                 _fig = _cr.render_fig(_geom)
@@ -1323,7 +1320,7 @@ if which.startswith("📘"):
                 c1.metric("방 수", len(_rooms))
                 c2.metric("인접 실현율", f"{_v['adj_rate']*100:.0f}%")
                 c3.metric("겹침", _v["n_overlap"])
-                st.caption(f"위상모델이 방 연결을 만들고, 생성형 AI(`{_t_sel_geom}`)가 도면을 그리고, "
+                st.caption(f"위상모델(`{_rid}`)이 방 연결을 만들고, 생성형 기하 AI가 도면을 그리고, "
                            "자기교정이 문제를 찾아 고칩니다(아래 로그). 출력이 거칠면 = 학습 개선 대상.")
                 with st.expander(f"🔧 자기교정 {len(_geom.correct_log)}바퀴 · 잔여 {len(_geom.issues)}건"
                                  " — 검사·수정 내역(무엇을 찾아 무엇을 고쳤나)", expanded=True):
