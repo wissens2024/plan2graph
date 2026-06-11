@@ -1151,17 +1151,17 @@ if which.startswith("📘"):
     from pathlib import Path as _Path
     from plan2graph import review as _rv
     _ROOT = _Path(__file__).resolve().parent
-    st.title("📘 T-라인 도면생성 — 자연어→위상→treemap")
-    st.caption("위상 모델(부품)을 골라 → 좌표 도면을 만들고 → 검사·재생성으로 무결화. "
-               "**최종 목표는 *잘 나온 도면***. 어떤 방법 조합이 최고 도면을 만드는지 탐색한다.")
+    st.title("📘 T-라인 도면생성 — 자연어→위상(신경망)→생성형 기하 AI")
+    st.caption("위상 모델로 방 연결을 만들고 → **생성형 기하 AI가 좌표 도면**을 그리고 → 자기교정으로 무결화. "
+               "**G-라인과 동일한 UI** — 차이는 위상 출처뿐(T=신경망 모델 / G=관례 구성).")
 
     # ── 1) 파이프라인 — 지금 어디까지 ──
     st.header("1. 파이프라인 — 지금 어디까지")
     st.markdown(
-        "자연어 → 제약(program) → **위상 생성**(✅ 구현·평가) → **Symbolic 자기교정**(✅ 위상) "
-        "→ **좌표 도면(geometry)**(✅ 규칙기반 1세대 · 고급방법 로드맵) → 무결 도면.\n\n"
-        "위상까지는 완성·평가됐다(→ 📈 결과 대시보드). **여기서는 그 위상으로 실제 좌표 도면까지 그려 보고**, "
-        "더 나은 *좌표 도면 생성 방법*을 탐색한다. (위상 모델은 끝이 아니라 **부품**)")
+        "자연어 → 제약(program) → **위상 생성(신경망)** → **Symbolic 자기교정**(위상 무결화) "
+        "→ **생성형 기하 AI가 좌표 도면** → 자기교정 → 무결 도면.\n\n"
+        "위상은 완성·평가됐다(→ 📈 결과 대시보드). 여기서는 그 위상으로 **생성형 AI 도면**까지 그린다. "
+        "(위상 모델은 끝이 아니라 **부품** — 최종 목표는 잘 나온 도면)")
 
     # ── 2) 최종 모델 구성 — 사전학습 × 파인튜닝 (데이터셋 자유 조합) ──
     st.header("2. 최종 모델 구성 — 사전학습 × 파인튜닝")
@@ -1242,13 +1242,13 @@ if which.startswith("📘"):
                 st.rerun()
 
     # ── 3) Neuro-Symbolic 도면 생성 ──
-    st.header("3. Neuro-Symbolic 도면 생성")
-    st.caption("위 최종 모델로: 자연어 → 제약 → **위상 생성(Neuro)** → **규제 자기교정(Symbolic)** "
-               "→ **좌표 도면(geometry)**. 패널2 위상 OFF∥ON · 패널3 실제 도면 · 패널4 근거.")
+    st.header("3. 도면 생성 — 자연어 → 생성형 AI 도면(자기교정)")
+    st.caption("요구를 입력하고 생성 버튼을 누르면 **위상모델이 방 연결을 만들고 → 생성형 AI가 도면을 그리고**, "
+               "자기교정 루프가 문제를 찾아 고칩니다(아래 로그). (누르기 전엔 아무것도 렌더하지 않음)")
     if not _exists:
         st.info("이 조합은 아직 학습되지 않았습니다 → **§2에서 [이 조합 학습 시작]**으로 만든 뒤 생성하세요.")
     else:
-        gtext = st.text_input("자연어 요구", "신혼부부 아파트 침실2 욕실1 거실 주방", key="ns_text")
+        gtext = st.text_input("요구(자연어)", "신혼부부 아파트 침실2 욕실1 거실 주방", key="ns_text")
         _g2, _g3 = st.columns(2)
         gseed = _g2.number_input("시드", 0, 9999, 1, key="ns_seed")
         ght = _g3.selectbox("주거형태", ["자동", "APT", "DEH", "ROW"], key="ns_house",
@@ -1262,140 +1262,89 @@ if which.startswith("📘"):
         _tg_def = max(range(len(_tgeom_runs)), key=lambda i: _tck_mtime(_tgeom_runs[i]))
         _t_sel_geom = st.selectbox("기하 모델 (생성형 AI)", _tgeom_runs, index=_tg_def, key="ns_geom",
                                    help="좌표 생성 기하 AI. 백그라운드 학습이 끝나면 자동 등장·최신 기본.")
-        if st.button("🏗 생성 (Neuro-Symbolic)"):
-            from plan2graph import text2graph as _t2g, gen_loop as _gl
+        if st.button("🏠 도면 생성 (생성형 AI)"):
+            from plan2graph import (text2graph as _t2g, gen_loop as _gl, geom_gen as _gg,
+                                    geom_correct as _gc, cadrender as _cr)
 
-            @st.cache_resource(show_spinner="생성기 로드(CPU)...")
+            @st.cache_resource(show_spinner="위상 생성기 로드(CPU)...")
             def _load_ng(_path):
                 from plan2graph import generators as _G
                 return _G.load(_path)   # arch 디스패치
 
+            @st.cache_data(show_spinner="g0 실측 면적 prior(최초 1회)...")
+            def _t_priors():
+                return _gc.role_area_priors("g0")
+
+            @st.cache_resource(show_spinner="기하 AI 로드...")
+            def _t_geom_net(_run):
+                return _gg.load(_run)
+
             try:
                 prog = _t2g.parse(gtext)["program"]
-                st.caption(f"제약 program: {prog}")
+                st.caption(f"방 구성(program): {prog}")
                 ng = _load_ng(str(_ckpt))
                 _compat = getattr(getattr(ng, "ng", None), "compat_adapted", None)
                 if _compat:
                     st.caption("ℹ️ 구버전 체크포인트 부분 로드(어휘 append 호환): "
                                + "; ".join(_compat))
                 _typed = getattr(ng, "arch", "") == "set-transformer-typed"
-                st.caption("주거형태조건: "
-                           f"{ght if (_typed and ght != '자동') else '미적용(비-typed 또는 자동)'}")
 
                 def gfn(p, r):
                     return (ng.generate(p, r, house_type=ght)
                             if (_typed and ght != "자동") else ng.generate(p, r))
-                _sd = int(gseed)
-                G_off, _ = _gl.generate_compliant(gfn, prog, max_tries=1, repair=False, seed=_sd)
-                v_off = _gl.verify(G_off)
-                G_on, hist = _gl.generate_compliant(gfn, prog, max_tries=5, repair=True, seed=_sd)
-                v_on = _gl.verify(G_on)
-                st.markdown("**패널2 — 자기교정 OFF ∥ ON (같은 입력)**")
-                p1, p2 = st.columns(2)
-                with p1:
-                    st.markdown(f"자기교정 **OFF**(Neuro만) — 위반 {v_off['n']} "
-                                f"{'✅' if v_off['passed'] else '❌'}")
-                    st.pyplot(_rv.render_graph_fig(G_off, title="loop off", node_size=1500,
-                              font_size=11, layout="kamada"), use_container_width=True)
-                with p2:
-                    st.markdown(f"자기교정 **ON**(+Symbolic) — 위반 {v_on['n']} "
-                                f"{'✅통과' if v_on['passed'] else '❌'}")
-                    st.pyplot(_rv.render_graph_fig(G_on, title="loop on", node_size=1500,
-                              font_size=11, layout="kamada"), use_container_width=True)
-                st.markdown(f"**패널3 — 실제 도면 (생성형 기하 AI · {_t_sel_geom}) — 같은 위상 → 좌표**")
-                from plan2graph import (geom_gen as _gg, geom_correct as _gc,
-                                        cadrender as _cr)
-
-                @st.cache_data(show_spinner="g0 실측 면적 prior(최초 1회)...")
-                def _t_priors():
-                    return _gc.role_area_priors("g0")
-
-                @st.cache_resource(show_spinner="기하 AI 로드...")
-                def _t_geom_net(_run):
-                    return _gg.load(_run)
-
-                # T 위상(neural 그래프) → rooms → 생성형 기하 AI가 좌표 생성 (treemap 아님)
+                # 위상모델이 방 연결(위상) 생성 + Symbolic 자기교정(무결화) — 그래프는 표시 안 함(도면이 결과)
+                G_on, _hist = _gl.generate_compliant(gfn, prog, max_tries=5, repair=True,
+                                                     seed=int(gseed))
+                # 위상 → rooms → 생성형 기하 AI 좌표 → 공용 자기교정 → 두 출력(이미지+DXF)
                 _rooms, _edges = _gc.tline_graph_to_rooms(G_on, _t_priors())
                 _boxes = _gg.generate(_t_geom_net(_t_sel_geom), _rooms)
                 _v = _gc.verify(_rooms, _edges, _boxes)
-                st.image(_gg.render(_rooms, _boxes),
-                         caption=f"🤖 생성형 AI 도면({_t_sel_geom}) — 방 {len(_rooms)} · 인접실현 "
-                                 f"{_v['adj_rate']*100:.0f}% · 겹침 {_v['n_overlap']}")
-                st.caption(f"**학습된 기하 AI({_t_sel_geom})가 좌표 생성** → 공용 verify·자기교정·DXF. "
-                           "출력이 거칠면 = 학습 개선 대상(2층 자기교정·재학습).")
-                # ── 🖼 생성형 도면 + 📐 AutoCAD(DXF) — 공용코어(cadrender), G와 동일 자 ──
-                st.markdown("**🖼 생성형 도면 / 📐 AutoCAD** (G와 동일 공용코어 — 같은 자로 비교)")
-                try:
-                    _tgeom = _cr.autocorrect(_cr.from_floorgeom(_rooms, _boxes, _edges))
-                    _tc1, _tc2 = st.columns([3, 1])
-                    _tc1.pyplot(_cr.render_fig(_tgeom), clear_figure=True)
-                    with _tc2:
-                        try:
-                            st.download_button("📐 AutoCAD(DXF)", _cr.render_dxf(_tgeom),
-                                               file_name="tline_plan.dxf", mime="application/dxf")
-                        except RuntimeError as _e:
-                            st.caption(f"DXF 불가: {_e}")
-                    with st.expander(f"🔧 자기교정 {len(_tgeom.correct_log)}바퀴 — 검사·수정", expanded=False):
-                        for _rd in _tgeom.correct_log:
-                            st.caption(f"{_rd['iter']}바퀴 · 검사 {len(_rd['found'])}건 → 수정 "
-                                       f"{len(_rd['fixed'])}건" + (" ✅완료" if _rd.get('done') else ""))
-                        st.caption(f"잔여 {len(_tgeom.issues)}건")
-                except Exception as _e:  # noqa: BLE001
-                    st.caption(f"생성형/DXF 렌더 스킵: {_e}")
-                _m1, _m2, _m3 = st.columns(3)
-                _m1.metric("방 수", len(_rooms))
-                _m2.metric("인접 실현율", f"{_v['adj_rate'] * 100:.0f}%",
-                           help="위상 연결 방쌍 중 AI 도면에서 실제 인접(문)으로 구현된 비율 "
-                                "— 도면 품질 지표(거칠면 학습 개선 대상)")
-                _m3.metric("겹침", _v["n_overlap"])
-                st.markdown("**패널4 — Symbolic 근거 (자기교정 로그)**")
-                st.table([{"시도": h["attempt"], "위반(전)": h["violations_before"],
-                           "수정": ", ".join(h["fixes"]) or "—",
-                           "위반(후)": h["violations_after"],
-                           "통과": "✅" if h["passed"] else ""} for h in hist])
-                if v_on["violations"]:
-                    st.write("잔여 위반(규칙 근거):",
-                             [{"종류": x["kind"], "근거": x.get("rule") or x.get("reason") or str(x)}
-                              for x in v_on["violations"]])
-                else:
-                    st.success("최종 위상 무결 — 무결성·법규 통과.")
+                _geom = _cr.autocorrect(_cr.from_floorgeom(_rooms, _boxes, _edges))
+                st.markdown(f"#### 생성형 AI 도면 — `{_t_sel_geom}` (같은 도면, 두 방식)")
+                import io as _io
+                import matplotlib.pyplot as _plt
+                _fig = _cr.render_fig(_geom)
+                _pbuf = _io.BytesIO()
+                _fig.savefig(_pbuf, format="png", dpi=150, bbox_inches="tight")
+                _plt.close(_fig)
+                _png = _pbuf.getvalue()
+                _tc1, _tc2 = st.columns([3, 1])
+                _tc1.image(_png)                                       # ① 이미지(보기)
+                with _tc2:
+                    st.download_button("🖼 이미지(PNG) 받기", _png,      # ① matplotlib 렌더
+                                       file_name="tline_plan.png", mime="image/png")
+                    try:
+                        st.download_button("📐 AutoCAD(DXF) 받기", _cr.render_dxf(_geom),  # ② ezdxf 렌더
+                                           file_name="tline_plan.dxf", mime="application/dxf")
+                    except RuntimeError as _e:
+                        st.caption(f"DXF 불가: {_e}")
+                    st.caption("① PNG=보기용 · ② DXF=CAD 편집용\n(같은 도면, 렌더 방식만 다름)")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("방 수", len(_rooms))
+                c2.metric("인접 실현율", f"{_v['adj_rate']*100:.0f}%")
+                c3.metric("겹침", _v["n_overlap"])
+                st.caption(f"위상모델이 방 연결을 만들고, 생성형 AI(`{_t_sel_geom}`)가 도면을 그리고, "
+                           "자기교정이 문제를 찾아 고칩니다(아래 로그). 출력이 거칠면 = 학습 개선 대상.")
+                with st.expander(f"🔧 자기교정 {len(_geom.correct_log)}바퀴 · 잔여 {len(_geom.issues)}건"
+                                 " — 검사·수정 내역(무엇을 찾아 무엇을 고쳤나)", expanded=True):
+                    for _rd in _geom.correct_log:
+                        if _rd.get("done"):
+                            st.markdown(f"**{_rd['iter']}바퀴** · 검사 0건 → ✅ 완료(깨끗)")
+                        else:
+                            st.markdown(f"**{_rd['iter']}바퀴** · 검사 {len(_rd['found'])}건 발견 → "
+                                        f"{len(_rd['fixed'])}건 수정")
+                            for _fx in _rd["fixed"]:
+                                st.caption(f"　🔧 고침: {_fx}")
+                            for _fd in _rd["found"]:
+                                st.caption(f"　🔎 검출: {_fd}")
+                    st.markdown(f"**잔여 {len(_geom.issues)}건**"
+                                + (" — ⚠ 보정필요(자기교정으로 못 고친 문제)" if _geom.issues
+                                   else " — ✅ 깨끗"))
+                    for _is in _geom.issues:
+                        st.caption(f"　⚠ 잔여: {_is}")
             except Exception as e:  # noqa: BLE001
-                st.error(f"생성 실패: {e}")
+                st.error(f"도면 생성 실패: {e}")
 
-    # ── 4) 도면(geometry) 방법 — 위상→좌표 (로드맵) ──
-    st.header("4. 도면(geometry) 방법 — 위상→좌표 (로드맵)")
-    st.caption("위상 → 좌표 도면을 만드는 방법 후보. {위상 모델} × {도면 방법} × {정제 루프} 중 *최고 도면* 탐색.")
-    st.table([
-        {"방법": "규칙기반 기하 배치", "설명": "위상에 좌표·벽 채움(squarified treemap·면적비)",
-         "상태": "✅ 구현 — §3에서 시연(1세대)"},
-        {"방법": "좌표 회귀 GNN", "설명": "위상+제약 → 좌표 직접 예측", "상태": "예정"},
-        {"방법": "Layout diffusion", "설명": "위상 조건 생성형 도면", "상태": "예정"},
-        {"방법": "Constrained RL", "설명": "면적·법규·동선 보상 최적화", "상태": "예정(원설계 Phase-3)"},
-        {"방법": "Self-Correction 루프", "설명": "그린다→검사→다시 그린다(위상 규제루프의 geometry 확장)",
-         "상태": "위상 적용 / geometry 예정"},
-    ])
-
-    # ── 5) 최종 도면 평가 — '잘 나온 도면'의 기준 ──
-    st.header("5. 최종 도면 평가 — '잘 나온 도면'의 기준")
-    st.markdown(
-        "**최종 도면 품질**로 {위상 모델 × 도면 방법 × 정제 루프} 조합을 판정한다:\n"
-        "- **위상 인접 실현율** — 위상 연결이 도면에서 실제 인접(문)으로 구현된 비율 "
-        "(✅ §3에서 측정 중)\n"
-        "- **면적 정확도** — 생성 면적 vs 요구·실제 (실측 scale 확보 후)\n"
-        "- **법규 준수** — 채광·면적비 등 geometry 규제 검증 (위상 규제루프의 좌표 확장)\n"
-        "- **동선·기능성** — 현관→거실→방 경로, 방 비율의 합리성\n"
-        "- **시각 품질** — 실제 도면과의 유사도 / 전문가 평가\n\n"
-        "현재 1세대(treemap)는 *인접 실현율*만 측정. 나머지 지표는 좌표 정밀화(§4 고급 방법)와 "
-        "실측 scale 확보 후 활성화 → 이 기준에서 최고인 조합을 찾는 것이 목표.")
-
-    # ── 6) 요약 ──
-    st.header("6. 요약")
-    st.markdown(
-        "위상은 **부품**, 목표는 **잘 나온 도면**이다. 현재 *자연어 → 위상 생성 → 자기교정 → "
-        "좌표 도면(1세대)*까지 한 화면에서 동작한다. 모델은 §2에서 *사전학습 × 파인튜닝*으로 "
-        "자유 조합(없으면 즉석 학습)하고, §3에서 그 모델로 위상·도면을 만든다. "
-        "다음은 *좌표 도면 방법 고도화(§4) → 최종 도면 품질 평가(§5)*다. "
-        "위상에서 검증된 원리(**클린 한국 데이터 · 충분한 모델 용량 · 규제 루프**)를 도면으로 잇는다.")
     st.stop()
 # ════════════════════════════════════════════════════════════════════════════
 # 📜 법령 DB — 최신화(관리자 클릭) + 법령/규정 조회
