@@ -5,6 +5,8 @@ AI가 낸 박스의 인접 실현율·겹침을 검증한다. (옛 treemap 배�
 """
 from __future__ import annotations
 
+import collections
+
 
 def role_area_priors(version="g0"):
     """g0 실측에서 역할별 정규화 면적 중앙값 — 생성 시 방 크기 prior."""
