@@ -1116,9 +1116,11 @@ def render_editor(show_title: bool = True) -> None:
     _mpath = config.DATA_DIR / "staging" / "aihub" / "manifest.jsonl"
 
     @st.cache_data(show_spinner="분류 집계(라벨 구성 × 처분, 최초 1회)...")
-    def _label_combo(_sz):
-        return _ds2.aihub_label_combo(_mpath)
-    _cmb = _label_combo(_mpath.stat().st_size if _mpath.exists() else 0)
+    def _label_combo(_sz, _gn, _gm):
+        return _ds2.gline_label_combo(_mpath, GRAPHS_DIR)   # G-라인 실제 데이터(gline graphs)
+    _gn = sum(1 for _ in GRAPHS_DIR.glob("*.json")) if GRAPHS_DIR.is_dir() else 0
+    _gm = int(GRAPHS_DIR.stat().st_mtime) if GRAPHS_DIR.is_dir() else 0
+    _cmb = _label_combo(_mpath.stat().st_size if _mpath.exists() else 0, _gn, _gm)
     _allids = ids
     _sig2lab = _cmb["sig2label"]
 

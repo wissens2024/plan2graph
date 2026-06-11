@@ -316,6 +316,66 @@ def aihub_label_combo(manifest_path: Path) -> dict:
             "total_draw": sum(draw.values()), "total_unit": sum(unit.values())}
 
 
+# provenance(라벨 구성) → G-라인 처분 라벨. 데이터 특성 기준(T §2와 동일 논리):
+# dual·V2V복구 = 사용, objocr(이미지직접) = 보정필요. geomgraph 검증(역할미상 등)은 분류 축 아님(보정 상세).
+GLINE_PROV_LABEL = {
+    "dual": "✅ 사용 · dual(직접변환)",
+    "spa_only": "✅ 사용 · 방만→V2V STR복구",
+    "str_only": "✅ 사용 · 구조만→V2V SPA복구",
+    "objocr": "🛠 보정필요 · OBJ/OCR만(이미지직접 검출)",
+}
+GLINE_LABEL_ORDER = list(dict.fromkeys(GLINE_PROV_LABEL.values())) + [
+    "🛠 보정필요 · 미빌드(SPA보유·추출 전)", "🚫 제외 · 비-FP(평면도 아님)", "🚫 제외 · 중복(사본)"]
+
+
+def gline_label_combo(manifest_path: Path, graphs_dir: Path) -> dict:
+    """G검수 분류 콤보 — **G-라인 실제 데이터**(gline graphs)로 「라벨 구성 × 처분」 집계.
+    T검수와 같은 카테고리 어휘·43,219 분모(받은 원본)지만, 처분·세대는 G가 실제 추출한 것:
+    provenance(dual/방만/구조만/objocr)별 G 세대. 중복·비FP=manifest 제외. 미빌드=보정필요.
+    ※ T-라인 manifest 처분(변환실패·V2V대기)을 뿌리던 버그 폐기 — 그건 T 개념이지 G가 아님.
+    세대 = G 그래프 수(중복행엔 0 → 더블카운트 없음). 반환 = aihub_label_combo와 동일 스키마."""
+    # G 그래프: 지문(sig) → provenance, 세대수
+    g_prov: dict[str, str] = {}
+    g_units: Counter = Counter()
+    if graphs_dir.is_dir():
+        for f in graphs_dir.glob("*.json"):
+            try:
+                g = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                continue
+            uid = g.get("unit_id") or f.stem               # house_FP_sig_uN
+            sig = uid.split("_FP_")[-1].rsplit("_u", 1)[0] if "_FP_" in uid else uid
+            g_prov[sig] = (g.get("provenance") or {}).get("source", "?")
+            g_units[sig] += 1
+    rows = []
+    p = Path(manifest_path)
+    if p.exists():
+        for ln in p.read_text(encoding="utf-8").splitlines():
+            if ln.strip():
+                try:
+                    rows.append(json.loads(ln))
+                except Exception:  # noqa: BLE001
+                    continue
+    draw, unit, sig2label = Counter(), Counter(), {}
+    for r in rows:
+        reason, fp = r.get("reason"), r.get("fingerprint")
+        if reason == "duplicate":
+            lab = "🚫 제외 · 중복(사본)"
+        elif reason == "nonfp":
+            lab = "🚫 제외 · 비-FP(평면도 아님)"
+        elif fp in g_prov:                                 # G가 빌드함 → provenance 특성으로 분류
+            lab = GLINE_PROV_LABEL.get(g_prov[fp], "🛠 보정필요 · 미빌드(SPA보유·추출 전)")
+        else:                                              # SPA계열인데 G 미빌드 → 보정필요
+            lab = "🛠 보정필요 · 미빌드(SPA보유·추출 전)"
+        draw[lab] += 1
+        if reason not in ("duplicate", "nonfp") and fp in g_units:
+            unit[lab] += g_units[fp]                       # 세대=G 그래프 수, 원본 행에만(중복=별 카테고리)
+        sig2label[fp] = lab
+    return {"order": [l for l in GLINE_LABEL_ORDER if draw.get(l)],
+            "draw": dict(draw), "unit": dict(unit), "sig2label": sig2label,
+            "total_draw": sum(draw.values()), "total_unit": sum(unit.values())}
+
+
 def aihub_t_status(manifest_path: Path) -> dict:
     """T-라인 AI-Hub 회계(정본 manifest) — 처분 use/fix/excl, 도면·세대 병기, by_house.
     gline_status와 같은 접근법(x['use']=세대, x['draw']['use']=도면)으로 종합 비교에서 동일 처리.
