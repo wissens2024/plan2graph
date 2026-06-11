@@ -265,6 +265,57 @@ def aihub_row_units(r: dict, _fp_units=None) -> int:
     return len(r.get("graph_ids") or [])
 
 
+# ── AI-Hub 「라벨 구성 × 처분」 분류 콤보 — T·G 검수 공용 단일 소스(ADR-0005) ──────
+# 카테고리 = 데이터 특성(라벨 구성: dual/방만/구조만/objocr/중복/비FP) × 처분(사용/보정필요/제외).
+# T검수(🏢)·G검수(🧩) 둘 다 이 '같은' 콤보를 써야 비교 가능(§3 불변식). G가 제 validation으로
+# 제멋대로 todo/use/fix 나누던 것을 폐기하고 이걸로 통일.
+AIHUB_LABEL = {
+    ("use", "dual"): "✅ 사용 · dual(직접변환)",
+    ("use", "dual_dedup_merge"): "✅ 사용 · dual(직접변환)",   # 중복라벨복구 → dual 통합
+    ("use", "v2v_str_recovered"): "✅ 사용 · 방만→V2V STR복구",
+    ("use", "v2v_spa_recovered"): "✅ 사용 · 구조만→V2V SPA복구",
+    ("fix", "convert_failed"): "🛠 보정필요 · 변환실패(dual)",
+    ("fix", "spa_only_pending"): "🛠 보정필요 · 방만(V2V 대기)",
+    ("fix", "str_only_pending"): "🛠 보정필요 · 구조만(V2V 대기)",
+    ("fix", "objocr"): "🛠 보정필요 · OBJ/OCR만(공간라벨 없음)",
+    ("excl", "nonfp"): "🚫 제외 · 비-FP(평면도 아님)",
+    ("excl", "duplicate"): "🚫 제외 · 중복(사본)",
+}
+AIHUB_LABEL_ORDER = list(dict.fromkeys(AIHUB_LABEL.values()))
+
+
+def aihub_label_of(row: dict) -> str:
+    """manifest 행 → 「라벨 구성 × 처분」 카테고리 라벨(데이터 특성 기준)."""
+    return AIHUB_LABEL.get((row.get("disposition"), row.get("reason")),
+                           f"{row.get('disposition')}·{row.get('reason')}")
+
+
+def aihub_label_combo(manifest_path: Path) -> dict:
+    """검수 분류 콤보(T·G 공용) — manifest 전량(받은 원본)을 「라벨 구성 × 처분」으로 집계.
+    반환 {order:[라벨], draw:{라벨:도면}, unit:{라벨:세대}, sig2label:{지문:라벨},
+          total_draw, total_unit}. 합 = 받은 원본(43,219). G검수도 이 분모·카테고리를 쓴다."""
+    rows = []
+    p = Path(manifest_path)
+    if p.exists():
+        for ln in p.read_text(encoding="utf-8").splitlines():
+            if ln.strip():
+                try:
+                    rows.append(json.loads(ln))
+                except Exception:  # noqa: BLE001
+                    continue
+    draw, unit, sig2label = Counter(), Counter(), {}
+    for r in rows:
+        lab = aihub_label_of(r)
+        draw[lab] += 1
+        unit[lab] += aihub_row_units(r)
+        fp = r.get("fingerprint")
+        if fp:
+            sig2label[fp] = lab
+    return {"order": [l for l in AIHUB_LABEL_ORDER if draw.get(l)],
+            "draw": dict(draw), "unit": dict(unit), "sig2label": sig2label,
+            "total_draw": sum(draw.values()), "total_unit": sum(unit.values())}
+
+
 def aihub_t_status(manifest_path: Path) -> dict:
     """T-라인 AI-Hub 회계(정본 manifest) — 처분 use/fix/excl, 도면·세대 병기, by_house.
     gline_status와 같은 접근법(x['use']=세대, x['draw']['use']=도면)으로 종합 비교에서 동일 처리.

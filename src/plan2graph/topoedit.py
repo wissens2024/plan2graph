@@ -1108,41 +1108,34 @@ def render_editor(show_title: bool = True) -> None:
         return _ahs.load(recs[s])
     _src_tag = "aihub"
 
-    # ── 분류(처분 카테고리) — 상단 지표와 같은 소스(gline_status)로 통일. 한 화면 두 회계 금지.
-    #   도면별 처분 = gline_plan_status(그래프 validation·corrected). 그래프 없는 도면 = 미생성.
-    #   버킷 어휘·계산을 T 정본(사용/보정필요/제외)과 일치 → 비교 가능. [[gline-single-source]]
-    from collections import Counter as _Ctr
+    # ── 분류 콤보 = T검수(🏢)와 '동일한' 「라벨 구성 × 처분」 (manifest 전량 분모, ADR-0005·§3 불변식). ──
+    #   데이터 특성(dual/방만/구조만/objocr/중복/비FP) × 처분(사용/보정필요/제외)으로 분류 — T와 같은 소스·
+    #   같은 카테고리(dataset_status.aihub_label_combo). 합 = 받은 원본(43,219). G가 제 validation으로
+    #   제멋대로 todo/use/fix 나누던 것 폐기. (검증 품질=역할미상 등은 분류 축이 아니라 보정 상세.)
     from plan2graph import dataset_status as _ds2
-    _pdisp = _ds2.gline_plan_status(GRAPHS_DIR)        # {도면: use/fix/excl/done}
+    _mpath = config.DATA_DIR / "staging" / "aihub" / "manifest.jsonl"
 
-    def _plan_cat(pid):
-        return _pdisp.get(pid, "todo")                # 그래프 미생성 = 작업 대기
-
+    @st.cache_data(show_spinner="분류 집계(라벨 구성 × 처분, 최초 1회)...")
+    def _label_combo(_sz):
+        return _ds2.aihub_label_combo(_mpath)
+    _cmb = _label_combo(_mpath.stat().st_size if _mpath.exists() else 0)
     _allids = ids
-    _catcnt = _Ctr(_plan_cat(p) for p in _allids)        # 분류 → 도면수(필터용, gline_status.draw와 동일 우선순위)
-    # 세대·도면 카운트는 정본 gline_status에서 직접 — 2차 회계 금지·한 화면 한 회계(상단 지표와 같은 소스).
-    _gs = _ds2.gline_status(GRAPHS_DIR)
-    # 라벨·이모지 = T 검수(🏢)와 동일 vocabulary(✅사용/🛠보정필요/🚫제외/✍보정완료).
-    # 처분 버킷 명칭 = T검수(🏢)와 동일(✅사용/🛠보정필요/🚫제외/✍보정완료/🆕미생성).
-    _CATEMO = {"전체": "📋 전체", "todo": "🆕 미생성", "fix": "🛠 보정필요",
-               "use": "✅ 사용", "done": "✍ 보정완료", "excl": "🚫 제외"}
-    _CATORDER = ["전체", "todo", "fix", "use", "done", "excl"]
+    _sig2lab = _cmb["sig2label"]
 
-    def _draw_n(c):   # 도면수: 변환 버킷=gline_status.draw, 미생성(todo)=소스 도면수
-        return _gs["draw"].get(c, 0) if c in ("use", "fix", "excl", "done") else _catcnt.get(c, 0)
+    def _sig_of(pid):                                  # "house_FP_sig" → "sig"(= manifest fingerprint)
+        return pid.split("_FP_")[-1]
 
-    def _unit_n(c):   # 세대수: gline_status(세대 단위) 직접, 미생성=0
-        return _gs.get(c, 0) if c in ("use", "fix", "excl", "done") else 0
-
+    _labels = ["📋 전체"] + _cmb["order"]
     _catf = c_cat.selectbox(
-        "분류", _CATORDER,
-        key="te_catf",
-        format_func=lambda c: (f"{_CATEMO['전체']} (도면 {len(_allids):,} · 세대 {_gs['total']:,})" if c == "전체"
-                               else f"{_CATEMO.get(c, c)} (도면 {_draw_n(c):,} · 세대 {_unit_n(c):,})"))
-    if _catf != "전체":
-        ids = [p for p in _allids if _plan_cat(p) == _catf]
+        "분류", _labels, key="te_catf",
+        format_func=lambda k: (f"📋 전체 (도면 {_cmb['total_draw']:,} · 세대 {_cmb['total_unit']:,})"
+                               if k == "📋 전체"
+                               else f"{k} (도면 {_cmb['draw'].get(k, 0):,} · 세대 {_cmb['unit'].get(k, 0):,})"))
+    if _catf != "📋 전체":
+        ids = [p for p in _allids if _sig2lab.get(_sig_of(p)) == _catf]
     if not ids:
-        st.info(f"'{_catf}' 분류에 도면이 없습니다. (다른 분류 선택)")
+        st.info(f"'{_catf}'는 편집 대상 도면이 없습니다 "
+                "(제외(중복·비FP)이거나 이 거주형태에 없음 — 편집은 ✅사용/🛠보정필요 분류에서).")
         return
 
     # ── 상단 바: 도면·세대·방수·사람보정·액션 (사이드바 아님 → 메뉴 접어도 동작) ──
