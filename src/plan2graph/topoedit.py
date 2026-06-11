@@ -1072,7 +1072,8 @@ def render_editor(show_title: bool = True) -> None:
     if show_title:                        # admin '🧩 AI-Hub 검수 (G)' 래퍼가 이미 제목 표시 → 중복 방지
         st.title("위상 편집")
     st.caption("원본 위에 영역(반투명 박스)을 그려 완전 기하 → 위상은 결정적 추출. "
-               "그리기·연결·역할은 **자동 저장**. (좌측 앱 메뉴는 접어도 됨)")
+               "그리기·연결·역할은 **자동 저장**. **도면 1장 = 여러 세대**라 도면수 ≠ 세대수"
+               "(세대 = 실제 추출된 그래프 수). (좌측 앱 메뉴는 접어도 됨)")
 
     import types as _types
     led = load_ledger()
