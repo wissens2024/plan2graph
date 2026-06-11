@@ -511,6 +511,7 @@ def freeze(version: str, sources=None) -> dict:
     rel.mkdir(parents=True, exist_ok=True)
     n = 0
     by_src, no_prov = Counter(), 0
+    draws: set = set()                                        # 동결 부분집합의 '도면(시트)' 집합
     with (rel / "geom.jsonl").open("w", encoding="utf-8") as w:
         for f in sorted(GRAPHS_DIR.glob("*.json")):
             try:
@@ -527,9 +528,15 @@ def freeze(version: str, sources=None) -> dict:
             w.write(json.dumps(g, ensure_ascii=False) + "\n")
             n += 1
             by_src[src or "?"] += 1
+            uid = g.get("unit_id") or f.stem                  # "{plan}_u{i}" → 시트=plan
+            draws.add(uid.rsplit("_u", 1)[0])
     man = json.loads(MANIFEST.read_text(encoding="utf-8")) if MANIFEST.exists() else {}
     man["version"] = version
     man["n_graphs"] = n
+    # ⚠️ staging 매니페스트엔 '전체' n_plans/n_units가 들어있음 → 동결 '부분집합' 수로 덮어쓴다
+    #    (안 그러면 g0도 전체 19,826/40,495로 표시됨 — GUI admin.py 버전표가 이 둘을 읽음)
+    man["n_units"] = n                                        # 세대 = 동결 그래프 수
+    man["n_plans"] = len(draws)                               # 도면 = 동결 부분집합의 고유 시트 수
     man["freeze_sources"] = list(srcs) if srcs else "all"
     man["freeze_구성"] = dict(by_src.most_common())
     if no_prov:
