@@ -1507,28 +1507,25 @@ if which.startswith("📗"):
                 return _gg.load(_run)
             boxes = _gg.generate(_geom_net(_sel_geom), rooms)
             v = _gc.verify(rooms, edges, boxes)
-            st.image(_gg.render(rooms, boxes),
-                     caption=f"🤖 생성형 AI 도면({_sel_geom}) — 방 {len(rooms)} · 인접실현 "
-                             f"{v['adj_rate']*100:.0f}% · 겹침 {v['n_overlap']}")
+            # 생성형 AI 좌표 → 자기교정 → **두 출력**: ① 도면(화면 이미지) ② AutoCAD(DXF)
+            from plan2graph import cadrender as _cr
+            _geom = _cr.autocorrect(_cr.from_floorgeom(rooms, boxes, edges))
+            st.markdown(f"#### 생성형 AI 도면 — `{_sel_geom}`")
+            _gc1, _gc2 = st.columns([3, 1])
+            _gc1.pyplot(_cr.render_fig(_geom), clear_figure=True)      # ① 도면(이미지)
+            with _gc2:
+                try:                                                   # ② 같은 도면의 CAD 파일
+                    st.download_button("📐 AutoCAD(DXF) 받기", _cr.render_dxf(_geom),
+                                       file_name="gline_plan.dxf", mime="application/dxf")
+                    st.caption("이미지는 CAD에서 못 쓰니 **같은 도면을 DXF로** 내보냅니다.")
+                except RuntimeError as _e:
+                    st.caption(f"DXF 불가: {_e}")
             c1, c2, c3 = st.columns(3)
             c1.metric("방 수", len(rooms))
             c2.metric("인접 실현율", f"{v['adj_rate']*100:.0f}%")
             c3.metric("겹침", v["n_overlap"])
-            st.caption(f"**학습된 기하 AI({_sel_geom})가 좌표 생성** → 공용 verify·자기교정·DXF. "
-                       "출력이 거칠면 = 학습 개선 대상(2층 자기교정·재학습).")
-
-            # 🖼 공용코어(cadrender) 경로 — T와 **동일 verify+자기교정+DXF** (G 완성)
-            from plan2graph import cadrender as _cr
-            _geom = _cr.autocorrect(_cr.from_floorgeom(rooms, boxes, edges))
-            st.markdown("**🖼 생성형 도면 / 📐 AutoCAD** (T와 동일 공용코어 — 같은 자로 비교)")
-            _gc1, _gc2 = st.columns([3, 1])
-            _gc1.pyplot(_cr.render_fig(_geom), clear_figure=True)
-            with _gc2:
-                try:
-                    st.download_button("📐 AutoCAD(DXF)", _cr.render_dxf(_geom),
-                                       file_name="gline_plan.dxf", mime="application/dxf")
-                except RuntimeError as _e:
-                    st.caption(f"DXF 불가: {_e}")
+            st.caption(f"생성형 AI(`{_sel_geom}`)가 도면을 만들고, 자기교정이 문제를 찾아 고칩니다(아래 로그). "
+                       "출력이 거칠면 = 학습 개선 대상.")
             with st.expander(f"🔧 자기교정 {len(_geom.correct_log)}바퀴 · 잔여 {len(_geom.issues)}건"
                              " — 검사·수정 내역(무엇을 찾아 무엇을 고쳤나)", expanded=True):
                 for _rd in _geom.correct_log:
@@ -1549,46 +1546,6 @@ if which.startswith("📗"):
         except Exception as e:  # noqa: BLE001
             st.error(f"기하 생성 실패: {e}")
 
-    # ── 4. 데이터 그래프 보기 · DXF 내보내기 (생성 아님 — 확인·내보내기용) ──
-    st.header("4. 데이터 그래프 보기 · DXF 내보내기")
-    st.caption("학습 데이터(G 그래프)를 cadrender로 **확인·내보내기**용 — *생성이 아님*. "
-               "자동 베이스라인이라 거칠 수 있음. **그래프를 골라야 렌더**합니다(자동 표시 없음).")
-    from plan2graph import topoedit as _te2, cadrender as _cr
-    _gdir = _te2.GRAPHS_DIR
-    _gjsons = sorted(_gdir.glob("*.json")) if _gdir.exists() else []
-    if not _gjsons:
-        st.info("G 그래프가 아직 없습니다(SVG 변환→빌드 후).")
-    else:
-        _PICK = "— 그래프 선택 —"
-        _rc1, _rc2 = st.columns([3, 1])
-        _selg = _rc1.selectbox(f"도면(그래프) 선택 ({len(_gjsons):,})", [_PICK] + _gjsons,
-                               format_func=lambda p: p if isinstance(p, str) else p.stem)
-        if _selg != _PICK:
-            try:
-                _gobj = json.loads(_selg.read_text(encoding="utf-8"))
-                _geom = _cr.autocorrect(_cr.from_geomgraph(_gobj))
-                st.pyplot(_cr.render_fig(_geom), clear_figure=True)
-                with st.expander(f"🔧 자기교정 {len(_geom.correct_log)}바퀴 — 검사·수정 내역"):
-                    for _rd in _geom.correct_log:
-                        if _rd.get("done"):
-                            st.markdown(f"**{_rd['iter']}바퀴** · 검사 0건 → ✅ 완료(깨끗)")
-                        else:
-                            st.markdown(f"**{_rd['iter']}바퀴** · 검사 {len(_rd['found'])}건 발견 → "
-                                        f"{len(_rd['fixed'])}건 수정")
-                            for _fx in _rd["fixed"]:
-                                st.caption(f"　🔧 고침: {_fx}")
-                            for _fd in _rd["found"]:
-                                st.caption(f"　🔎 검출: {_fd}")
-                    st.markdown(f"**잔여 {len(_geom.issues)}건**"
-                                + (" — ⚠ 보정필요" if _geom.issues else " — ✅ 깨끗"))
-                try:
-                    _dxf = _cr.render_dxf(_geom)
-                    _rc2.download_button("📐 AutoCAD(DXF) 받기", _dxf,
-                                         file_name=f"{_geom.plan_id}.dxf", mime="application/dxf")
-                except RuntimeError as _e:
-                    _rc2.caption(f"DXF 불가: {_e}")
-            except Exception as _e:  # noqa: BLE001
-                st.error(f"렌더 실패: {_e}")
     st.stop()
 
 if which.startswith("⚖️"):
