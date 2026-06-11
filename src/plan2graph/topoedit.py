@@ -1144,8 +1144,10 @@ def render_editor(show_title: bool = True) -> None:
         st.info(f"'{_catf}' 분류에 도면이 없습니다. (다른 분류 선택)")
         return
 
-    # ── 상단 바: 도면·세대·상태·액션 (사이드바 아님 → 메뉴 접어도 동작) ──
-    t1, t2, t3, t4 = st.columns([3, 3, 3, 2])
+    # ── 상단 바: 도면·세대·방수·사람보정·액션 (사이드바 아님 → 메뉴 접어도 동작) ──
+    # 사람 보정 건수 = ledger의 '보정완료' 세대 수(= SVG 보정완료 = corrected). 저장 즉시 반영(저렴).
+    _n_corrected = sum(1 for v in led.values() if v.get("status") == "보정완료")
+    t1, t2, t3, tc, t4 = st.columns([3, 3, 3, 2, 2])
     _ptgt = st.session_state.pop("_te_plan_target", None)
     _pidx = ids.index(_ptgt) if (_ptgt and _ptgt in ids) else 0
     sel = t1.selectbox(f"도면 ({len(ids):,})", ids, index=_pidx)
@@ -1184,6 +1186,8 @@ def render_editor(show_title: bool = True) -> None:
         t3.metric("방·연결·엣지 · 면적", f"{nroom}·{nconn}·{len(stt.edges)} · {tot_m2:.0f}㎡")
     else:
         t3.metric("방 · 연결공간 · 엣지", f"{nroom} · {nconn} · {len(stt.edges)}")
+    tc.metric("✍ 사람 보정", f"{_n_corrected:,}건",
+              help="사람이 SVG 보정완료(corrected) 저장한 세대 수(전체 데이터셋 누적). 저장 시 즉시 증가.")
     tb1, tb2 = t4.columns(2)                       # 보정완료·처음부터 한 줄
     if tb1.button("보정완료", use_container_width=True):
         save_svg(stt, dr, status="보정완료", curator="admin")

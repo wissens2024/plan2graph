@@ -309,34 +309,8 @@ except ModuleNotFoundError:
 if which.startswith("🧩"):
     from plan2graph import topoedit
     st.title("🧩 AI-Hub 검수 (G) — 위상+기하 보정")
-    # ── G 보정 회계 — 단일 진실 staging/gline(자동 분류 + 사람 보정완료 2축). ADR-0003 ──
-    from plan2graph import topoedit as _te
-    from plan2graph import dataset_status as _ds
-
-    @st.cache_data(show_spinner="G 회계 집계...")
-    def _gline_acct(_sig):
-        return _ds.gline_status(_te.GRAPHS_DIR)
-    _gd = _te.GRAPHS_DIR
-    # schema 태그("g2")는 회계 dict 키 추가 시 캐시 무효화용 — _sig가 동일해도
-    # 콜리(gline_status)의 반환 스키마가 바뀌면 stale 캐시로 KeyError가 나므로 버전 고정.
-    _sig = ("g2", len(list(_gd.glob("*.json"))), int(_gd.stat().st_mtime)) if _gd.exists() else ("g2", 0, 0)
-    _a = _gline_acct(_sig)
-    _c4 = st.columns(5)
-    _c4[0].metric("✅ 사용 (자동)", f"{_a['use']:,}")
-    _c4[1].metric("🛠 보정필요", f"{_a['fix']:,}")
-    _c4[2].metric("🚫 제외", f"{_a['excl']:,}")
-    _c4[3].metric("✍ 보정완료 (사람)", f"{_a['done']:,}")
-    _c4[4].metric("📦 사용가능", f"{_a['usable_now']:,}", f"상한 {_a['usable_max']:,}")
-    _dw = _a.get("draw", {})
-    st.caption(f"**도면 {_a['n_drawings']:,} → 세대 {_a['total']:,}** (AI-Hub 한 도면=여러 세대 타일. "
-               f"위 지표는 모두 **세대** 단위). "
-               f"**도면 기준**: 사용 {_dw.get('use',0):,} · 보정필요 {_dw.get('fix',0):,} · "
-               f"제외 {_dw.get('excl',0):,} · 보정완료 {_dw.get('done',0):,}. "
-               f"**G 단일 데이터셋 = staging/gline** (자동+사람 보정 한 폴더, ADR-0003). "
-               f"사용가능 {_a['usable_now']:,} = 자동 사용 {_a['use']:,} + 사람 보정완료 {_a['done']:,}. "
-               f"보정필요 {_a['fix']:,} → 보정완료가 데이터를 키운다(증량). 제외 {_a['excl']:,}는 보증 불가. "
-               "사람 보정은 아래 편집기에서 **보정완료**(corrected=true 저장).")
-    st.divider()
+    # 상단 데이터셋 합계(사용/보정필요/제외/보정완료)는 종합현황·버전표에 있어 중복 → 제거.
+    # 대신 '사람 보정 건수'(SVG 보정완료 세대)를 편집기 상단 바에 표시(render_editor).
     topoedit.render_editor(show_title=False)
     st.stop()
 
@@ -460,22 +434,7 @@ if which.startswith("🏢"):
     from plan2graph import inspect_excluded as _ix
 
     st.title("🏢 AI-Hub 검수 (T) — 자동변환 그래프")
-    _aim_t = config.DATA_DIR / "staging" / "aihub" / "manifest.jsonl"
-    if _aim_t.exists():
-        from plan2graph import dataset_status as _dst
-        @st.cache_data(show_spinner=False)
-        def _aih_disp_t(_sz):
-            return _dst.aihub_t_status(_aim_t)        # 도면+세대·처분 (정본 회계)
-        _dt = _aih_disp_t(_aim_t.stat().st_size)
-        _dwt = _dt.get("draw", {})
-        _ct = st.columns(3)
-        _ct[0].metric("✅ 사용", f"{_dwt.get('use', 0):,}", f"세대 {_dt.get('use', 0):,}", delta_color="off")
-        _ct[1].metric("🛠 보정 필요", f"{_dwt.get('fix', 0):,}", f"세대 {_dt.get('fix', 0):,}", delta_color="off")
-        _ct[2].metric("🚫 제외", f"{_dwt.get('excl', 0):,}", f"세대 {_dt.get('excl', 0):,}", delta_color="off")
-        st.caption(f"위 큰 숫자=**도면**(받은 원본), 아래=**세대**. 합 도면 {_dt.get('total_draw',0):,} · "
-                   f"세대 {_dt.get('total',0):,} (사용=Σ변환세대·제외 중복=원본 세대수·보정필요=0). "
-                   "변환 완성도 레버(자동): ② 기하룰(개방통로·발코니·문매칭) · ③ 임계(간격·비율) · "
-                   "④ 무결성 기준(R1~R5) · ① 검출 재학습(V2V/STR) · 라벨 합집합 재변환 → 보정필요를 사용으로.")
+    # 상단 데이터셋 합계(사용/보정필요/제외)는 종합현황에 있어 중복 → 제거. 검수 본연(원본 육안)만.
     st.caption("AI-Hub 도면을 원본 PNG로 확인 — 채택분(dual)·제외분(부분/완전배제) 사유 육안 검증.")
     if not config.RAW_SOURCE_ROOT.is_dir():
         st.error(f"원본 RAW 없음: {config.RAW_SOURCE_ROOT}\n"
