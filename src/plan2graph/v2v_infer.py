@@ -227,7 +227,7 @@ def run_objocr(spa_weights: str, str_weights: str,
                split=("Training", "Validation"), imgsz: int = 1024,
                conf: float = 0.25, limit: int | None = None, device=None,
                spa_imgsz: int = 768, str_imgsz: int = 1024,
-               min_unit_rooms: int = 2) -> dict:
+               min_unit_rooms: int = 2, targets: list | None = None) -> dict:
     """objocr 도면(OBJ/OCR 라벨만, SPA·STR 둘 다 없음) → **세대별로 쪼개 이미지 직접** SPA·STR 예측.
 
     **2-패스**(전체시트 1패스는 다세대 시트에서 방이 작게 보여 STR이 부실 → 세대 크롭으로 해결):
@@ -245,7 +245,9 @@ def run_objocr(spa_weights: str, str_weights: str,
 
     models = {"SPA": YOLO(spa_weights), "STR": YOLO(str_weights)}
     cls_of = {"SPA": SPACE_CLASSES, "STR": STRUCT_CLASSES}
-    recs = ix.objocr_only_records(split)
+    # targets 지정 시 그 레코드만(이미지직접 2-패스 구제용 — str_only 등 SPA 미예측 도면).
+    # 미지정이면 기존 objocr-only 전량. 둘 다 predicted_img/{TYPE}_{sig}.json 저장(additive).
+    recs = targets if targets is not None else ix.objocr_only_records(split)
     PRED_IMG_DIR.mkdir(parents=True, exist_ok=True)
     wfp = {"SPA": _weight_fingerprint(spa_weights), "STR": _weight_fingerprint(str_weights)}
     git = exp.git_commit()
@@ -319,7 +321,8 @@ def run_objocr(spa_weights: str, str_weights: str,
             "env": exp.env_provenance(), "split": sp_list, "spa_imgsz": spa_imgsz,
             "str_imgsz": str_imgsz, "sheet_imgsz": imgsz, "conf": conf, "device": device,
             "limit": limit, "weights": wfp, "predicted": n, "detail": stat}
-    (PRED_IMG_DIR / "_provenance.json").write_text(
+    _pf = "_provenance_rescue.json" if targets is not None else "_provenance.json"
+    (PRED_IMG_DIR / _pf).write_text(
         json.dumps(prov, ensure_ascii=False, indent=2), encoding="utf-8")
     exp.append_index({"kind": "v2v_infer_objocr_units", "git_commit": git, "conf": conf,
                       "spa_imgsz": spa_imgsz, "str_imgsz": str_imgsz,
