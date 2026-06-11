@@ -398,6 +398,8 @@ def build(state, dr) -> dict:
         G.add_edge(a, b)
         edges.append({"from": a, "to": b, "via": e.get("via"),
                       "door_id": None,
+                      # 사람 보정값(있으면 doors 루프가 탐지보다 우선) — 문 방향·위치 클릭 입력
+                      "door_swing_deg": e.get("door_swing_deg"), "door_pos": e.get("door_pos"),
                       "privacy_transition": f"{rooms[a]['privacy']}_to_{rooms[b]['privacy']}"})
 
     # 현관에서 BFS 거리
@@ -421,13 +423,22 @@ def build(state, dr) -> dict:
         d, dwall = _door_for_edge(dr, walls, a, b)       # 공유벽 위 문(측정률↑)
         if d is None:
             d = _nearest_door(dr, ca, cb)                # 폴백: 중심 중점 최근접
-        pos = ([round((ca[0] + cb[0]) / 2, 1), round((ca[1] + cb[1]) / 2, 1)]
+        h_pos = e.get("door_pos")                        # 사람이 찍은 문 위치(누락 문 보정)
+        h_swing = e.get("door_swing_deg")                # 사람이 지정한 여닫이 방향(°)
+        pos = (h_pos if h_pos else
+               [round((ca[0] + cb[0]) / 2, 1), round((ca[1] + cb[1]) / 2, 1)]
                if d is None or not d.centroid
                else [round(d.centroid[0], 1), round(d.centroid[1], 1)])
         wpx = _bbox_short(d.bbox) if d is not None else None
         did = f"d{len(doors)}"
         on_wall = (dwall["id"] if dwall is not None
                    else _nearest_wall(walls, pos, prefer_rooms=(a, b)))
+        # 여닫이 방향: 사람 지정 우선 → 없으면 탐지 arc → 둘 다 없으면 검토 필요
+        if h_swing is not None:
+            orient = {"swing_dir_deg": round(float(h_swing), 1), "hinge": None,
+                      "radius_px": None, "confidence": "human", "source": "human"}
+        else:
+            orient = _door_orientation(d.polygon) if d is not None else None
         door = {
             "id": did, "connects": [a, b], "via": "door", "position": pos,
             "polygon": ([[round(x, 1), round(y, 1)] for x, y in d.polygon.exterior.coords]
@@ -436,9 +447,9 @@ def build(state, dr) -> dict:
             "width_px": wpx,
             "width_m": (round(wpx * sc, 2) if (wpx and sc) else None),
             "subtype": (d.subtype if d is not None else None),
-            "orientation": (_door_orientation(d.polygon) if d is not None else None),
-            "needs_orientation_review": (d is None or d.polygon is None
-                                         or _door_orientation(d.polygon) is None),
+            "source": ("human" if (h_pos or h_swing is not None) else "detected"),
+            "orientation": orient,
+            "needs_orientation_review": (orient is None),
             "on_wall": on_wall,
             "is_entrance": rooms[a]["role"] == "현관" or rooms[b]["role"] == "현관",
         }

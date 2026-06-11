@@ -251,7 +251,8 @@ def suggest_roles(st: State, dr: Drawing) -> dict:
     NAME = (("안방", "안방"), ("드레스", "드레스룸"), ("파우더", "파우더룸"),
             ("부부욕실", "전용욕실"),
             ("부부", "전용욕실"), ("욕실", "욕실"), ("화장실", "화장실"),
-            ("주방", "주방"), ("식당", "주방"), ("거실", "거실"), ("현관", "현관"),
+            ("주방", "주방"), ("식당", "주방"), ("거실", "거실"),
+            ("전실", "전실"), ("현관", "현관"),   # 전실 먼저: 원본은 전실도 '현관'으로 라벨함(아래 주석)
             ("발코니", "발코니"), ("복도", "복도"), ("다용도", "다목적공간"),
             ("실외기", "실외기실"), ("침실", "침실"))
     texts = [(t.ocr_text, t.centroid) for t in getattr(dr, "texts", [])
@@ -428,9 +429,12 @@ def to_svg(st: State, dr: Drawing) -> str:
             out.append(
                 f'  <circle cx="{round(d.centroid[0], 1)}" cy="{round(d.centroid[1], 1)}" '
                 f'r="6" data-kind="door" data-subtype="{d.subtype or ""}"/>')
-    for e in st.edges:           # 사람이 표시한 비-문 연결(open/corridor/entrance)
+    for e in st.edges:           # 사람이 표시한 연결(via) + (있으면) 문 방향·위치 보정값
+        _ds, _dp = e.get("door_swing_deg"), e.get("door_pos")
+        _at = (f' data-door-swing="{_ds}"' if _ds is not None else "") + \
+              (f' data-door-pos="{_dp[0]},{_dp[1]}"' if _dp else "")
         out.append(f'  <line data-kind="link" data-a="{e["a"]}" data-b="{e["b"]}" '
-                   f'data-via="{e["via"]}"/>')
+                   f'data-via="{e["via"]}"{_at}/>')
     out.append("</svg>")
     return "\n".join(out)
 
@@ -460,8 +464,15 @@ def parse_svg(svg: str):
             doors.append({"x": float(el.get("cx")), "y": float(el.get("cy")),
                           "subtype": el.get("data-subtype") or None})
         elif tag == "line" and el.get("data-kind") == "link":
-            links.append({"a": int(el.get("data-a")), "b": int(el.get("data-b")),
-                          "via": el.get("data-via")})
+            _lk = {"a": int(el.get("data-a")), "b": int(el.get("data-b")),
+                   "via": el.get("data-via")}
+            _ds, _dp = el.get("data-door-swing"), el.get("data-door-pos")
+            if _ds not in (None, ""):
+                _lk["door_swing_deg"] = float(_ds)
+            if _dp:
+                _xy = _dp.split(",")
+                _lk["door_pos"] = [float(_xy[0]), float(_xy[1])]
+            links.append(_lk)
     return regions, doors, links
 
 
@@ -550,7 +561,9 @@ def to_record(st: State, *, status: str = "보정완료", curator: str = "",
         "house": st.house, "source": "aihub",
         "nodes": nodes,
         "edges": [{"a": e["a"], "b": e["b"], "via": e["via"],
-                   "source": e.get("source", "human")} for e in st.edges],
+                   "source": e.get("source", "human"),
+                   **{k: e[k] for k in ("door_swing_deg", "door_pos") if e.get(k) is not None}}
+                  for e in st.edges],
         "status": status, "curator": curator, "notes": notes,
         "ts": ts or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
@@ -585,7 +598,9 @@ def state_from_record(rec: dict, dr: Drawing | None = None) -> State:
         if isinstance(nd["id"], int) and nd["id"] >= nextc:
             nextc = nd["id"] + 1
     edges = [{"a": e["a"], "b": e["b"], "via": e["via"],
-              "source": e.get("source", "human")} for e in rec["edges"]]
+              "source": e.get("source", "human"),
+              **{k: e[k] for k in ("door_swing_deg", "door_pos") if e.get(k) is not None}}
+             for e in rec["edges"]]
     st = State(plan_id=rec["plan_id"], house=rec["house"], nodes=nodes, edges=edges)
     st._next_conn = nextc
     return st
@@ -609,7 +624,8 @@ def state_from_svg(svg: str, dr: Drawing, plan_id: str, house: str) -> State:
                               fixtures=_fixtures_in(dr, poly) if r["source"] == "label" else [])
         if isinstance(r["id"], int) and r["id"] >= nextc:
             nextc = r["id"] + 1
-    edges = [{"a": l["a"], "b": l["b"], "via": l["via"], "source": "human"} for l in links]
+    edges = [{"a": l["a"], "b": l["b"], "via": l["via"], "source": "human",
+              **{k: l[k] for k in ("door_swing_deg", "door_pos") if k in l}} for l in links]
     st = State(plan_id=plan_id, house=house, nodes=nodes, edges=edges)
     st._next_conn = nextc
     return st
