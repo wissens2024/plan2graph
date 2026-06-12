@@ -96,9 +96,13 @@ def from_geomgraph(g: dict) -> Geometry:
     for nid, r in (g.get("rooms") or {}).items():
         poly = [tuple(p) for p in (r.get("polygon") or [])]
         cx, cy = r.get("centroid") or _centroid(poly)
-        fxs = [FixtureG(cls=f.get("class") or f.get("cls") or "객체",
-                        bbox=tuple(f.get("bbox") or (cx, cy, 0, 0)))
-               for f in (r.get("fixtures") or [])]
+        fxs = []
+        for f in (r.get("fixtures") or []):
+            if isinstance(f, str):          # 문자열 태그(위치 없음) — 중심점에 0크기
+                fxs.append(FixtureG(cls=f, bbox=(cx, cy, 0, 0)))
+            elif isinstance(f, dict):
+                fxs.append(FixtureG(cls=f.get("class") or f.get("cls") or "객체",
+                                    bbox=tuple(f.get("bbox") or (cx, cy, 0, 0))))
         rooms.append(RoomG(id=int(nid) if str(nid).lstrip("-").isdigit() else nid,
                            role=r.get("role") or r.get("base") or "기타",
                            polygon=poly, area_m2=r.get("area_m2"),
