@@ -85,13 +85,17 @@ def header(slide, idx, title, kicker=None):
     text(slide, Inches(0.55), Inches(0.42), Inches(12), Inches(0.7),
          [(title, {"size": 26, "color": DARK, "bold": True})])
     text(slide, Inches(12.4), Inches(0.45), Inches(0.7), Inches(0.4),
-         [(str(idx), {"size": 14, "color": GRAY})], align=PP_ALIGN.RIGHT)
+         [(str(len(prs.slides._sldIdLst)), {"size": 14, "color": GRAY})], align=PP_ALIGN.RIGHT)
 
 
 def slide():
     s = prs.slides.add_slide(BLANK)
     box(s, 0, 0, EMU_W, EMU_H, fill=WHITE)
     return s
+
+
+def img(slide, path, x, y, w=None, h=None):
+    return slide.shapes.add_picture(path, x, y, width=w, height=h)
 
 
 def chip(slide, x, y, w, label, value, color):
@@ -200,6 +204,23 @@ table(s, Inches(0.55), Inches(3.6), Inches(12.2),
       [Inches(2.2), Inches(5.5), Inches(4.5)])
 text(s, Inches(0.55), Inches(6.4), Inches(12.2), Inches(0.6),
      [("비교 지표: FID · 법규준수율 · 완성도 — 기하모델 효과를 격리해 정량 비교", {"size": 13, "color": GRAY})])
+
+# ════════════════════════════════════════════════════════════════════════════
+# (신규) 핵심 숫자 한눈에
+s = slide()
+header(s, 0, "핵심 숫자 한눈에", "AT A GLANCE")
+_cw, _gap, _x0 = Inches(3.95), Inches(0.2), Inches(0.55)
+chip(s, _x0, Inches(1.7), _cw, "받은 원본 (3출처)", "129,007", DARK)
+chip(s, _x0 + _cw + _gap, Inches(1.7), _cw, "사용 가능", "94,320", GREEN)
+chip(s, _x0 + 2 * (_cw + _gap), Inches(1.7), _cw, "온전(AI-Hub APT)", "24,706 · 64.7%", INDIGO)
+chip(s, _x0, Inches(3.2), _cw, "엔진 역할 / 방", "13 / 18", BLUE)
+chip(s, _x0 + _cw + _gap, Inches(3.2), _cw, "DiffPlanner RPLAN FID", "1.23", GREEN)
+chip(s, _x0 + 2 * (_cw + _gap), Inches(3.2), _cw, "통일 그래프 (G)", "40,495 세대", DARK)
+text(s, Inches(0.55), Inches(4.9), Inches(12.2), Inches(1.9),
+     [("데이터 129,007 → 통일 그래프 40,495세대 → 자체 엔진(13역할/18방) → 완전 도면+DXF",
+       {"size": 17, "bold": True, "color": DARK}),
+      ("박스 회귀 사망(정답 99% 겹침) → diffusion 엔진 전환 · neuro-symbolic으로 완전성 확보",
+       {"size": 14, "color": GRAY})], space=10)
 
 # ════════════════════════════════════════════════════════════════════════════
 # 4. 데이터 출처·규모
@@ -343,6 +364,23 @@ table(s, Inches(0.55), Inches(2.3), Inches(12.2),
       [Inches(3.4), Inches(8.8)])
 text(s, Inches(0.55), Inches(5.7), Inches(12.2), Inches(1),
      [("생성 → 검증(rules_legal) → 보정 → 재생성 루프 — 거친 출력은 학습 개선 신호", {"size": 13, "color": GRAY})])
+
+# ════════════════════════════════════════════════════════════════════════════
+# (신규) 완전 도면 예시 (이미지)
+s = slide()
+header(s, 0, "완전 도면 예시 — neuro-symbolic으로 채운 결과", "RESULTS")
+img(s, "docs/figs/complete_drawing.png", Inches(0.4), Inches(1.45), h=Inches(5.65))
+text(s, Inches(8.55), Inches(1.6), Inches(4.5), Inches(4.2),
+     [("이 도면 1장에 담긴 것", {"size": 16, "bold": True, "color": INDIGO}),
+      ("방 + 면적(㎡) · 외벽/내벽", {"size": 14, "bullet": True}),
+      ("가구: 침대·소파·TV·식탁·싱크/레인지·냉장고·변기·세면·샤워·신발장", {"size": 14, "bullet": True}),
+      ("창(파랑) · 문(빨강) · 치수 12,653 × 9,513 mm", {"size": 14, "bullet": True}),
+      ("척도: 여닫이문 폭 800mm 앵커로 추론 (11.9 mm/px)", {"size": 14, "bullet": True}),
+      ("같은 도면 → AutoCAD DXF 동시 출력", {"size": 14, "bullet": True, "bold": True, "color": GREEN})],
+     space=10)
+text(s, Inches(8.55), Inches(5.85), Inches(4.5), Inches(1.4),
+     [("SOTA는 방·벽 레이아웃까지 — 우리는 가구·치수·DXF까지 채운 “완전 도면”",
+       {"size": 13, "color": GRAY})])
 
 # ════════════════════════════════════════════════════════════════════════════
 # 12. 성능·측정
