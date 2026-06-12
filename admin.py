@@ -867,112 +867,201 @@ if which.startswith("📐"):
     st.stop()
 if which.startswith("📗"):
     import json as _json
+    import subprocess as _sp
     from pathlib import Path as _P
     from plan2graph import cadrender as _cr, engine_render as _er
-    st.title("📗 도면 생성 — 한국형 소버린 엔진 (학습→생성→개선→재학습 반복)")
+    st.title("📗 도면 생성 — 한국형 소버린 엔진 (데이터셋 → 학습/재학습 → 생성, 반복)")
     st.caption("ADR-0006/0007. 박스회귀 폐기 → 자체 엔진(DiffPlanner 골격 한국형 13역할/18방). "
                "한 번에 완성이 아님 — 반복으로 품질을 올린다.")
-    st.markdown(
-        "**반복 루프** &nbsp; `온전 데이터셋 → 엔진 학습 → 샘플링 → 도면+DXF"
-        "(자동완성: 문·창·기구·치수) → 보정·neuro-symbolic 개선 → 더 좋은 그래프 → 재학습 ↺`")
+    st.markdown("**반복 루프** &nbsp; `데이터셋 구성 → ① 학습/재학습 → ② 샘플 생성 → 도면+DXF"
+                "(자동완성: 문·창·기구·치수) → 보정·neuro-symbolic 개선 → 더 좋은 데이터셋 ↺`")
     st.divider()
 
     _DIFFP = _P("~/diffplanner_work").expanduser()
     _ckroot = _DIFFP / "ckpt_kr"
-    _kf = _DIFFP / "dataset" / "dataset_json_korean" / "data_train.json"
-
-    # ── 1) 학습 상태 — 데이터셋 구성(variant) × ARM ──
-    st.markdown("#### 1) 학습 상태 — 데이터셋 구성(variant) × ARM")
-    st.caption("**데이터셋 구성이 곧 실험 변수**: 같은 13/18 엔진을 다른 구성(온전만 / +보정 / "
-               "dual만 / +V2V / 소스믹스)으로 학습 → 전혀 다른 모델 → 도면 품질 차이. "
-               "ARM-A(사전학습 RPLAN→파인튜닝) · ARM-B(구성 단독). 숫자=마지막 체크포인트 step.")
+    _dsroot = _DIFFP / "dataset"
+    _outdir = _DIFFP / "output" / "out_korean"
+    _logsdir = _DIFFP / "logs"
     _stages = ["node_diff", "adjacency_diff", "partitioning_diff"]
+    _ds = ([p.name.replace("dataset_json_", "") for p in sorted(_dsroot.glob("dataset_json_*"))]
+           if _dsroot.exists() else [])
+
+    def _ckdir(variant, stage, arm):       # variant 우선, korean은 레거시 flat 폴백
+        d = _ckroot / variant / stage / arm
+        if not d.exists() and variant == "korean":
+            return _ckroot / stage / arm
+        return d
 
     def _last_step(d):
         cps = sorted(c for c in d.glob("*model*.pt") if "model" in c.name) if d.exists() else []
-        return cps[-1].name.replace(".pt", "").split("model")[-1].lstrip("_") if cps else "—"
+        return cps[-1].name.replace(".pt", "").split("model")[-1].lstrip("_") if cps else None
 
-    def _ckdir(variant, stage, arm):
-        return (_ckroot / stage / arm) if variant == "korean(flat)" \
-            else (_ckroot / variant / stage / arm)
+    def _gpu_busy():
+        try:
+            r = _sp.run(["bash", "-lc", "pgrep -f 'train.py' >/dev/null && echo busy || echo free"],
+                        capture_output=True, text=True, timeout=10)
+            return "busy" in r.stdout
+        except Exception:
+            return False
 
-    _variants = []
-    if _ckroot.exists():
-        for p in sorted(_ckroot.iterdir()):
-            if p.is_dir() and p.name not in _stages and p.name != "_pretrain":
-                _variants.append(p.name)
-        if (_ckroot / "node_diff").exists():           # 레거시 flat = 현재 진행 중 korean 런
-            _variants.append("korean(flat)")
+    def _proc_running(pat):
+        try:
+            r = _sp.run(["bash", "-lc", f"pgrep -f '{pat}' >/dev/null && echo y || echo n"],
+                        capture_output=True, text=True, timeout=10)
+            return "y" in r.stdout
+        except Exception:
+            return False
 
-    _rows = [{"구성 · ARM": "▸ 사전학습(RPLAN, 공유)",
-              **{s.replace("_diff", ""): _last_step(_ckroot / "_pretrain" / s) for s in _stages}}]
-    if (_ckroot / "node_diff" / "pretrain").exists():
-        _rows.append({"구성 · ARM": "korean(flat) · pretrain",
-                      **{s.replace("_diff", ""): _last_step(_ckroot / s / "pretrain")
-                         for s in _stages}})
-    for v in _variants:
-        for arm in ("finetune", "korean_only"):
-            _rows.append({"구성 · ARM": f"{v} · {arm}",
-                          **{s.replace("_diff", ""): _last_step(_ckdir(v, s, arm))
+    # ── 1) 데이터셋 구성 × 학습 (사전학습 × 파인튜닝) ──
+    st.header("1) 데이터셋 구성 × 학습 — 사전학습 × 파인튜닝")
+    st.caption("**데이터셋 구성이 곧 실험 변수.** ① 사전학습(RPLAN 글로벌) × ② 파인튜닝(한국 구성) → 모델 "
+               "결정. 모델 없으면 [학습 시작], 있으면 §2 생성 또는 [재학습](데이터 개선 후 반복).")
+    if not _ds:
+        st.info("한국 데이터셋 구성이 없습니다 — 터미널에서 먼저: "
+                "`python scripts/korean_to_engine.py --variant korean` (또는 --provenance dual 등)")
+        st.stop()
+    cc1, cc2, cc3 = st.columns(3)
+    _pre = cc1.selectbox("① 사전학습", ["RPLAN(글로벌)", "없음"], key="eng_pre")
+    _ft = cc2.selectbox("② 파인튜닝 (데이터셋 구성)", _ds,
+                        index=_ds.index("korean") if "korean" in _ds else 0, key="eng_ft")
+    _ftsteps = cc3.number_input("파인튜닝 step", 5000, 300000, 40000, 5000, key="eng_steps")
+    _arm = "finetune" if _pre.startswith("RPLAN") else "korean_only"
+    st.caption(f"→ 모델 = 구성 **{_ft}** · ARM **{_arm}** ({_pre}) · 체크포인트 "
+               f"`ckpt_kr/{_ft}/<stage>/{_arm}`")
+
+    _msteps = {s: _last_step(_ckdir(_ft, s, _arm)) for s in _stages}
+    _trained = all(_msteps.values())
+    _tlog = _logsdir / f"train_eng_{_ft}.log"
+    _running = _proc_running("gate2_train_runbook|train.py") and not _trained
+
+    if _trained:
+        st.success("✅ 학습됨 — " + " · ".join(f"{s.replace('_diff','')} {v}"
+                                             for s, v in _msteps.items()))
+        if st.button("↻ 재학습 (데이터 개선 후 처음부터)", key="eng_retrain"):
+            if _gpu_busy():
+                st.error("GPU1 사용 중(다른 학습/샘플 진행) — 끝난 뒤 다시.")
+            else:
+                cmd = (f"cd '{_DIFFP}' && FT_STEPS={int(_ftsteps)} setsid nohup "
+                       f"bash gate2_train_runbook.sh {_ft} > '{_tlog}' 2>&1 &")
+                _sp.Popen(["bash", "-lc", cmd])
+                st.success(f"재학습 시작됨 — {_ft}. '상태 새로고침'으로 확인.")
+                st.rerun()
+    elif _running:
+        _tail = ""
+        if _tlog.exists():
+            _ll = _tlog.read_text(errors="ignore").strip().splitlines()
+            _tail = (_ll[-1] if _ll else "")[:120]
+        st.warning(f"🔄 학습 중 (GPU1·백그라운드) — node {_msteps['node_diff'] or '…'} · "
+                   f"최근: `{_tail or '시작…'}`")
+        if st.button("🔄 상태 새로고침", key="eng_refresh"):
+            st.rerun()
+    else:
+        if st.button("🛠 학습 시작 (GPU1·백그라운드)", key="eng_train", type="primary"):
+            if _gpu_busy():
+                st.error("GPU1 사용 중(다른 학습/샘플 진행) — 끝난 뒤 다시 시작하세요.")
+            else:
+                cmd = (f"cd '{_DIFFP}' && FT_STEPS={int(_ftsteps)} setsid nohup "
+                       f"bash gate2_train_runbook.sh {_ft} > '{_tlog}' 2>&1 &")
+                _sp.Popen(["bash", "-lc", cmd])
+                st.success(f"학습 시작됨 — {_ft} (사전학습 RPLAN→파인튜닝·단독). "
+                           "'상태 새로고침'으로 확인.")
+                st.rerun()
+
+    # 전체 구성×ARM 개요 표
+    with st.expander("📊 전체 학습 현황 (구성 × ARM × stage step)", expanded=False):
+        _rows = [{"구성 · ARM": "▸ 사전학습(RPLAN, 공유)",
+                  **{s.replace("_diff", ""): (_last_step(_ckroot / "_pretrain" / s) or "—")
+                     for s in _stages}}]
+        if (_ckroot / "node_diff" / "pretrain").exists():
+            _rows.append({"구성 · ARM": "korean(flat) · pretrain",
+                          **{s.replace("_diff", ""): (_last_step(_ckroot / s / "pretrain") or "—")
                              for s in _stages}})
-    st.table(_rows)
-
-    _dsroot = _DIFFP / "dataset"
-    _ds = ([p.name.replace("dataset_json_", "") for p in sorted(_dsroot.glob("dataset_json_*"))]
-           if _dsroot.exists() else [])
-    st.caption("준비된 데이터셋 구성: **" + (", ".join(_ds) if _ds else "—") + "**  ·  "
-               "새 구성 만들기 → 학습 → 샘플링:")
-    st.code("python scripts/korean_to_engine.py --variant <이름> [--provenance dual] [--all]   # 구성 생성\n"
-            "bash ~/diffplanner_work/gate2_train_runbook.sh <이름>            # 학습(ARM-A·ARM-B)\n"
-            "bash ~/diffplanner_work/korean_sample.sh <이름> finetune 200     # 샘플링→엔진출력",
-            language="bash")
+        for v in _ds:
+            for a in ("finetune", "korean_only"):
+                _rows.append({"구성 · ARM": f"{v} · {a}",
+                              **{s.replace("_diff", ""): (_last_step(_ckdir(v, s, a)) or "—")
+                                 for s in _stages}})
+        st.table(_rows)
+        st.caption("새 데이터셋 구성 생성(터미널): "
+                   "`python scripts/korean_to_engine.py --variant <이름> [--provenance dual] [--all]`")
     st.divider()
 
-    # ── 2) 도면 생성(렌더) ──
-    st.markdown("#### 2) 도면 생성 — 엔진 출력 → 이미지 + DXF")
-    st.caption("엔진 출력(방 박스+역할+외곽+인접)의 공백을 neuro-symbolic으로 채워 렌더: "
-               "문=인접 경계 · 창=거주방 외곽 · 척도=가정폭 12m · 기구=역할 카탈로그.")
-    _srcs = {}
-    _outdir = _DIFFP / "output" / "out_korean"
-    if _outdir.exists():
-        for f in sorted(_outdir.glob("*.json")):
-            _srcs[f"🟢 엔진샘플: {f.stem}"] = f
-    _gt = _DIFFP / "dataset" / "dataset_json_korean" / "data_test.json"
-    if _gt.exists():
-        _srcs["⚪ GT 예시 (학습 전 파이프라인 확인용 — 모델 생성 아님)"] = _gt
-    if not _srcs:
-        st.info("엔진 샘플 출력(out_korean/*.json)이 아직 없습니다. 위 korean_sample.sh로 생성 후 다시 오세요.")
-        st.stop()
-    _label = st.selectbox("입력 (엔진 출력 JSON)", list(_srcs))
-    _n = st.slider("렌더 장수", 1, 12, 4)
-    if "🟢" not in _label:
-        st.warning("GT 예시 = 정답 그래프를 같은 렌더러로 그린 것(모델 생성 아님). "
-                   "렌더 파이프라인 확인·시연용. 모델 생성 도면은 학습 후 엔진샘플로.")
-    if st.button("🏗 도면 생성 (이미지 + DXF)", type="primary"):
-        try:
-            _data = _json.load(open(_srcs[_label], encoding="utf-8"))
-        except Exception as e:
-            st.error(f"입력 로드 실패: {e}")
-            st.stop()
-        _recs = (_data if isinstance(_data, list) else [_data])[:_n]
-        for k, rec in enumerate(_recs):
-            try:
-                geom = _er.build_geometry(rec)
-                fig = _cr.render_fig(geom)
-                st.pyplot(fig)
-                import matplotlib.pyplot as _plt
-                _plt.close(fig)
-                c1, c2 = st.columns([3, 1])
-                c1.caption(f"**{geom.plan_id}** · 방{len(geom.rooms)} 문{len(geom.doors)} "
-                           f"창{len(geom.windows)} 기구{sum(len(r.fixtures) for r in geom.rooms)} "
-                           f"· 자기교정 잔여 {len(geom.issues)}건")
+    # ── 2) 도면 생성 — 모델 선택 → 샘플 → 이미지+DXF ──
+    st.header("2) 도면 생성 — 학습된 모델로 샘플 → 이미지 + DXF")
+    st.caption("학습된 모델을 골라 [샘플 생성](엔진이 동결 test 경계조건으로 도면 생성) → "
+               "neuro-symbolic으로 문·창·치수·기구 채워 렌더. (GT 예시 = 학습 전 파이프라인 확인용)")
+
+    # 생성에 쓸 모델 후보: node 체크포인트가 있는 (구성×ARM)
+    _models = []
+    for v in _ds:
+        for a in ("finetune", "korean_only"):
+            if _last_step(_ckdir(v, "node_diff", a)):
+                _models.append((v, a))
+    _mopts = [f"{v} · {a}" for v, a in _models] + ["⚪ GT 예시 (모델 생성 아님)"]
+    _msel = st.selectbox("모델 (데이터셋 구성 × ARM)", _mopts, key="gen_model")
+    _gn = st.slider("장수(샘플/렌더)", 1, 12, 4, key="gen_n")
+
+    if _msel.startswith("⚪"):                      # GT 예시 렌더
+        _gt = _dsroot / "dataset_json_korean" / "data_test.json"
+        if st.button("🏗 GT 예시 렌더 (이미지+DXF)", key="gen_gt") and _gt.exists():
+            _recs = _json.load(open(_gt, encoding="utf-8"))[:_gn]
+            for k, rec in enumerate(_recs):
                 try:
-                    c2.download_button("⬇ DXF", _cr.render_dxf(geom),
-                                       file_name=f"{geom.plan_id}.dxf", key=f"_dxf{k}")
+                    geom = _er.build_geometry(rec)
+                    st.pyplot(_cr.render_fig(geom))
+                    import matplotlib.pyplot as _plt
+                    _plt.close("all")
+                    a, b = st.columns([3, 1])
+                    a.caption(f"**{geom.plan_id}**(GT) · 방{len(geom.rooms)} 문{len(geom.doors)} "
+                              f"창{len(geom.windows)} 기구{sum(len(r.fixtures) for r in geom.rooms)} "
+                              f"· 잔여 {len(geom.issues)}")
+                    try:
+                        b.download_button("⬇ DXF", _cr.render_dxf(geom),
+                                          file_name=f"{geom.plan_id}.dxf", key=f"_gtdxf{k}")
+                    except Exception as e:
+                        b.caption(f"DXF 실패: {e}")
                 except Exception as e:
-                    c2.caption(f"DXF 실패: {e}")
-            except Exception as e:
-                st.error(f"[{k}] 렌더 실패: {e}")
+                    st.error(f"[{k}] 렌더 실패: {e}")
+    else:
+        _mv, _ma = _msel.split(" · ")
+        _outjson = _outdir / f"{_mv}_{_ma}.json"
+        _slog = _logsdir / f"sample_{_mv}_{_ma}.log"
+        _sampling = _proc_running(f"korean_sample.sh {_mv}|sample.py")
+        b1, b2 = st.columns(2)
+        if b1.button("🧪 샘플 생성 (GPU1·백그라운드)", key="gen_sample"):
+            if _gpu_busy():
+                st.error("GPU1 사용 중 — 끝난 뒤 다시.")
+            else:
+                cmd = (f"cd '{_DIFFP}' && setsid nohup bash korean_sample.sh {_mv} {_ma} {int(_gn)} "
+                       f"> '{_slog}' 2>&1 &")
+                _sp.Popen(["bash", "-lc", cmd])
+                st.success(f"샘플 생성 시작됨 — {_mv}·{_ma}. 끝나면 아래 [도면 렌더].")
+        if _sampling:
+            st.warning("🔄 샘플링 중(GPU1) — 끝나면 새로고침 후 [도면 렌더].")
+        if _outjson.exists():
+            b2.caption(f"✅ 엔진출력 있음: {_outjson.name}")
+            if b2.button("🏗 도면 렌더 (이미지+DXF)", key="gen_render", type="primary"):
+                _recs = _json.load(open(_outjson, encoding="utf-8"))[:_gn]
+                for k, rec in enumerate(_recs):
+                    try:
+                        geom = _er.build_geometry(rec)
+                        st.pyplot(_cr.render_fig(geom))
+                        import matplotlib.pyplot as _plt
+                        _plt.close("all")
+                        a, b = st.columns([3, 1])
+                        a.caption(f"**{geom.plan_id}** [{_mv}·{_ma}] · 방{len(geom.rooms)} "
+                                  f"문{len(geom.doors)} 창{len(geom.windows)} "
+                                  f"기구{sum(len(r.fixtures) for r in geom.rooms)} "
+                                  f"· 잔여 {len(geom.issues)}")
+                        try:
+                            b.download_button("⬇ DXF", _cr.render_dxf(geom),
+                                              file_name=f"{geom.plan_id}.dxf", key=f"_gdxf{k}")
+                        except Exception as e:
+                            b.caption(f"DXF 실패: {e}")
+                    except Exception as e:
+                        st.error(f"[{k}] 렌더 실패: {e}")
+        else:
+            b2.caption("엔진출력 아직 없음 — [샘플 생성] 먼저.")
     st.stop()
 
 if which.startswith("⚖️"):
