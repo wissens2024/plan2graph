@@ -263,6 +263,52 @@ def get_sheet(sid: str):
 
 
 @st.cache_data(show_spinner=False)
+def scale_ref_candidates(sid: str, cap: int = 12):
+    """컴퓨터 스냅 기준선 — 시트 sid의 단위 그래프(벽/문)에서 픽셀 길이 후보를 추린다.
+
+    좌표 검증결과: 그래프 wall/door px 좌표는 sheet.png_bytes(원본 시트)와 **동일한
+    전체-시트 픽셀 공간**이다(walls bbox ⊂ 이미지 크기). 따라서 segment 픽셀길이를
+    클릭거리(=factor 환산 후 원본px)와 그대로 비교해 같은 scale을 준다.
+
+    반환: [(label, px_length), ...] — 긴 벽 우선 + 문(width_px). 근접 px는 dedup, cap개.
+    """
+    import math
+    from plan2graph import topoedit
+    gdir = topoedit.GRAPHS_DIR
+    walls, doors = [], []
+    for gf in sorted(Path(gdir).glob(f"{sid}_u*.json")):
+        uid = gf.stem.rsplit("_", 1)[-1]  # u0, u1, ...
+        try:
+            g = json.loads(gf.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        for w in (g.get("walls") or []):
+            seg = w.get("segment")
+            if not seg or len(seg) != 2:
+                continue
+            (x1, y1), (x2, y2) = seg
+            L = math.hypot(x2 - x1, y2 - y1)
+            if L < 30:  # 잡선·노이즈 제외
+                continue
+            t = "외벽" if w.get("type") == "exterior" else "내벽"
+            walls.append((f"{uid} {t} {w.get('id')} ({L:.0f}px)", round(L, 1)))
+        for d in (g.get("doors") or []):
+            wpx = d.get("width_px")
+            if not wpx or wpx < 10:
+                continue
+            doors.append((f"{uid} 문 {d.get('id')} (폭 {wpx:.0f}px)", round(float(wpx), 1)))
+    walls.sort(key=lambda t: -t[1])  # 긴 벽 우선(명확한 기준선)
+    out, seen = [], []
+    for lab, px in walls + doors:
+        if any(abs(px - p) < 2.0 for p in seen):  # 근접 px dedup
+            continue
+        out.append((lab, px)); seen.append(px)
+        if len(out) >= cap:
+            break
+    return out
+
+
+@st.cache_data(show_spinner=False)
 def get_queue(which: str, _v: int = 0):
     return review.load_queue(which)
 
@@ -1709,7 +1755,23 @@ if which.startswith("📏"):
     disp = img.resize((DISP_W, int(oh * DISP_W / ow)))
     factor = ow / DISP_W
 
-    st.info("① 알려진 치수선의 **양 끝 두 점을 클릭**하세요. ② 그 치수의 실제 길이(mm)를 입력 → scale 자동계산.")
+    # 컴퓨터 스냅 기준선 — 사람은 두 점을 찍지 않고, 미리 스냅된 벽/문 중 하나를 고르고
+    # 그 실제 길이(mm)만 입력한다. 좌표공간 동일 검증완료(그래프 px ⊂ 시트 px).
+    snap_cands = scale_ref_candidates(sid)
+    SNAP_NONE = "(직접 클릭)"
+    snap_opts = [SNAP_NONE] + [lab for lab, _ in snap_cands]
+    snap_px_map = {lab: px for lab, px in snap_cands}
+    snap_sel = st.selectbox(
+        "컴퓨터 스냅 기준 (벽/문) — 클릭 대신",
+        snap_opts, key=f"snapsel_{sid}",
+        help="컴퓨터가 추출한 벽/문 선분을 고르면 그 픽셀길이를 기준으로 사용합니다. "
+             "사람은 그 선의 실제 길이(mm)만 입력하면 됩니다.")
+    snap_px = snap_px_map.get(snap_sel)
+
+    if snap_px:
+        st.info("① 위에서 **스냅 기준(벽/문)** 을 골랐습니다. ② 그 선의 실제 길이(mm)만 입력 → scale 자동계산.")
+    else:
+        st.info("① 알려진 치수선의 **양 끝 두 점을 클릭**하세요. ② 그 치수의 실제 길이(mm)를 입력 → scale 자동계산.")
     coords = streamlit_image_coordinates(disp, key=f"scaleimg_{sid}")
     if "pts" not in st.session_state:
         st.session_state.pts = []
@@ -1721,14 +1783,18 @@ if which.startswith("📏"):
 
     cL, cR = st.columns(2)
     with cL:
-        st.write("클릭한 점:", st.session_state.pts)
-        if st.button("점 초기화"):
-            st.session_state.pts = []; st.rerun()
         pix = None
-        if len(st.session_state.pts) == 2:
-            (x1, y1), (x2, y2) = st.session_state.pts
-            pix = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5 * factor
-            st.write(f"픽셀 거리(원본): **{pix:,.0f} px**")
+        if snap_px:
+            pix = snap_px
+            st.success(f"스냅 기준: **{snap_sel}** → 기준 픽셀길이 **{pix:,.0f} px**")
+        else:
+            st.write("클릭한 점:", st.session_state.pts)
+            if st.button("점 초기화"):
+                st.session_state.pts = []; st.rerun()
+            if len(st.session_state.pts) == 2:
+                (x1, y1), (x2, y2) = st.session_state.pts
+                pix = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5 * factor
+                st.write(f"픽셀 거리(원본): **{pix:,.0f} px**")
         mm = st.number_input("실제 치수(mm)", min_value=0, value=0, step=100)
     with cR:
         new_scale = (mm / pix) if (pix and mm > 0) else None
@@ -1745,16 +1811,30 @@ if which.startswith("📏"):
                 pass
 
     st.markdown("### 결정")
+    plan_prefix = sid.rsplit("_", 1)[0]  # APT_FP_<fp> — 같은 단지(평면 그룹)
+    siblings = sorted(s for s in scale_map if s != sid and s.rsplit("_", 1)[0] == plan_prefix)
+    bulk = st.checkbox(
+        f"같은 단지 전체 적용 (`{plan_prefix}` · 동일 prefix {len(siblings)}개 시트)",
+        value=False, key=f"bulk_{sid}", disabled=not siblings)
     b1, b2, b3 = st.columns(3)
     if b1.button("✔ 보정 scale 적용", type="primary", disabled=not new_scale,
                  use_container_width=True):
         scale_ocr.update_scale_row(sid, new_scale, "ok", source="manual")
         n = scale_ocr.apply_scale_one_sheet(sid, new_scale)
+        extra = 0
+        if bulk and siblings:
+            for s2 in siblings:
+                scale_ocr.update_scale_row(s2, new_scale, "ok", source="manual_bulk")
+                scale_ocr.apply_scale_one_sheet(s2, new_scale)
+                extra += 1
         review.record_decision({"timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                                 "sheet_id": sid, "action": "scale_manual",
-                                "params": f"scale={new_scale:.3f},mm={mm}",
+                                "params": f"scale={new_scale:.3f},mm={mm},bulk={extra}",
                                 "result_status": "ok", "note": ""})
-        st.success(f"보정 적용 — {n}개 세대에 ㎡ 기록."); st.session_state.pts = []
+        msg = f"보정 적용 — {n}개 세대에 ㎡ 기록."
+        if extra:
+            msg += f" + 같은 단지 {extra}개 시트에도 동일 scale 적용."
+        st.success(msg); st.session_state.pts = []
         st.session_state.si += 1; st.rerun()
     if b2.button("✓ OCR값 승인", disabled=not ocr_scale, use_container_width=True):
         s = float(ocr_scale)
