@@ -463,7 +463,7 @@ if which.startswith("🧮"):
     def _eng_ckpt(arm):  # 해당 ARM 학습 체크포인트 존재?
         if not _ckpt_root.exists():
             return False
-        return any(any((_ckpt_root / s / arm).glob("model*.pt"))
+        return any(any((_ckpt_root / s / arm).glob("*model*.pt"))
                    for s in ("node_diff", "adjacency_diff", "partitioning_diff"))
 
     _kor_data = _DIFFP / "dataset" / "dataset_json_korean" / "data_train.json"
@@ -889,7 +889,7 @@ if which.startswith("📗"):
     for arm in _arms:
         cells = {"ARM": arm}
         for s in _stages:
-            cps = sorted((_ckroot / s / arm).glob("model*.pt")) if _ckroot.exists() else []
+            cps = sorted((_ckroot / s / arm).glob("*model*.pt")) if _ckroot.exists() else []
             cells[s.replace("_diff", "")] = (cps[-1].name.replace("model", "").replace(".pt", "")
                                              if cps else "—")
         _rows.append(cells)

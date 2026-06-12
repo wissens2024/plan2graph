@@ -23,7 +23,7 @@ OUTDIR=$ROOT/output/out_korean
 mkdir -p $OUTDIR
 SYN=$OUTDIR/${ARM}.json   # 체인 누적 파일(절대경로)
 
-last_ckpt () { ls -1v $CKPT/$1/$ARM/model*.pt 2>/dev/null | tail -1; }
+last_ckpt () { ls -1v $CKPT/$1/$ARM/*model*.pt 2>/dev/null | grep -vE "ema_|opt[0-9]" | tail -1; }
 NODE_CKPT=$(last_ckpt node_diff); ADJ_CKPT=$(last_ckpt adjacency_diff); PART_CKPT=$(last_ckpt partitioning_diff)
 echo "ARM=$ARM N=$N  node=$NODE_CKPT  adj=$ADJ_CKPT  part=$PART_CKPT"
 [ -z "$NODE_CKPT" ] && { echo "체크포인트 없음(아직 학습 안 끝남): $CKPT/node_diff/$ARM/"; exit 1; }
