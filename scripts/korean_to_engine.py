@@ -483,7 +483,19 @@ def main():
     ap.add_argument("--samples", type=int, default=5,
                     help="write N converted examples individually for inspection")
     ap.add_argument("--sample-dir", default="/tmp/korean_engine_samples")
+    # ── 데이터셋 구성(variant) 옵션 — 같은 엔진을 다른 데이터로 학습/비교하기 위함 ──
+    ap.add_argument("--provenance", default="",
+                    help="provenance.source 필터(콤마): dual,spa_only,str_only,objocr (기본=전체)")
+    ap.add_argument("--variant", default="",
+                    help="구성 이름. 지정 시 <engine-root>/dataset_json_<variant>/에 "
+                         "train/test/val 배치(엔진 학습 입력). 미지정 시 --out 단일파일.")
+    ap.add_argument("--engine-root",
+                    default=os.path.expanduser("~/diffplanner_work/dataset"),
+                    help="--variant 배치 루트")
+    ap.add_argument("--test-n", type=int, default=1000, help="--variant 시 test/val 세대수")
+    ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
+    prov_filter = set(s.strip() for s in args.provenance.split(",") if s.strip()) or None
 
     reasons = Counter()
     rc_hist = Counter()
@@ -499,6 +511,11 @@ def main():
         except Exception:
             reasons["load_err"] += 1
             continue
+        if prov_filter is not None:                      # 구성: provenance.source 필터
+            src = (d.get("provenance") or {}).get("source")
+            if src not in prov_filter:
+                reasons["prov_skip"] += 1
+                continue
         rec, why = convert_plan(d, max_rooms=args.max_rooms,
                                 clean_only=args.clean_only)
         reasons[why] += 1
@@ -531,15 +548,28 @@ def main():
     for c in sorted(cat_cov):
         print(f"   {c:2d} {CAT_NAME.get(c,'?'):8s} {cat_cov[c]}")
 
-    json.dump(out, open(args.out, "w", encoding="utf-8"), ensure_ascii=False)
-    print("wrote", args.out, "(", len(out), "records )")
-
-    os.makedirs(args.sample_dir, exist_ok=True)
-    for rec in out[:args.samples]:
-        p = os.path.join(args.sample_dir, rec["name"] + ".json")
-        json.dump(rec, open(p, "w", encoding="utf-8"),
-                  ensure_ascii=False, indent=2)
-    print(f"wrote {min(args.samples, len(out))} samples to {args.sample_dir}")
+    if args.variant:
+        # 구성 배치: 셔플 후 train/test/val 분할 → dataset_json_<variant>/ (엔진 학습 입력)
+        import random as _rnd
+        _rnd.Random(args.seed).shuffle(out)
+        tn = min(args.test_n, len(out) // 5)
+        test, train = out[:tn], out[tn:]
+        vdir = os.path.join(args.engine_root, f"dataset_json_{args.variant}")
+        os.makedirs(vdir, exist_ok=True)
+        for nm, recs in (("train", train), ("test", test), ("val", test)):
+            json.dump(recs, open(os.path.join(vdir, f"data_{nm}.json"), "w",
+                                 encoding="utf-8"), ensure_ascii=False)
+        print(f"[variant '{args.variant}'] prov={args.provenance or '전체'} "
+              f"clean_only={args.clean_only} → train={len(train)} test={len(test)}  {vdir}")
+    else:
+        json.dump(out, open(args.out, "w", encoding="utf-8"), ensure_ascii=False)
+        print("wrote", args.out, "(", len(out), "records )")
+        os.makedirs(args.sample_dir, exist_ok=True)
+        for rec in out[:args.samples]:
+            p = os.path.join(args.sample_dir, rec["name"] + ".json")
+            json.dump(rec, open(p, "w", encoding="utf-8"),
+                      ensure_ascii=False, indent=2)
+        print(f"wrote {min(args.samples, len(out))} samples to {args.sample_dir}")
 
 
 if __name__ == "__main__":

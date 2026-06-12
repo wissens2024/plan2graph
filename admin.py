@@ -881,29 +881,50 @@ if which.startswith("📗"):
     _ckroot = _DIFFP / "ckpt_kr"
     _kf = _DIFFP / "dataset" / "dataset_json_korean" / "data_train.json"
 
-    # ── 1) 학습 상태 ──
-    st.markdown("#### 1) 학습 상태")
-    _arms = ["pretrain", "finetune", "korean_only"]
+    # ── 1) 학습 상태 — 데이터셋 구성(variant) × ARM ──
+    st.markdown("#### 1) 학습 상태 — 데이터셋 구성(variant) × ARM")
+    st.caption("**데이터셋 구성이 곧 실험 변수**: 같은 13/18 엔진을 다른 구성(온전만 / +보정 / "
+               "dual만 / +V2V / 소스믹스)으로 학습 → 전혀 다른 모델 → 도면 품질 차이. "
+               "ARM-A(사전학습 RPLAN→파인튜닝) · ARM-B(구성 단독). 숫자=마지막 체크포인트 step.")
     _stages = ["node_diff", "adjacency_diff", "partitioning_diff"]
-    _rows = []
-    for arm in _arms:
-        cells = {"ARM": arm}
-        for s in _stages:
-            cps = sorted((_ckroot / s / arm).glob("*model*.pt")) if _ckroot.exists() else []
-            cells[s.replace("_diff", "")] = (cps[-1].name.replace("model", "").replace(".pt", "")
-                                             if cps else "—")
-        _rows.append(cells)
+
+    def _last_step(d):
+        cps = sorted(c for c in d.glob("*model*.pt") if "model" in c.name) if d.exists() else []
+        return cps[-1].name.replace(".pt", "").split("model")[-1].lstrip("_") if cps else "—"
+
+    def _ckdir(variant, stage, arm):
+        return (_ckroot / stage / arm) if variant == "korean(flat)" \
+            else (_ckroot / variant / stage / arm)
+
+    _variants = []
+    if _ckroot.exists():
+        for p in sorted(_ckroot.iterdir()):
+            if p.is_dir() and p.name not in _stages and p.name != "_pretrain":
+                _variants.append(p.name)
+        if (_ckroot / "node_diff").exists():           # 레거시 flat = 현재 진행 중 korean 런
+            _variants.append("korean(flat)")
+
+    _rows = [{"구성 · ARM": "▸ 사전학습(RPLAN, 공유)",
+              **{s.replace("_diff", ""): _last_step(_ckroot / "_pretrain" / s) for s in _stages}}]
+    if (_ckroot / "node_diff" / "pretrain").exists():
+        _rows.append({"구성 · ARM": "korean(flat) · pretrain",
+                      **{s.replace("_diff", ""): _last_step(_ckroot / s / "pretrain")
+                         for s in _stages}})
+    for v in _variants:
+        for arm in ("finetune", "korean_only"):
+            _rows.append({"구성 · ARM": f"{v} · {arm}",
+                          **{s.replace("_diff", ""): _last_step(_ckdir(v, s, arm))
+                             for s in _stages}})
     st.table(_rows)
-    _ntrain = "—"
-    if _kf.exists():
-        try:
-            _ntrain = f"{len(_json.load(open(_kf, encoding='utf-8'))):,}"
-        except Exception:
-            pass
-    st.caption(f"학습 데이터(온전 한국, train): {_ntrain}세대 · 표 숫자=마지막 체크포인트 step. "
-               "GPU1, 서버 ~/diffplanner_work.")
-    st.code("bash ~/diffplanner_work/gate2_train_runbook.sh   # 초기학습/재학습 (ARM-A 사전학습→파인튜닝 / ARM-B)\n"
-            "bash ~/diffplanner_work/korean_sample.sh finetune 200   # 학습된 엔진으로 샘플링→엔진출력 JSON",
+
+    _dsroot = _DIFFP / "dataset"
+    _ds = ([p.name.replace("dataset_json_", "") for p in sorted(_dsroot.glob("dataset_json_*"))]
+           if _dsroot.exists() else [])
+    st.caption("준비된 데이터셋 구성: **" + (", ".join(_ds) if _ds else "—") + "**  ·  "
+               "새 구성 만들기 → 학습 → 샘플링:")
+    st.code("python scripts/korean_to_engine.py --variant <이름> [--provenance dual] [--all]   # 구성 생성\n"
+            "bash ~/diffplanner_work/gate2_train_runbook.sh <이름>            # 학습(ARM-A·ARM-B)\n"
+            "bash ~/diffplanner_work/korean_sample.sh <이름> finetune 200     # 샘플링→엔진출력",
             language="bash")
     st.divider()
 
