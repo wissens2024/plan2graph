@@ -37,6 +37,8 @@ HTML = r"""<!doctype html><html><head><meta charset="utf-8"><title>보정 에디
  .door-leaf{stroke:#dc2626;stroke-width:4;fill:none}
  .door-arc{stroke:#f59e0b;stroke-width:2.5;fill:none;stroke-dasharray:5 4}
  .door-hit{fill:rgba(0,0,0,.001);cursor:pointer}
+ .wall-hit{stroke:rgba(0,0,0,.001);stroke-width:16;cursor:move}
+ .wpt{fill:#9ca3af;stroke:#fff;stroke-width:1.5;cursor:grab}
  text{font-size:22px;fill:#374151;pointer-events:none}
  select{width:100%} button{width:100%;padding:9px;margin:6px 0;cursor:pointer}
  .hint{font-size:12px;color:#6b7280;line-height:1.5}
@@ -52,12 +54,13 @@ HTML = r"""<!doctype html><html><head><meta charset="utf-8"><title>보정 에디
  <div class=hint><b>문 클릭</b> = 여는 방향 90° 회전<br>
  <b>문 드래그</b> = 위치 이동<br>
  모두 <b>즉시 반영</b> · 서버 왕복 없음<br><br>
- 빨강=문 leaf · 주황=swing 호 · 파랑=창 · 검정=외벽</div>
+ <b>벽 드래그</b> = 평행이동 · <b>벽 끝점(회색점)</b> = 그 점만 이동<br><br>
+ 빨강=문 · 주황=swing 호 · 파랑=창 · 검정=외벽 · 회색점=벽 끝점</div>
 </div>
 <div id="main"><svg id="svg"></svg></div>
 <script>
 const NS='http://www.w3.org/2000/svg', svg=document.getElementById('svg');
-let G=null,GID=null,dirty=false,dragDoor=null,last=null,justDragged=false;
+let G=null,GID=null,dirty=false,dragItem=null,last=null,justDragged=false;
 function el(t,a){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;}
 function setStatus(s){document.getElementById('status').textContent=s+(dirty?'  ·  변경됨*':'');}
 function svgPt(ev){const p=svg.createSVGPoint();p.x=ev.clientX;p.y=ev.clientY;
@@ -77,13 +80,23 @@ function render(){
   for(const id in (G.rooms||{})){const r=G.rooms[id],pg=r.polygon;if(!pg||pg.length<3)continue;
     svg.appendChild(el('polygon',{points:pg.map(p=>p[0]+','+p[1]).join(' '),class:'room'}));
     const c=r.centroid||pg[0];const t=el('text',{x:c[0],y:c[1],'text-anchor':'middle'});t.textContent=r.role||'';svg.appendChild(t);}
-  (G.walls||[]).forEach(w=>{const s=w.segment;if(!s)return;
-    svg.appendChild(el('line',{x1:s[0][0],y1:s[0][1],x2:s[1][0],y2:s[1][1],class:w.type==='exterior'?'wall-ext':'wall-int'}));});
+  (G.walls||[]).forEach(w=>drawWall(w));
   (G.windows||[]).forEach(w=>{const p=w.position;if(!p)return;const half=(w.width_px||30)/2;
     const deg=(typeof w.orientation==='number'?w.orientation:(w.orientation_deg||0))*Math.PI/180;
     const dx=half*Math.cos(deg),dy=half*Math.sin(deg);
     svg.appendChild(el('line',{x1:p[0]-dx,y1:p[1]-dy,x2:p[0]+dx,y2:p[1]+dy,class:'win'}));});
   (G.doors||[]).forEach((d,i)=>drawDoor(d,i));
+}
+function drawWall(w){const s=w.segment;if(!s||s.length<2)return;
+  svg.appendChild(el('line',{x1:s[0][0],y1:s[0][1],x2:s[1][0],y2:s[1][1],class:w.type==='exterior'?'wall-ext':'wall-int'}));
+  const hit=el('line',{x1:s[0][0],y1:s[0][1],x2:s[1][0],y2:s[1][1],class:'wall-hit'});
+  hit.addEventListener('mousedown',ev=>{last=svgPt(ev);ev.stopPropagation();
+    dragItem={label:'벽 이동',move:(dx,dy)=>{s[0][0]+=dx;s[0][1]+=dy;s[1][0]+=dx;s[1][1]+=dy;}};});
+  svg.appendChild(hit);
+  [0,1].forEach(k=>{const pt=el('circle',{cx:s[k][0],cy:s[k][1],r:7,class:'wpt'});
+    pt.addEventListener('mousedown',ev=>{last=svgPt(ev);ev.stopPropagation();
+      dragItem={label:'벽 끝점 이동',move:(dx,dy)=>{s[k][0]+=dx;s[k][1]+=dy;}};});
+    svg.appendChild(pt);});
 }
 function drawDoor(d,i){
   const o=d.orientation||{},h=o.hinge||d.position||[0,0],deg=o.swing_dir_deg||0,R=o.radius_px||(d.width_px||40);
@@ -94,18 +107,18 @@ function drawDoor(d,i){
   svg.appendChild(el('circle',{cx:h[0],cy:h[1],r:5,fill:'#dc2626'}));
   const cx=d.position?d.position[0]:h[0],cy=d.position?d.position[1]:h[1];
   const hit=el('circle',{cx:cx,cy:cy,r:Math.max(R*0.8,20),class:'door-hit'});
-  hit.addEventListener('mousedown',ev=>{dragDoor=d;last=svgPt(ev);ev.stopPropagation();});
+  hit.addEventListener('mousedown',ev=>{last=svgPt(ev);ev.stopPropagation();
+    dragItem={label:'문 이동',move:(dx,dy)=>{if(d.position){d.position[0]+=dx;d.position[1]+=dy;}
+      const o2=d.orientation;if(o2&&o2.hinge){o2.hinge[0]+=dx;o2.hinge[1]+=dy;}}};});
   hit.addEventListener('click',ev=>{ev.stopPropagation();if(justDragged){justDragged=false;return;}
     const oo=d.orientation||{};oo.swing_dir_deg=(( (oo.swing_dir_deg||0)+90)%360);d.orientation=oo;
     dirty=true;render();setStatus('문 '+(d.id||i)+' 여는방향 → '+oo.swing_dir_deg.toFixed(0)+'°');});
   svg.appendChild(hit);
 }
-window.addEventListener('mousemove',ev=>{if(!dragDoor)return;const p=svgPt(ev);
+window.addEventListener('mousemove',ev=>{if(!dragItem)return;const p=svgPt(ev);
   const dx=p[0]-last[0],dy=p[1]-last[1];last=p;if(Math.abs(dx)+Math.abs(dy)<0.01)return;
-  const d=dragDoor;if(d.position){d.position[0]+=dx;d.position[1]+=dy;}
-  const o=d.orientation;if(o&&o.hinge){o.hinge[0]+=dx;o.hinge[1]+=dy;}
-  dirty=true;justDragged=true;render();});
-window.addEventListener('mouseup',()=>{if(dragDoor){setStatus('문 이동');dragDoor=null;}});
+  dragItem.move(dx,dy);dirty=true;justDragged=true;render();});
+window.addEventListener('mouseup',()=>{if(dragItem){setStatus(dragItem.label||'이동');dragItem=null;}});
 document.getElementById('save').onclick=async()=>{if(!G)return;
   await fetch('api/graph/'+GID,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(G)});
   dirty=false;setStatus('저장됨 → _edits/'+GID+'.json');};
