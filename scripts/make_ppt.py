@@ -261,55 +261,66 @@ stat(s, Inches(4.79), Inches(5.25), Inches(3.75), "사용 가능", "94,320", Non
 stat(s, Inches(8.78), Inches(5.25), Inches(3.75), "보정·복구 필요", "11,793", None, RED)
 
 # ════════════════════════════════════════════════════════════════════════════
-# 6. 데이터 ② 회계
+# 6. 데이터 ② 카테고리별 문제·처리 (AI-Hub 43,219 도면)
 s = newslide()
-header(s, "데이터셋 구축 ② — 회계(처분)", "Dataset")
-text(s, Inches(0.8), Inches(1.75), Inches(11.7), Inches(0.4),
-     [("검수 본질 = 숫자 × 카테고리(사용/보정필요/제외) × 사유 · 단일 소스", {"size": 16, "bold": True})])
-table(s, Inches(0.8), Inches(2.4), Inches(11.7),
-      [["출처", "사용", "보정필요", "제외", "합 = 다운로드"],
-       ["AI-Hub", "10,921", "9,412", "22,886", "43,219"],
-       ["RPLAN", "80,371", "417", "0", "80,788"],
-       ["CubiCasa5k", "3,028", "1,964", "8", "5,000"],
-       ["합계", "94,320", "11,793", "22,894", "129,007"]],
-      [Inches(2.9), Inches(2.2), Inches(2.2), Inches(2.2), Inches(2.2)])
-text(s, Inches(0.8), Inches(5.3), Inches(11.7), Inches(1.6),
-     [("원칙", {"size": 14, "bold": True, "color": GOLD, "spc": 1}),
-      ("‘보정필요’ = 버리는 게 아니라 살릴 수 있는 데이터 — 자동 재변환 + 사람 보정으로 사용 승급", {"size": 14, "bullet": True}),
-      ("AI-Hub는 도면 1장 = 여러 세대 → 도면수 ≠ 세대수(세대 = 실제 추출된 그래프 수)", {"size": 14, "bullet": True})], space=7)
+header(s, "데이터셋 구축 ② — 카테고리별 문제 · 변환 (AI-Hub)", "Dataset · Report")
+text(s, Inches(0.8), Inches(1.7), Inches(11.7), Inches(0.35),
+     [("AI-Hub 43,219 도면을 추출 출처(provenance)별로 분류 — 각 카테고리의 문제와 처리 방법",
+       {"size": 14, "bold": True})])
+table(s, Inches(0.62), Inches(2.2), Inches(12.1),
+      [["카테고리", "도면", "처분", "문제 → 처리"],
+       ["dual", "3,576", "사용", "방(SPA)+구조(STR) 라벨 정상 → SVG 직접 변환"],
+       ["spa_only → V2V", "3,292", "사용", "구조(벽) 라벨 없음 → YOLO V2V로 STR 복구"],
+       ["str_only → V2V", "4,053", "사용", "방 라벨 없음 → YOLO V2V로 SPA 복구"],
+       ["objocr", "6,146", "보정필요", "공간 라벨 전무(기구/문자만) → 2-패스 세대크롭 재검출"],
+       ["spa/str_only 대기", "2,046", "보정필요", "V2V 미적용 → 적용 대기"],
+       ["convert_failed", "1,220", "보정필요", "SVG 변환 실패 → 라벨 합집합 재변환(231 복구)"],
+       ["duplicate", "18,231", "제외", "동일 PNG 다른 키로 중복배포 → CRC32+크기 지문 dedup"],
+       ["nonfp", "4,655", "제외", "평면도 아님 → 비전 분류로 제외"]],
+      [Inches(2.5), Inches(1.1), Inches(1.5), Inches(7.0)], fs=11.5)
+text(s, Inches(0.62), Inches(6.45), Inches(12.1), Inches(0.5),
+     [("합: 사용 10,921 · 보정필요 9,412 · 제외 22,886 = 43,219 (= 다운로드). 세대 = 실제 추출 그래프 수(도면 1장 = 여러 세대)",
+       {"size": 11.5, "color": MUTE})])
 
 # ════════════════════════════════════════════════════════════════════════════
-# 7. 데이터 ③ AI-Hub 처리
+# 7. 데이터 ③ 추출 방법 (비전 → 그래프)
 s = newslide()
-header(s, "데이터셋 구축 ③ — AI-Hub 처리 파이프라인", "Dataset")
-flow(s, Inches(0.62), Inches(1.9),
-     ["원본 PNG\n라벨", "V2V / YOLO\n검출", "SVG 변환\n완전기하", "사람 보정\n알바", "build\n통일그래프", "검증\n위상·역할"])
-text(s, Inches(0.8), Inches(3.2), Inches(11.7), Inches(0.4),
-     [("provenance(추출 출처)로 데이터 특성·신뢰도 구분 — 선언적 필터로 구성 분리", {"size": 14, "color": GOLD, "bold": True})])
-table(s, Inches(0.8), Inches(3.8), Inches(11.7),
-      [["provenance", "의미", "처분"],
-       ["dual", "방(SPA)+구조(STR) 둘 다 라벨 — 직접 변환", "사용 (최고품질)"],
-       ["spa_only / str_only", "한쪽만 → V2V(YOLO)로 나머지 복구", "사용 (복구)"],
-       ["objocr", "OBJ/OCR만(공간 라벨 없음) — 이미지 직접 검출", "보정필요"]],
-      [Inches(2.9), Inches(6.2), Inches(2.6)])
-text(s, Inches(0.8), Inches(6.05), Inches(11.7), Inches(0.8),
-     [("V2V(vector→vector) YOLO: SPA mAP 0.90+ · 게이트 통과율로 평가 · G-라인 빌드 18,503 도면 / 40,495 세대",
-       {"size": 12, "color": MUTE})])
+header(s, "데이터셋 구축 ③ — 추출 방법 (비전 → 그래프)", "Dataset · Method")
+flow(s, Inches(0.95), Inches(1.85),
+     ["원본 PNG\n라벨", "V2V / YOLO\n검출", "SVG\n완전기하", "build\ng-0.3", "통일 그래프\n검증"], we=Inches(2.18))
+text(s, Inches(0.8), Inches(3.3), Inches(11.7), Inches(3.4),
+     [("추출 핵심 기법", {"size": 14, "bold": True, "color": GOLD, "spc": 1}),
+      ("V2V(vector→vector) YOLO 검출 — 방(SPA) mAP 0.90→0.964(5→100 epoch) · 벽(STR)은 약함(용량·해상도 레버)",
+       {"size": 13.5, "bullet": True}),
+      ("objocr 2-패스 세대크롭 — ① 전체 시트 SPA로 방 위치 → 세대 군집(union-find)  ② 세대별 크롭 → SPA(768)·STR(1024) 재검출 → 시트좌표 역오프셋",
+       {"size": 13.5, "bullet": True}),
+      ("중복 제거 — 동일 PNG를 라벨 종류별 다른 키로 중복배포 → CRC32+크기 지문 dedup (0 충돌 증명, 231 복구)",
+       {"size": 13.5, "bullet": True}),
+      ("통일 그래프(g-0.3) — SPA(방)+STR(벽)+OBJ(기구 ~9k) 지문 병합 → 연결공간 복원 · 문 재배정 · 개방연결",
+       {"size": 13.5, "bullet": True}),
+      ("산출: G-라인 빌드 18,503 도면 / 40,495 세대 (provenance: dual·spa·str·objocr)",
+       {"size": 13.5, "bullet": True, "bold": True})], space=9)
 
 # ════════════════════════════════════════════════════════════════════════════
 # 8. 데이터 ④ 품질 게이트
 s = newslide()
 header(s, "데이터셋 구축 ④ — 품질 게이트", "Dataset")
-text(s, Inches(0.8), Inches(1.75), Inches(11.7), Inches(0.4),
-     [("‘온전한 데이터만 학습’ — 구성 기반 자동 분류기(좌표 불필요, 검수·학습 단일 소스)", {"size": 16, "bold": True})])
-stat(s, Inches(0.8), Inches(2.45), Inches(5.75), "온전 (사용) · AI-Hub APT 38,203 중", "24,706", "64.7%", GREEN)
-stat(s, Inches(6.78), Inches(2.45), Inches(5.75), "보정필요", "13,485", "35.3%", RED)
-text(s, Inches(0.8), Inches(4.2), Inches(11.7), Inches(2.6),
-     [("보정필요 판정 규칙 · 사유 분포 (실측)", {"size": 14, "bold": True, "color": GOLD, "spc": 1}),
-      ("현관 ≠ 1 (다세대 병합/누락) — 5,142", {"size": 14, "bullet": True}),
-      ("발코니 과다(>4) — 4,904   ·   거실 ≠ 1 — 4,521", {"size": 14, "bullet": True}),
-      ("침실 < 화장실(면적 모순) — 3,060   ·   거실 오라벨 — 634   ·   기타 과다 — 527", {"size": 14, "bullet": True}),
-      ("온전 데이터 방 수: 중앙값 14 · p95 17 → 엔진 방 수용량 18로 결정", {"size": 14, "bold": True})], space=8)
+text(s, Inches(0.8), Inches(1.72), Inches(11.7), Inches(0.35),
+     [("‘온전한 데이터만 학습’ — 구성 기반 자동 분류기(좌표 불필요) · AI-Hub APT 38,203", {"size": 14, "bold": True})])
+stat(s, Inches(0.8), Inches(2.25), Inches(3.7), "온전 (사용)", "24,706", "64.7%", GREEN)
+table(s, Inches(4.85), Inches(2.25), Inches(7.88),
+      [["보정필요 사유", "건수", "원인"],
+       ["현관 ≠ 1", "5,142", "도면 1장에 다세대 병합 — 세대 분할 필요"],
+       ["발코니 과다(>4)", "4,904", "확장발코니 옛 벽선이 방으로 오검출"],
+       ["거실 ≠ 1", "4,521", "거실 누락 또는 중복"],
+       ["침실 < 화장실", "3,060", "면적 모순 — 검출/라벨 오류"],
+       ["거실 오라벨", "634", "거실이 최대 거주공간 아님"],
+       ["기타 과다", "527", "fragment·노이즈 누적"]],
+      [Inches(2.2), Inches(1.2), Inches(4.48)], fs=11.5)
+stat(s, Inches(0.8), Inches(4.05), Inches(3.7), "보정필요", "13,485", "35.3%", RED)
+text(s, Inches(0.8), Inches(5.75), Inches(11.9), Inches(1),
+     [("온전 데이터 방 수: 중앙값 14 · p95 17 → 엔진 방 수용량을 18로 결정 (RPLAN 8 한도는 한국 부적합)",
+       {"size": 13, "bold": True})], space=6)
 
 # ════════════════════════════════════════════════════════════════════════════
 # 9. 데이터 ⑤ 구성(variant)
@@ -345,22 +356,54 @@ text(s, Inches(0.8), Inches(4.35), Inches(11.7), Inches(2.4),
       ("교훈: 위상/모델 문제가 아니라 ‘기하 실현’이 병목 → 생성형 기하(diffusion)로 전환", {"size": 14, "bold": True})], space=8)
 
 # ════════════════════════════════════════════════════════════════════════════
-# 11. AI 모델 ② 소버린 엔진
+# 11. AI 모델 ② 엔진: 논문 참조
 s = newslide()
-header(s, "AI 모델 ② — 소버린 엔진(SOTA 부품 조립 + 한국형 확장)", "AI Model")
+header(s, "AI 모델 ② — 엔진: 논문 4편에서 무엇을 빌렸나", "AI Model · Reference")
 text(s, Inches(0.8), Inches(1.75), Inches(11.7), Inches(0.4),
-     [("단일 생성 엔진 — SOTA의 ‘기법(부품)’만 인용·조립 + 우리 novelty", {"size": 16, "bold": True})])
-table(s, Inches(0.8), Inches(2.4), Inches(11.7),
-      [["빌린 부품 (인용 base)", "역할"],
-       ["DiffPlanner (2025)", "벡터 직접 diffusion 골격 · 경계조건 (코드 보유·검증)"],
-       ["GSDiff (AAAI’25)", "정렬 손실 · 자기지도(연결 포인트)"],
-       ["HouseDiffusion (CVPR’23)", "이산 + 연속 디노이즈"],
-       ["FMLM (2026)", "유효성 제약(markup)"]],
-      [Inches(3.9), Inches(7.8)])
-text(s, Inches(0.8), Inches(4.9), Inches(11.7), Inches(1.8),
-     [("한국형 확장 — 구현 완료·검증", {"size": 14, "bold": True, "color": GOLD, "spc": 1}),
-      ("3-stage(node→adjacency→partitioning): num_category 6→13(한국 역할) · max_rooms 8→18", {"size": 14, "bullet": True}),
-      ("RPLAN 사전학습 → 한국 파인튜닝(전이학습) · 학습→샘플→도면+DXF 파이프라인 E2E 검증", {"size": 14, "bullet": True})], space=7)
+     [("단일 생성 엔진 — SOTA의 ‘기법(부품)’만 인용·조립, contribution은 한국형·완전성·법규", {"size": 16, "bold": True})])
+table(s, Inches(0.8), Inches(2.45), Inches(11.7),
+      [["논문 (인용 base)", "빌린 기법", "엔진에서의 역할"],
+       ["DiffPlanner (2025)", "벡터 직접 diffusion · 경계조건", "골격 — 코드 보유·검증 (FID 1.23)"],
+       ["GSDiff (AAAI’25)", "정렬 손실 · 자기지도", "벽·코너 정렬 품질"],
+       ["HouseDiffusion (CVPR’23)", "이산 + 연속 디노이즈", "방 표현 디노이즈"],
+       ["FMLM (2026)", "markup 유효성 제약", "출력 유효성"]],
+      [Inches(3.2), Inches(4.1), Inches(4.4)])
+text(s, Inches(0.8), Inches(5.4), Inches(11.7), Inches(1.2),
+     [("빌린 골격은 인용 base — 논문 contribution이 아님. 우리 기여 = 한국 소버린 층 · 완전 도면 · 법규-인식 생성",
+       {"size": 13, "color": MUTE})])
+
+# ════════════════════════════════════════════════════════════════════════════
+# 11b. 한국형 아키텍처 변경
+s = newslide()
+header(s, "AI 모델 ② — 한국형 아키텍처 변경 (DiffPlanner → 우리)", "AI Model · Architecture")
+text(s, Inches(0.8), Inches(1.75), Inches(11.7), Inches(0.4),
+     [("3-stage(node→adjacency→partitioning) 골격 유지 · 영향 레이어만 한국 규격으로 확장", {"size": 16, "bold": True})])
+table(s, Inches(0.8), Inches(2.45), Inches(11.7),
+      [["항목", "DiffPlanner", "우리", "이유"],
+       ["역할 카테고리", "6", "13", "한국 13역할(거실·침실·주방·욕실·발코니·드레스룸·복도·전실·실외기실 등)"],
+       ["최대 방 수", "8", "18", "RPLAN 8 한도는 한국 부적합 (온전 p95 = 17)"],
+       ["인접 생성 타깃", "8×8", "18×18", "방 수 확장과 연동 (in/out 채널)"],
+       ["조건 임베딩", "Linear(6),(8)", "Linear(13),(18)", "category · number 차원"]],
+      [Inches(2.3), Inches(2.0), Inches(1.9), Inches(5.5)], fs=11.5)
+text(s, Inches(0.8), Inches(5.5), Inches(11.7), Inches(1),
+     [("카테고리 스칼라 인코드 (cat+1)/3−1 → /(13/2)−1 · 디코드 ×6 → ×13 동기화 · 3 stage 모델 차원 검증 완료",
+       {"size": 12.5, "color": MUTE})])
+
+# ════════════════════════════════════════════════════════════════════════════
+# 11c. 학습 방법
+s = newslide()
+header(s, "학습 방법 — 사전학습 → 파인튜닝 (전이학습)", "Training")
+flow(s, Inches(0.95), Inches(1.9),
+     ["통일그래프\ng-0.3", "엔진 변환\ncanvas-256", "RPLAN\n사전학습 150k", "한국\n파인튜닝 40k", "샘플→도면\n+DXF"], we=Inches(2.18))
+text(s, Inches(0.8), Inches(3.4), Inches(11.7), Inches(3.2),
+     [("학습 구성", {"size": 14, "bold": True, "color": GOLD, "spc": 1}),
+      ("입력 변환 — korean_to_engine: 통일그래프(g-0.3) → 엔진 record(canvas-256 정수, 13역할/18방, 온전 게이트)",
+       {"size": 14, "bullet": True}),
+      ("3 stage 레시피 — node(cond \"\") · adjacency(\"ncsl\") · partitioning(\"ncsla\") · batch 512 · lr 1e-4 → 5e-5",
+       {"size": 14, "bullet": True}),
+      ("비교 매트릭스 — ARM-A(RPLAN 사전학습 → 한국 파인튜닝) vs ARM-B(한국만) × 데이터 구성(dual / dual+보정)",
+       {"size": 14, "bullet": True}),
+      ("평가 — 동결 test에서 FID + 법규준수율 + 완성도", {"size": 14, "bullet": True, "bold": True})], space=9)
 
 # ════════════════════════════════════════════════════════════════════════════
 # 12. AI 모델 ③ neuro-symbolic
