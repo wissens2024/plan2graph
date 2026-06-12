@@ -63,13 +63,13 @@ function setStatus(s){document.getElementById('status').textContent=s+(dirty?'  
 function svgPt(ev){const p=svg.createSVGPoint();p.x=ev.clientX;p.y=ev.clientY;
   const r=p.matrixTransform(svg.getScreenCTM().inverse());return [r.x,r.y];}
 async function loadList(){
-  const ids=await (await fetch('/api/graphs?n=80')).json();
+  const ids=await (await fetch('api/graphs?n=80')).json();
   const sel=document.getElementById('sel');sel.innerHTML='';
   ids.forEach(id=>{const o=document.createElement('option');o.value=id;o.textContent=id.replace('APT_FP_','');sel.appendChild(o);});
   sel.onchange=()=>loadGraph(sel.value);
   if(ids.length){sel.value=ids[0];loadGraph(ids[0]);}
 }
-async function loadGraph(id){G=await (await fetch('/api/graph/'+id)).json();GID=id;dirty=false;render();setStatus('로드: '+id.replace('APT_FP_',''));}
+async function loadGraph(id){G=await (await fetch('api/graph/'+id)).json();GID=id;dirty=false;render();setStatus('로드: '+id.replace('APT_FP_',''));}
 function render(){
   while(svg.firstChild)svg.removeChild(svg.firstChild);
   const b=G.bbox_px||[0,0,1000,1000],pad=50;
@@ -107,7 +107,7 @@ window.addEventListener('mousemove',ev=>{if(!dragDoor)return;const p=svgPt(ev);
   dirty=true;justDragged=true;render();});
 window.addEventListener('mouseup',()=>{if(dragDoor){setStatus('문 이동');dragDoor=null;}});
 document.getElementById('save').onclick=async()=>{if(!G)return;
-  await fetch('/api/graph/'+GID,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(G)});
+  await fetch('api/graph/'+GID,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(G)});
   dirty=false;setStatus('저장됨 → _edits/'+GID+'.json');};
 loadList();
 </script></body></html>"""

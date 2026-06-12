@@ -14,6 +14,15 @@ fuser -k 8501/tcp 2>/dev/null; sleep 1
 mkdir -p logs
 nohup "$HOME/bin/micromamba" run -n p2g streamlit run admin.py \
   < /dev/null > logs/streamlit.log 2>&1 &
+
+# 보정 에디터(웹 SVG, 의존성0) — :8600. nginx /editor/ 프록시 또는 ssh -L 터널로 접속.
+_PY=/home/ju/.local/share/mamba/envs/p2g/bin/python
+fuser -k 8600/tcp 2>/dev/null; sleep 1
+PYTHONPATH=src setsid nohup "$_PY" -u scripts/edit_server.py --port 8600 \
+  < /dev/null > logs/edit_server.log 2>&1 &
+
 sleep 10
 code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8501/_stcore/health 2>/dev/null)
+ed=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8600/ 2>/dev/null)
 echo "대시보드 시작 (health=$code) → https://plan2graph.aines.kr/   로그: logs/streamlit.log"
+echo "보정 에디터 시작 (health=$ed) → :8600 (nginx /editor/ 또는 ssh -L 8600 터널)"

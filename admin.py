@@ -385,6 +385,14 @@ try:  # 동그라미 없는 클릭형 메뉴(streamlit-option-menu). 미설치 �
 except ModuleNotFoundError:
     which = st.sidebar.radio("메뉴", _MENU, index=0, label_visibility="collapsed")
 
+# 보정(편집) 웹 에디터 링크 — Streamlit이 약한 클릭·드래그·즉시반영은 웹 SVG로(별도 서버 :8600).
+st.sidebar.markdown("---")
+st.sidebar.markdown(
+    '<a href="/editor/" target="_blank" style="text-decoration:none;font-weight:600">'
+    '✏️ 보정 에디터 (웹·신규)</a>', unsafe_allow_html=True)
+st.sidebar.caption("문 방향 클릭·드래그 즉시반영. nginx `/editor/`→:8600 프록시 시 작동 "
+                   "(임시: `ssh -L 8600:localhost:8600` 후 localhost:8600).")
+
 # ════════════════════════════════════════════════════════════════════════════
 # 🧩 AI-Hub 검수 (G) — 원본 위에서 사람이 위상 직접 구축(자동추론 0) → staging/gline
 # ════════════════════════════════════════════════════════════════════════════
