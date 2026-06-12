@@ -54,7 +54,9 @@ from shapely.validation import make_valid
 # Config
 # ----------------------------------------------------------------------------
 CANVAS = 256
-MAX_ROOMS = 24          # GATE-1 decision: covers ~96.7% of single-unit APT plans
+# GATE-1: 온전(사용) 데이터 기준 방 수 — median 14 · p95 17 · max 23.
+# 24는 쓰레기(병합·과다)로 부풀려진 값이라 폐기. p95 커버 = 18.
+MAX_ROOMS = 18
 MARGIN = 14             # px margin inside the canvas
 TARGET_CORNERS = 40     # boundary_expand point count (engine fixed)
 ORTHO_BUFFER = 4        # orthogonalization buffer for boundary hull
@@ -188,9 +190,24 @@ def _largest_polygon(geom):
 # ----------------------------------------------------------------------------
 # Core converter
 # ----------------------------------------------------------------------------
-def convert_plan(d, max_rooms=MAX_ROOMS):
+def convert_plan(d, max_rooms=MAX_ROOMS, clean_only=True):
     rooms_dict = d["rooms"]
     roles = [r["role"] for r in rooms_dict.values()]
+
+    # GATE-0: 품질 게이트 — 온전(사용) 데이터만 엔진에 넣는다(ADR-0007).
+    # 단일 소스 plan_quality.classify가 현관≠1·발코니/기타과다·거실≠1·거실오라벨·
+    # 침실<화장실을 판정. 보정필요는 알바 SVG 보정 큐로(여기서 스킵).
+    if clean_only:
+        try:
+            from plan2graph.plan_quality import classify
+        except Exception:
+            import sys as _sys
+            _here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            _sys.path.insert(0, os.path.join(_here, "src"))
+            from plan2graph.plan_quality import classify
+        clean, qreasons = classify(d)
+        if not clean:
+            return None, "fix:" + ",".join(qreasons)
 
     n_ent = roles.count(ENTRANCE_ROLE)
     if n_ent == 0:
@@ -460,6 +477,8 @@ def main():
     ap.add_argument("--limit", type=int, default=2000,
                     help="max single-unit APT files to SCAN")
     ap.add_argument("--max-rooms", type=int, default=MAX_ROOMS)
+    ap.add_argument("--all", dest="clean_only", action="store_false",
+                    help="품질 게이트 끄고 전수 변환(기본=온전 데이터만)")
     ap.add_argument("--out", default="/tmp/korean_engine_dataset.json")
     ap.add_argument("--samples", type=int, default=5,
                     help="write N converted examples individually for inspection")
@@ -480,7 +499,8 @@ def main():
         except Exception:
             reasons["load_err"] += 1
             continue
-        rec, why = convert_plan(d, max_rooms=args.max_rooms)
+        rec, why = convert_plan(d, max_rooms=args.max_rooms,
+                                clean_only=args.clean_only)
         reasons[why] += 1
         if rec is not None:
             out.append(rec)
@@ -489,8 +509,22 @@ def main():
                 cat_cov[c] += 1
 
     print(f"scanned: {scanned}")
-    print(f"converted: {len(out)}  yield={100.0*len(out)/max(scanned,1):.1f}%")
-    print("reasons:", dict(reasons.most_common()))
+    print(f"converted(사용): {len(out)}  yield={100.0*len(out)/max(scanned,1):.1f}%")
+    # 품질 게이트(보정필요)와 변환 실패를 분리 집계
+    fix_reasons = Counter()
+    n_fix = 0
+    other = Counter()
+    for why, c in reasons.items():
+        if why.startswith("fix:"):
+            n_fix += c
+            for tag in why[4:].split(","):
+                fix_reasons[tag] += c
+        elif why != "ok":
+            other[why] += c
+    print(f"보정필요(품질 게이트): {n_fix}  "
+          f"({100.0*n_fix/max(scanned,1):.1f}%)")
+    print("  보정필요 사유(중복 포함):", dict(fix_reasons.most_common()))
+    print("변환 실패(품질 통과 후):", dict(other.most_common()))
     print("room-count of converted (count -> #plans):",
           dict(sorted(rc_hist.items())))
     print("category coverage in converted (cat -> #rooms):")
