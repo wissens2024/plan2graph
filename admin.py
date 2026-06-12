@@ -270,10 +270,44 @@ def scale_ref_candidates(sid: str, cap: int = 12):
     전체-시트 픽셀 공간**이다(walls bbox ⊂ 이미지 크기). 따라서 segment 픽셀길이를
     클릭거리(=factor 환산 후 원본px)와 그대로 비교해 같은 scale을 준다.
 
-    반환: [(label, px_length), ...] — 긴 벽 우선 + 문(width_px). 근접 px는 dedup, cap개.
+    반환: [(label, px_length, ((x1,y1),(x2,y2)) | None), ...] — 긴 벽 우선 + 문(width_px).
+    endpoints는 원본-시트 px 좌표(그래프 px == 시트 png px). 문은 polygon/bbox에서
+    width_px에 가장 가까운 길이의 선분을 대표 폭선으로 유도(불가 시 None=하이라이트 생략).
+    근접 px는 dedup, cap개.
     """
     import math
     from plan2graph import topoedit
+
+    def _door_seg(d, wpx):
+        """문 polygon(또는 bbox)에서 width_px에 가장 가까운 길이의 대표 선분 유도."""
+        poly = d.get("polygon")
+        if poly and len(poly) >= 2:
+            pts = [(float(p[0]), float(p[1])) for p in poly]
+            # 닫힌 링이면 마지막 중복점 제거
+            if len(pts) > 1 and pts[0] == pts[-1]:
+                pts = pts[:-1]
+            best, best_err = None, None
+            n = len(pts)
+            for i in range(n):
+                (ax, ay), (bx, by) = pts[i], pts[(i + 1) % n]
+                L = math.hypot(bx - ax, by - ay)
+                if L < 1:
+                    continue
+                err = abs(L - wpx)
+                if best_err is None or err < best_err:
+                    best_err, best = err, ((ax, ay), (bx, by))
+            # 폭과 충분히 가까운 변을 찾으면 사용
+            if best is not None and best_err <= max(6.0, 0.25 * wpx):
+                return best
+        bb = d.get("bbox_px")
+        if bb and len(bb) == 4:
+            x, y, w, h = (float(v) for v in bb)
+            # 문 폭선 = 짧은 변 방향으로 중앙을 가로지르는 선
+            if w <= h:
+                return ((x, y + h / 2.0), (x + w, y + h / 2.0))
+            return ((x + w / 2.0, y), (x + w / 2.0, y + h))
+        return None
+
     gdir = topoedit.GRAPHS_DIR
     walls, doors = [], []
     for gf in sorted(Path(gdir).glob(f"{sid}_u*.json")):
@@ -291,18 +325,21 @@ def scale_ref_candidates(sid: str, cap: int = 12):
             if L < 30:  # 잡선·노이즈 제외
                 continue
             t = "외벽" if w.get("type") == "exterior" else "내벽"
-            walls.append((f"{uid} {t} {w.get('id')} ({L:.0f}px)", round(L, 1)))
+            ep = ((float(x1), float(y1)), (float(x2), float(y2)))
+            walls.append((f"{uid} {t} {w.get('id')} ({L:.0f}px)", round(L, 1), ep))
         for d in (g.get("doors") or []):
             wpx = d.get("width_px")
             if not wpx or wpx < 10:
                 continue
-            doors.append((f"{uid} 문 {d.get('id')} (폭 {wpx:.0f}px)", round(float(wpx), 1)))
+            wpx = float(wpx)
+            ep = _door_seg(d, wpx)
+            doors.append((f"{uid} 문 {d.get('id')} (폭 {wpx:.0f}px)", round(wpx, 1), ep))
     walls.sort(key=lambda t: -t[1])  # 긴 벽 우선(명확한 기준선)
     out, seen = [], []
-    for lab, px in walls + doors:
+    for lab, px, ep in walls + doors:
         if any(abs(px - p) < 2.0 for p in seen):  # 근접 px dedup
             continue
-        out.append((lab, px)); seen.append(px)
+        out.append((lab, px, ep)); seen.append(px)
         if len(out) >= cap:
             break
     return out
@@ -1759,19 +1796,39 @@ if which.startswith("📏"):
     # 그 실제 길이(mm)만 입력한다. 좌표공간 동일 검증완료(그래프 px ⊂ 시트 px).
     snap_cands = scale_ref_candidates(sid)
     SNAP_NONE = "(직접 클릭)"
-    snap_opts = [SNAP_NONE] + [lab for lab, _ in snap_cands]
-    snap_px_map = {lab: px for lab, px in snap_cands}
+    snap_opts = [SNAP_NONE] + [lab for lab, _px, _ep in snap_cands]
+    snap_px_map = {lab: px for lab, px, _ep in snap_cands}
+    snap_ep_map = {lab: ep for lab, _px, ep in snap_cands}
     snap_sel = st.selectbox(
         "컴퓨터 스냅 기준 (벽/문) — 클릭 대신",
         snap_opts, key=f"snapsel_{sid}",
         help="컴퓨터가 추출한 벽/문 선분을 고르면 그 픽셀길이를 기준으로 사용합니다. "
              "사람은 그 선의 실제 길이(mm)만 입력하면 됩니다.")
     snap_px = snap_px_map.get(snap_sel)
+    snap_ep = snap_ep_map.get(snap_sel)
 
     if snap_px:
         st.info("① 위에서 **스냅 기준(벽/문)** 을 골랐습니다. ② 그 선의 실제 길이(mm)만 입력 → scale 자동계산.")
     else:
         st.info("① 알려진 치수선의 **양 끝 두 점을 클릭**하세요. ② 그 치수의 실제 길이(mm)를 입력 → scale 자동계산.")
+
+    # 선택한 스냅 기준선을 도면 위에 빨간 굵은선+끝점으로 하이라이트(원본px→표시px=원본/factor).
+    if snap_px and snap_ep is not None:
+        from PIL import ImageDraw
+        hl = disp.convert("RGB")
+        dr = ImageDraw.Draw(hl)
+        (hx1, hy1), (hx2, hy2) = snap_ep
+        dx1, dy1 = hx1 / factor, hy1 / factor
+        dx2, dy2 = hx2 / factor, hy2 / factor
+        dr.line([(dx1, dy1), (dx2, dy2)], fill=(220, 20, 20), width=5)
+        r = 7
+        for cx, cy in [(dx1, dy1), (dx2, dy2)]:
+            dr.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(220, 20, 20))
+        st.image(hl, caption=f"선택한 기준 — 이 선의 실제 길이(mm)를 입력  ·  {snap_px:,.0f} px",
+                 use_container_width=True)
+    elif snap_px and snap_ep is None:
+        st.warning("이 후보는 선분 좌표를 유도할 수 없어 하이라이트를 표시하지 못합니다(픽셀길이는 사용 가능).")
+
     coords = streamlit_image_coordinates(disp, key=f"scaleimg_{sid}")
     if "pts" not in st.session_state:
         st.session_state.pts = []
