@@ -907,11 +907,20 @@ if which.startswith("📗"):
                 _names.append("rplan" if p.name == "dataset_json"
                               else p.name.replace("dataset_json_", ""))
 
-    def _dlabel(o):
+    # 출처·구성 라벨 레지스트리(콤보 표시용). variant dir 이름 → 친절한 라벨.
+    _DSLABEL = {
+        "rplan": "RPLAN(글로벌)", "cubicasa": "CubiCasa(글로벌)",
+        "aihub_t_dual": "AI-Hub(T) dual", "aihub_t_dual_corr": "AI-Hub(T) dual+보정",
+        "aihub_g_dual": "AI-Hub(G) dual", "aihub_g_dual_corr": "AI-Hub(G) dual+보정",
+        "korean": "AI-Hub(G) 온전전체 ⚠폐기예정(위험)",
+    }
+
+    def _dlabel(o):              # 모든 항목 뒤에 '· N세대'(실시간) — 콤보 폭 넉넉
         if o == "없음":
             return "없음"
+        base = _DSLABEL.get(o, o)
         n = _ds_n(o)
-        return f"{o} ({n:,}세대)" if n else o
+        return f"{base} · {n:,}세대" if n else f"{base} · —세대"
 
     def _model_dir(model, stage):   # legacy flat 폴백(현재 진행 중 첫 korean 런)
         d = _ckroot / model / stage
