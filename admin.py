@@ -364,7 +364,7 @@ def _record(**kw):
 st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
 _MENU = ["🧮 종합 현황",
          "🏢 AI-Hub 검수 (T)", "🏠 CubiCasa 검수", "📐 RPLAN 검수",
-         "🧩 AI-Hub 검수 (G)",
+         "🧩 AI-Hub 검수 (G)", "📗 도면 생성",
          "⚖️ 성능 비교",
          "📜 법령 DB"]
 try:  # 동그라미 없는 클릭형 메뉴(streamlit-option-menu). 미설치 시 라디오로 폴백.
@@ -865,6 +865,95 @@ if which.startswith("📐"):
                    lambda r, ov: _rpi.render(r, overlay=ov), _cap)
     _pager("pg_rplan", npages, "bot")
     st.stop()
+if which.startswith("📗"):
+    import json as _json
+    from pathlib import Path as _P
+    from plan2graph import cadrender as _cr, engine_render as _er
+    st.title("📗 도면 생성 — 한국형 소버린 엔진 (학습→생성→개선→재학습 반복)")
+    st.caption("ADR-0006/0007. 박스회귀 폐기 → 자체 엔진(DiffPlanner 골격 한국형 13역할/18방). "
+               "한 번에 완성이 아님 — 반복으로 품질을 올린다.")
+    st.markdown(
+        "**반복 루프** &nbsp; `온전 데이터셋 → 엔진 학습 → 샘플링 → 도면+DXF"
+        "(자동완성: 문·창·기구·치수) → 보정·neuro-symbolic 개선 → 더 좋은 그래프 → 재학습 ↺`")
+    st.divider()
+
+    _DIFFP = _P("~/diffplanner_work").expanduser()
+    _ckroot = _DIFFP / "ckpt_kr"
+    _kf = _DIFFP / "dataset" / "dataset_json_korean" / "data_train.json"
+
+    # ── 1) 학습 상태 ──
+    st.markdown("#### 1) 학습 상태")
+    _arms = ["pretrain", "finetune", "korean_only"]
+    _stages = ["node_diff", "adjacency_diff", "partitioning_diff"]
+    _rows = []
+    for arm in _arms:
+        cells = {"ARM": arm}
+        for s in _stages:
+            cps = sorted((_ckroot / s / arm).glob("model*.pt")) if _ckroot.exists() else []
+            cells[s.replace("_diff", "")] = (cps[-1].name.replace("model", "").replace(".pt", "")
+                                             if cps else "—")
+        _rows.append(cells)
+    st.table(_rows)
+    _ntrain = "—"
+    if _kf.exists():
+        try:
+            _ntrain = f"{len(_json.load(open(_kf, encoding='utf-8'))):,}"
+        except Exception:
+            pass
+    st.caption(f"학습 데이터(온전 한국, train): {_ntrain}세대 · 표 숫자=마지막 체크포인트 step. "
+               "GPU1, 서버 ~/diffplanner_work.")
+    st.code("bash ~/diffplanner_work/gate2_train_runbook.sh   # 초기학습/재학습 (ARM-A 사전학습→파인튜닝 / ARM-B)\n"
+            "bash ~/diffplanner_work/korean_sample.sh finetune 200   # 학습된 엔진으로 샘플링→엔진출력 JSON",
+            language="bash")
+    st.divider()
+
+    # ── 2) 도면 생성(렌더) ──
+    st.markdown("#### 2) 도면 생성 — 엔진 출력 → 이미지 + DXF")
+    st.caption("엔진 출력(방 박스+역할+외곽+인접)의 공백을 neuro-symbolic으로 채워 렌더: "
+               "문=인접 경계 · 창=거주방 외곽 · 척도=가정폭 12m · 기구=역할 카탈로그.")
+    _srcs = {}
+    _outdir = _DIFFP / "output" / "out_korean"
+    if _outdir.exists():
+        for f in sorted(_outdir.glob("*.json")):
+            _srcs[f"🟢 엔진샘플: {f.stem}"] = f
+    _gt = _DIFFP / "dataset" / "dataset_json_korean" / "data_test.json"
+    if _gt.exists():
+        _srcs["⚪ GT 예시 (학습 전 파이프라인 확인용 — 모델 생성 아님)"] = _gt
+    if not _srcs:
+        st.info("엔진 샘플 출력(out_korean/*.json)이 아직 없습니다. 위 korean_sample.sh로 생성 후 다시 오세요.")
+        st.stop()
+    _label = st.selectbox("입력 (엔진 출력 JSON)", list(_srcs))
+    _n = st.slider("렌더 장수", 1, 12, 4)
+    if "🟢" not in _label:
+        st.warning("GT 예시 = 정답 그래프를 같은 렌더러로 그린 것(모델 생성 아님). "
+                   "렌더 파이프라인 확인·시연용. 모델 생성 도면은 학습 후 엔진샘플로.")
+    if st.button("🏗 도면 생성 (이미지 + DXF)", type="primary"):
+        try:
+            _data = _json.load(open(_srcs[_label], encoding="utf-8"))
+        except Exception as e:
+            st.error(f"입력 로드 실패: {e}")
+            st.stop()
+        _recs = (_data if isinstance(_data, list) else [_data])[:_n]
+        for k, rec in enumerate(_recs):
+            try:
+                geom = _er.build_geometry(rec)
+                fig = _cr.render_fig(geom)
+                st.pyplot(fig)
+                import matplotlib.pyplot as _plt
+                _plt.close(fig)
+                c1, c2 = st.columns([3, 1])
+                c1.caption(f"**{geom.plan_id}** · 방{len(geom.rooms)} 문{len(geom.doors)} "
+                           f"창{len(geom.windows)} 기구{sum(len(r.fixtures) for r in geom.rooms)} "
+                           f"· 자기교정 잔여 {len(geom.issues)}건")
+                try:
+                    c2.download_button("⬇ DXF", _cr.render_dxf(geom),
+                                       file_name=f"{geom.plan_id}.dxf", key=f"_dxf{k}")
+                except Exception as e:
+                    c2.caption(f"DXF 실패: {e}")
+            except Exception as e:
+                st.error(f"[{k}] 렌더 실패: {e}")
+    st.stop()
+
 if which.startswith("⚖️"):
     st.title("⚖️ 성능 비교 — 기하모델 A/B (도면 품질)")
     st.caption("같은 파이프라인·같은 데이터, **기하모델만 변수**(ADR-0007). "
