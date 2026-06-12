@@ -900,27 +900,24 @@ if which.startswith("📗"):
                 return None
         return None
 
-    _names = []
-    if _dsroot.exists():
-        for p in sorted(_dsroot.glob("dataset_json*")):
-            if p.is_dir():
-                _names.append("rplan" if p.name == "dataset_json"
-                              else p.name.replace("dataset_json_", ""))
-
-    # 출처·구성 라벨 레지스트리(콤보 표시용). variant dir 이름 → 친절한 라벨.
-    _DSLABEL = {
-        "rplan": "RPLAN(글로벌)", "cubicasa": "CubiCasa(글로벌)",
-        "aihub_t_dual": "AI-Hub(T) dual", "aihub_t_dual_corr": "AI-Hub(T) dual+보정",
-        "aihub_g_dual": "AI-Hub(G) dual", "aihub_g_dual_corr": "AI-Hub(G) dual+보정",
-        "korean": "AI-Hub(G) 온전전체 ⚠폐기예정(위험)",
-    }
+    # 콤보 고정 목록(출처·구성) — 사용자 확정. (dir 이름, 표시 라벨). 데이터 없어도 항상 표시.
+    _ENGINE_DS = [
+        ("aihub_t_dual", "AI-Hub(T) dual"),
+        ("aihub_t_dual_corr", "AI-Hub(T) dual+보정"),
+        ("aihub_g_dual", "AI-Hub(G) dual"),
+        ("aihub_g_dual_corr", "AI-Hub(G) dual+보정"),
+        ("rplan", "RPLAN"),
+        ("cubicasa", "CubiCasa"),
+    ]
+    _DSLABEL = dict(_ENGINE_DS)
+    _names = [k for k, _ in _ENGINE_DS]
 
     def _dlabel(o):              # 모든 항목 뒤에 '· N세대'(실시간) — 콤보 폭 넉넉
         if o == "없음":
             return "없음"
         base = _DSLABEL.get(o, o)
         n = _ds_n(o)
-        return f"{base} · {n:,}세대" if n else f"{base} · —세대"
+        return f"{base} · {n:,}세대" if n else f"{base} · —세대 (미생성)"
 
     def _model_dir(model, stage):   # legacy flat 폴백(현재 진행 중 첫 korean 런)
         d = _ckroot / model / stage
@@ -953,7 +950,7 @@ if which.startswith("📗"):
                          index=_preopt.index("rplan") if "rplan" in _preopt else 0,
                          format_func=_dlabel, key="eng_pre")
     _ft = _o2.selectbox("② 파인튜닝", _ftopt,
-                        index=_ftopt.index("korean") if "korean" in _ftopt else 0,
+                        index=_ftopt.index("aihub_g_dual") if "aihub_g_dual" in _ftopt else 0,
                         format_func=_dlabel, key="eng_ft")
     _ftsteps = _o3.number_input("파인튜닝 step", 5000, 300000, 40000, 5000, key="eng_steps")
     _prv = None if _pre == "없음" else _pre
