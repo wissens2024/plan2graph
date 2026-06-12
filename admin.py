@@ -891,13 +891,51 @@ if which.startswith("📗"):
         cps = sorted(c for c in d.glob("*model*.pt") if "model" in c.name) if d.exists() else []
         return cps[-1].name.replace(".pt", "").split("model")[-1].lstrip("_") if cps else None
 
-    def _ds_n(name):           # meta.json 의 학습수(실시간; 수는 변함)
-        p = (_dsroot / "dataset_json") if name == "rplan" else (_dsroot / f"dataset_json_{name}")
-        if (p / "meta.json").exists():
-            try:
-                return _json.load(open(p / "meta.json", encoding="utf-8")).get("n_train")
-            except Exception:
-                return None
+    # 콤보 세대수 = manifest 회계(검수와 같은 소스). 빌드는 검수에서. "미생성" 아님.
+    from plan2graph import dataset_status as _dss
+    _MAN = config.DATA_DIR / "staging" / "aihub" / "manifest.jsonl"
+    _GDIR = config.DATA_DIR / "staging" / "gline" / "graphs"
+
+    @st.cache_data(show_spinner=False)
+    def _t_dual_use(_sz):                       # T-라인 manifest: (dual 세대, use전체 세대)
+        dual = use = 0
+        if _MAN.exists():
+            for ln in _MAN.read_text(encoding="utf-8").splitlines():
+                if not ln.strip():
+                    continue
+                r = _json.loads(ln)
+                if r.get("disposition") != "use":
+                    continue
+                n = _dss.aihub_row_units(r)
+                use += n
+                if r.get("reason") in ("dual", "dual_dedup_merge"):
+                    dual += n
+        return dual, use
+
+    def _g_dual_use():                          # G-라인 gline: (dual 세대, use전체 세대) · 디스크캐시
+        def _c():
+            u = _dss.gline_label_combo(_MAN, _GDIR)["unit"]
+            gd = u.get("✅ 사용 · dual(직접변환)", 0)
+            return [gd, gd + u.get("✅ 사용 · 방만→V2V STR복구", 0)
+                    + u.get("✅ 사용 · 구조만→V2V SPA복구", 0)]
+        try:
+            return _dss._acct_cached(_GDIR, "gline_dual_use", _c)
+        except Exception:
+            return [None, None]
+
+    def _ds_n(name):
+        try:
+            if name == "rplan":
+                p = _dsroot / "dataset_json" / "meta.json"
+                return _json.load(open(p, encoding="utf-8")).get("n_train") if p.exists() else None
+            if name in ("aihub_t_dual", "aihub_t_dual_corr"):
+                d, u = _t_dual_use(_MAN.stat().st_size if _MAN.exists() else 0)
+                return (d if name == "aihub_t_dual" else u) or None
+            if name in ("aihub_g_dual", "aihub_g_dual_corr"):
+                d, u = _g_dual_use()
+                return (d if name == "aihub_g_dual" else u) or None
+        except Exception:
+            return None
         return None
 
     # 콤보 고정 목록(출처·구성) — 사용자 확정. (dir 이름, 표시 라벨). 데이터 없어도 항상 표시.
@@ -917,7 +955,7 @@ if which.startswith("📗"):
             return "없음"
         base = _DSLABEL.get(o, o)
         n = _ds_n(o)
-        return f"{base} · {n:,}세대" if n else f"{base} · —세대 (미생성)"
+        return f"{base} · {n:,}세대" if n else f"{base} · —세대"
 
     def _model_dir(model, stage):   # legacy flat 폴백(현재 진행 중 첫 korean 런)
         d = _ckroot / model / stage
