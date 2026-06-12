@@ -1,37 +1,33 @@
 #!/bin/bash
-# korean_sample.sh — 학습된 엔진으로 샘플링(node->adjacency->partitioning) → 엔진출력 JSON.
-# 그 뒤 diffplanner_to_cadrender.py(또는 GUI 📗 도면생성)로 도면+DXF.
-#
-# 사용: bash korean_sample.sh <VARIANT> <ARM> [N] [BS]
-#   VARIANT = 데이터셋 구성(ckpt_kr/<VARIANT>/...).  ARM = finetune | korean_only
-#   예:  bash korean_sample.sh korean finetune 200
-#
-# 출력: output/out_korean/<VARIANT>_<ARM>.json (체인 누적). 데이터=해당 VARIANT의 test.
-# 체크포인트는 ckpt_kr/<VARIANT>/<stage>/<ARM>/, 없으면 레거시 flat ckpt_kr/<stage>/<ARM>
-# (현재 진행 중인 첫 korean 런이 flat). GPU1.
+# korean_sample.sh <MODEL_ID> <DATA_DS> [N] [BS] — 학습된 엔진으로 샘플링→엔진출력 JSON.
+#   MODEL_ID = ckpt_kr/<MODEL_ID>/<stage>/ 의 모델 (예: korean_pre-rplan, korean, dual_pre-rplan)
+#   DATA_DS  = 경계조건을 가져올 데이터셋 이름(보통 모델의 본학습 데이터). rplan→dataset_json
+#   출력: output/out_korean/<MODEL_ID>.json. node→adjacency→partitioning 체인. GPU1.
 set -e
-VARIANT=${1:-korean}
-ARM=${2:-finetune}
+MODEL=${1:-korean_pre-rplan}
+DATA=${2:-korean}
 N=${3:-1000}
 BS=${4:-256}
 PY=/home/ju/.local/share/mamba/envs/p2g/bin/python
 ROOT=~/diffplanner_work
 export CUDA_VISIBLE_DEVICES=1
-export DIFFPLANNER_DATA_DIR=../../dataset/dataset_json_$VARIANT   # 로더·name2index 통일
+if [ "$DATA" = rplan ]; then export DIFFPLANNER_DATA_DIR=../../dataset/dataset_json
+else export DIFFPLANNER_DATA_DIR=../../dataset/dataset_json_$DATA; fi
 OUTDIR=$ROOT/output/out_korean; mkdir -p $OUTDIR
-SYN=$OUTDIR/${VARIANT}_${ARM}.json
+SYN=$OUTDIR/${MODEL}.json
 
-# 체크포인트: variant 우선, 없으면 flat(legacy 첫 korean 런)
-ck () {
+ck(){  # 모델 stage 체크포인트; korean_pre-rplan/korean은 레거시 flat 폴백
   local sd=$1
-  local c=$(ls -1v $ROOT/ckpt_kr/$VARIANT/$sd/$ARM/*model*.pt 2>/dev/null | grep -vE "ema_|opt[0-9]" | tail -1)
-  [ -z "$c" ] && c=$(ls -1v $ROOT/ckpt_kr/$sd/$ARM/*model*.pt 2>/dev/null | grep -vE "ema_|opt[0-9]" | tail -1)
+  local c=$(ls -1v $ROOT/ckpt_kr/$MODEL/$sd/*model*.pt 2>/dev/null | grep -vE "ema_|opt[0-9]" | tail -1)
+  if [ -z "$c" ]; then
+    local arm=finetune; [ "$MODEL" = korean ] && arm=korean_only
+    c=$(ls -1v $ROOT/ckpt_kr/$sd/$arm/*model*.pt 2>/dev/null | grep -vE "ema_|opt[0-9]" | tail -1)
+  fi
   echo "$c"
 }
 NODE=$(ck node_diff); ADJ=$(ck adjacency_diff); PART=$(ck partitioning_diff)
-echo "VARIANT=$VARIANT ARM=$ARM N=$N"
-echo "  node=$NODE"; echo "  adj=$ADJ"; echo "  part=$PART"
-[ -z "$NODE" ] && { echo "체크포인트 없음 — 학습 먼저(gate2_train_runbook.sh $VARIANT)"; exit 1; }
+echo "MODEL=$MODEL DATA=$DATA N=$N"; echo "  node=$NODE"; echo "  adj=$ADJ"; echo "  part=$PART"
+[ -z "$NODE" ] && { echo "체크포인트 없음 — 학습 먼저: gate2_train_runbook.sh"; exit 1; }
 
 echo "=== STAGE 1 node ($(date +%T)) ==="
 cd $ROOT/node_diff/scripts
@@ -52,5 +48,5 @@ $PY sample.py --dataset rplan --batch_size $BS --set_name test --model_path "$PA
   --syn_dataset_path "$SYN"
 
 echo "=== 최종 엔진출력: $SYN ==="
-echo "다음: GUI 📗 도면생성에서 '$VARIANT $ARM' 선택, 또는"
-echo "  PYTHONPATH=~/plan2graph/src $PY ~/plan2graph/scripts/diffplanner_to_cadrender.py --engine-json $SYN --n 8 --out /tmp/p2g_${VARIANT}_${ARM}"
+echo "다음: GUI 📗 도면생성에서 모델 '$MODEL' 선택 → 렌더, 또는"
+echo "  PYTHONPATH=~/plan2graph/src $PY ~/plan2graph/scripts/diffplanner_to_cadrender.py --engine-json $SYN --n 8 --out /tmp/p2g_${MODEL}"

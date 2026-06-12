@@ -559,6 +559,12 @@ def main():
         for nm, recs in (("train", train), ("test", test), ("val", test)):
             json.dump(recs, open(os.path.join(vdir, f"data_{nm}.json"), "w",
                                  encoding="utf-8"), ensure_ascii=False)
+        # meta.json — 콤보박스가 싸게 읽는 카운트(데이터 수는 변하므로 변환 때마다 갱신)
+        json.dump({"variant": args.variant, "provenance": args.provenance or "전체",
+                   "clean_only": args.clean_only, "n_train": len(train),
+                   "n_test": len(test), "n_total": len(out)},
+                  open(os.path.join(vdir, "meta.json"), "w", encoding="utf-8"),
+                  ensure_ascii=False, indent=2)
         print(f"[variant '{args.variant}'] prov={args.provenance or '전체'} "
               f"clean_only={args.clean_only} → train={len(train)} test={len(test)}  {vdir}")
     else:
