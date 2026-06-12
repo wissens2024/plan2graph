@@ -23,7 +23,9 @@ try:
     GRAPHS = str(topoedit.GRAPHS_DIR)
 except Exception:
     GRAPHS = os.path.expanduser("~/plan2graph/data/staging/gline/graphs")
-EDITS = os.path.join(GRAPHS, "_edits")
+# ⚠️ _edits는 graphs/ '밖'(parent)에 둔다 — graphs 안에 쓰면 디렉터리 mtime이 바뀌어
+# 회계 디스크캐시(_acct_key=파일수+graphs mtime)가 매번 깨져 검수 집계가 27s 콜드 재계산됨.
+EDITS = os.path.join(os.path.dirname(GRAPHS), "_edits")
 os.makedirs(EDITS, exist_ok=True)
 
 HTML = r"""<!doctype html><html><head><meta charset="utf-8"><title>보정 에디터(프로토타입)</title>
