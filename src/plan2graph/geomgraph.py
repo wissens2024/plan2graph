@@ -38,6 +38,8 @@ PRIVACY = {
     "구조물": "structure", "실외": "exterior",
 }
 CONNECTOR_ROLES = ("복도", "전실")
+# ADR-0013 다중도메인 조건부 학습 — house_type → 정규화 housing_type 이름
+HOUSING_TYPE = {"APT": "apartment", "DEH": "detached", "ROW": "rowhouse"}
 # 단일세대 필수 5요소 — **역할 패밀리**로 본다(세분역할 흡수). suggest_roles가 화장실→욕실/
 # 전용욕실, 침실→안방 등으로 세분하므로 정확매칭이면 거짓 '필수공간없음'이 대량 발생(검증 버그).
 ESSENTIAL_FAMILIES = {
@@ -536,6 +538,11 @@ def build(state, dr) -> dict:
     g["meta"] = {
         "schema_version": SCHEMA_VERSION,
         "house_type": state.house,
+        # ADR-0013 다중도메인 조건부 학습 메타 (AI-Hub geomgraph)
+        "country": "KR",
+        "dataset": "AIHUB_KR",
+        "housing_type": HOUSING_TYPE.get(state.house, state.house),
+        "label_schema": "korean_13cat",
         "scale_mm_per_px": g["scale_mm_per_px"],
         "status": "success" if v["passed"] else "quarantine",
         "reason": ",".join(v["reasons"]),

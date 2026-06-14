@@ -34,7 +34,7 @@
 - ★**fixtures** (list, 신규): `{id, name, category, room_id, position, footprint, orientation_deg, size_mm[w,d], source("obj_detected"|"role_inferred"), confidence}` — Tier A(OBJ 5종, rotation→orientation) + Tier B(역할 카탈로그 `fixture_catalog.py`).
 - ★**dimensions** (list, 신규): `{id, type("linear"|"overall"), from, to, value_mm, refers_to}` — scale+기하서 *도출*(사람 입력 X).
 - **validation**: `{passed, reasons[], warnings[], info[]}` (R1~R8 + ★g-0.4 불변: 벽 없는 경계=open, 복도 노드 존재).
-- **meta**: `{house_type, scale_mm_per_px, status, reason, n_*}`
+- **meta**: `{house_type, scale_mm_per_px, status, reason, n_*}` + ★**다중도메인 조건(ADR-0013)**: `country`(CN/KR/EU)·`dataset`(RPLAN/AIHUB_KR/CubiCasa, provenance)·`housing_type`(apartment/detached/rowhouse)·`label_schema`(rplan_6cat/korean_13cat/cubicasa_Ncat). AI-Hub=KR/AIHUB_KR/korean_13cat. (max_rooms는 엔진 config, 그래프 아님 — 13=종류수≠18=방수)
 - **DXF 레이어**(렌더 규약): `A-WALL/A-DOOR/A-GLAZ/A-FURN/A-DIM/A-AREA/A-ANNO`.
 
 ⚠️ **두 개의 품질 게이트가 있음**(헷갈리기 쉬움):

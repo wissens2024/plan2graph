@@ -78,6 +78,7 @@ AI-Hub(한국) 원본 PNG+COCO 라벨  +  RPLAN·CubiCasa(글로벌)
 - **방 = 벽사이클 노드**(복도·전실도 별도 노드). 방-방 **경계 = `wall|open|door` 태그** — `open`이면 벽 안 그림(한국 오픈플랜). **불변: 벽 없는 곳에 벽 안 그림.** (ADR-0010)
 - **g-0.4 신규(★)**: `walls.thickness_mm`(외200/내120) · `edges.boundary` · 상위 `fixtures[]`(Tier A 검출 5종 + Tier B 역할추론 `fixture_catalog.py`) · `dimensions[]` · `scale{mm_per_px,source}` · 검증 불변조건(room=closed cycle, door=1 wall 위, 창=exterior, 현관 reachable — ADR-0012).
 - ⚠️ `[검증]` 데이터 채움률(300표본): 방폴리곤 100%·문 97%·창 96%·**문스윙 57%·축척 0%·기구(데이터) 0%**(OBJ는 욕실/주방 5종만, 소파·침대 없음 → 역할추론). 갭은 완성층이 neuro-symbolic으로 채움(ADR-0006).
+- **다중도메인 조건 메타(ADR-0013)**: `meta.{country, dataset, housing_type, label_schema}` — 해외(RPLAN/CubiCasa)+한국을 *도메인 라벨로 분리해 합동학습*하기 위함(naive 전이 대신). 키스톤=통합 카테고리 어휘(union)+소스별 매핑. housing 조건은 검증된 최강 레버(EXP §7), country/label_schema 교차도메인 효과는 미검증(측정 예정).
 
 ---
 
