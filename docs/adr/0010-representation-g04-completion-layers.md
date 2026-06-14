@@ -1,6 +1,6 @@
 # ADR-0010: 표현 g-0.4 — 벽사이클 방·경계 태그·완성 7레이어·가구 2계층
 
-Status: Accepted
+Status: Accepted (일부 refine: ADR-0012 — 문·창은 opening 토큰으로 생성, g-0.4는 불변조건 강화)
 Date: 2026-06-14
 Deciders: wissens2024, Claude
 
