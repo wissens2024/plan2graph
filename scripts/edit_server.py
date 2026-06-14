@@ -86,9 +86,13 @@ def _build_png_index():
 
 
 def _sig_of(plan_id):
-    """APT_FP_<sig>_<...>_u<n> → sig (= APT_FP_ 다음 토큰)."""
-    p = plan_id.split("_")
-    return p[2] if len(p) >= 3 and p[1] == "FP" else None
+    """{HOUSE}_FP_<sig>_u<n> → sig. sig는 '_' 포함(crc_size). '_FP_'와 '_u<n>' 사이 전체."""
+    import re
+    m = re.search(r"_FP_(.+?)_u\d+$", plan_id)
+    if m:
+        return m.group(1)
+    m = re.search(r"_FP_(.+)$", plan_id)
+    return m.group(1) if m else None
 
 
 def _png_bytes(plan_id):
