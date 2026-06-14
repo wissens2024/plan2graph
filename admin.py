@@ -394,11 +394,11 @@ st.sidebar.caption("문 방향 클릭·드래그 즉시반영. nginx `/editor/`�
                    "(임시: `ssh -L 8600:localhost:8600` 후 localhost:8600).")
 
 # ════════════════════════════════════════════════════════════════════════════
-# 🧩 AI-Hub 검수 (G) — 원본 위에서 사람이 위상 직접 구축(자동추론 0) → staging/gline
+# 🧩 AI-Hub 검수 (G) — 자동변환 그래프를 사람이 정보보정(역할·인접) → staging/gline (ADR-0008)
 # ════════════════════════════════════════════════════════════════════════════
 if which.startswith("🧩"):
     from plan2graph import topoedit
-    st.title("🧩 AI-Hub 검수 (G) — 위상+기하 보정")
+    st.title("🧩 AI-Hub 검수 (G) — 자동변환 + 인간보정 그래프")
     # 상단 데이터셋 합계(사용/보정필요/제외/보정완료)는 종합현황·버전표에 있어 중복 → 제거.
     # 대신 '사람 보정 건수'(SVG 보정완료 세대)를 편집기 상단 바에 표시(render_editor).
     topoedit.render_editor(show_title=False)
