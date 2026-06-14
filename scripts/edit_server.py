@@ -11,7 +11,7 @@ SVG 폐기. 편집 대상 = 그래프 JSON 그 자체(= 최종 산출 스키마)
 
 폴더 분리(ADR-0008):
   data/staging/corrected/graphs/    = 원본(자동변환) · 읽기전용
-  data/staging/corrected/corrected/ = 작업(사람 보정) · 저장 위치 (graphs/ 밖 = 회계캐시 무효화 회피)
+  data/staging/corrected/edits/ = 작업(사람 편집) · 저장 위치 (graphs/ 밖 = 회계캐시 무효화 회피)
   data/staging/corrected/png/       = 원본 PNG 추출 캐시
   data/staging/corrected/_png_index.json = sig→(zip,entry) 캐시(1회 빌드)
 
@@ -41,10 +41,10 @@ except Exception:  # noqa: BLE001
     ROLE_COLOR = {}
 
 _BASE = os.path.dirname(GRAPHS)                 # data/staging/corrected
-CORRECTED = os.path.join(_BASE, "corrected")    # 작업본(graphs/ 밖)
+EDITS = os.path.join(_BASE, "edits")    # 사람 편집본(graphs/ 밖)
 PNG_CACHE = os.path.join(_BASE, "png")          # PNG 추출 캐시
 PNG_INDEX = os.path.join(_BASE, "_png_index.json")
-for d in (CORRECTED, PNG_CACHE):
+for d in (EDITS, PNG_CACHE):
     os.makedirs(d, exist_ok=True)
 
 # ── 역할 팔레트(키보드 단축키 1..0,a..) — 자주 쓰는 순. topoedit.ROLES에서 추림 ──
@@ -119,7 +119,7 @@ def _png_bytes(plan_id):
 # 그래프 로드/보강/판정
 # ─────────────────────────────────────────────────────────────────────────────
 def _graph_path(gid):
-    cp = os.path.join(CORRECTED, gid + ".json")
+    cp = os.path.join(EDITS, gid + ".json")
     return cp if os.path.exists(cp) else os.path.join(GRAPHS, gid + ".json")
 
 
@@ -672,7 +672,7 @@ document.getElementById('copyId').onclick=async()=>{
 async function save(){if(!G)return;
   const r=await(await fetch('api/graph/'+GID,{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(G)})).json();
-  setDirty(false);if(r.status)showStatus(r.status);toast('저장됨 → corrected/');loadList(document.getElementById('search').value.trim());}
+  setDirty(false);if(r.status)showStatus(r.status);toast('저장됨 → edits/');loadList(document.getElementById('search').value.trim());}
 document.getElementById('save').onclick=save;
 document.getElementById('undo').onclick=undo;
 
@@ -715,8 +715,8 @@ class H(BaseHTTPRequestHandler):
             n = int(qs.get("n", ["250"])[0])
             q = (qs.get("q", [""])[0] or "").lower()
             done = set()
-            if os.path.isdir(CORRECTED):
-                done = {f[:-5] for f in os.listdir(CORRECTED) if f.endswith(".json")}
+            if os.path.isdir(EDITS):
+                done = {f[:-5] for f in os.listdir(EDITS) if f.endswith(".json")}
             ids = []
             try:
                 with os.scandir(GRAPHS) as it:
@@ -766,7 +766,7 @@ class H(BaseHTTPRequestHandler):
             gid = u.path[len("/api/graph/"):].replace("/", "_")
             g = json.loads(raw)
             g["corrected"] = True
-            with open(os.path.join(CORRECTED, gid + ".json"), "w", encoding="utf-8") as f:
+            with open(os.path.join(EDITS, gid + ".json"), "w", encoding="utf-8") as f:
                 json.dump(g, f, ensure_ascii=False)
             return self._send(200, json.dumps({"ok": True, "status": _status(g)}, ensure_ascii=False))
         return self._send(404, json.dumps({"error": "404"}))
@@ -786,7 +786,7 @@ def main():
         return
     threading.Thread(target=_build_png_index, daemon=True).start()   # 백그라운드 인덱스
     print(f"정보 보정 에디터 → http://localhost:{a.port}")
-    print(f"  원본={GRAPHS}\n  작업={CORRECTED}\n  PNG캐시={PNG_CACHE}")
+    print(f"  원본={GRAPHS}\n  작업={EDITS}\n  PNG캐시={PNG_CACHE}")
     ThreadingHTTPServer(("127.0.0.1", a.port), H).serve_forever()
 
 

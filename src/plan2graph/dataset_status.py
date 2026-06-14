@@ -42,14 +42,14 @@ def _acct_key(graphs_dir: Path) -> list:
     return [n, int(graphs_dir.stat().st_mtime)]
 
 
-def _corrected_dir(graphs_dir: Path) -> Path:
-    """사람 보정본 폴더(ADR-0008 폴더분리) — graphs/(원본) 옆 corrected/(작업)."""
-    return graphs_dir.parent / "corrected"
+def _edits_dir(graphs_dir: Path) -> Path:
+    """사람 편집본 폴더(ADR-0008 폴더분리) — graphs/(원본) 옆 edits/(작업)."""
+    return graphs_dir.parent / "edits"
 
 
-def _corrected_ids(graphs_dir: Path) -> set:
-    """corrected/ 에 저장된 보정완료 unit stem 집합(에디터 저장분)."""
-    cd = _corrected_dir(graphs_dir)
+def _edits_ids(graphs_dir: Path) -> set:
+    """edits/ 에 저장된 보정완료 unit stem 집합(에디터 저장분)."""
+    cd = _edits_dir(graphs_dir)
     return {f.stem for f in cd.glob("*.json")} if cd.is_dir() else set()
 
 
@@ -203,7 +203,7 @@ def corrected_status(graphs_dir: Path, use_cache: bool = True) -> dict:
     40k 전수 파싱(~33s)이라 디스크 캐시(use_cache) — rerun·재시작에도 즉시(_acct_cached)."""
     if use_cache:
         return _acct_cached(graphs_dir, "corrected_status", lambda: corrected_status(graphs_dir, use_cache=False),
-                            extra_key=_acct_key(_corrected_dir(graphs_dir)))
+                            extra_key=_acct_key(_edits_dir(graphs_dir)))
     import re
     cnt = Counter()                                    # 세대(unit) 버킷
     reasons, warns = Counter(), Counter()
@@ -213,7 +213,7 @@ def corrected_status(graphs_dir: Path, use_cache: bool = True) -> dict:
     house_unit: dict[str, Counter] = {}
     house_draw_disp: dict[str, dict[str, str]] = {}
     if graphs_dir.is_dir():
-        corrected = _corrected_ids(graphs_dir)         # ADR-0008: corrected/ 저장분 = 보정완료(done)
+        corrected = _edits_ids(graphs_dir)         # ADR-0008: edits/ 저장분 = 보정완료(done)
         for f in graphs_dir.glob("*.json"):
             try:
                 g = json.loads(f.read_text(encoding="utf-8"))
@@ -262,12 +262,12 @@ def corrected_plan_status(graphs_dir: Path, use_cache: bool = True) -> dict[str,
     if use_cache:
         return _acct_cached(graphs_dir, "corrected_plan_status",
                             lambda: corrected_plan_status(graphs_dir, use_cache=False),
-                            extra_key=_acct_key(_corrected_dir(graphs_dir)))
+                            extra_key=_acct_key(_edits_dir(graphs_dir)))
     import re
     prio = {"excl": 0, "fix": 1, "done": 2, "use": 3}
     out: dict[str, str] = {}
     if graphs_dir.is_dir():
-        corrected = _corrected_ids(graphs_dir)         # ADR-0008: corrected/ 저장분 = 보정완료(done)
+        corrected = _edits_ids(graphs_dir)         # ADR-0008: edits/ 저장분 = 보정완료(done)
         for f in graphs_dir.glob("*.json"):
             try:
                 g = json.loads(f.read_text(encoding="utf-8"))
