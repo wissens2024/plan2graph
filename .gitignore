@@ -8,7 +8,15 @@
 /data/processed_val/
 # (은퇴) 옛 AI-Hub 작업본 — staging/aihub로 대체
 /data/processed/
-/data/releases/*/graphs/
+# release 본문(서버 재생성) — 정의(recipes)+동결test만 git 추적, 나머지 제외.
+#   recipe+staging+seed로 결정적 재생성되므로 parsed/corrected의 graphs/manifest/splits는 git 불필요.
+#   (2026-06-15 parsed/corrected 이전 완료. 옛 `*/graphs/`는 중첩 parsed/v0/graphs 미차단 버그라 폐기.)
+/data/releases/**/graphs/
+/data/releases/parsed/
+/data/releases/corrected/
+/data/releases/v0/
+/data/releases/*.json
+!/data/releases/_frozen_test.json
 /data/interim/law_cache/
 /data/interim/*.xml
 /data/interim/*.json
@@ -29,8 +37,8 @@
 /ontology/*.png
 
 # ── 추적 대상(참고) ──
-# 코드·문서·규칙DB·릴리스 메타(manifest/eval/splits/card)·요약 CSV는 추적한다.
-# legal/*.json, *.md, data/releases/*/{manifest,eval,splits,dataset_card}, *.csv 요약.
+# 코드·문서·규칙DB·릴리스 정의(recipes/·_frozen_test.json)·요약 CSV는 추적한다.
+# 릴리스 본문/메타(parsed/corrected의 graphs·manifest·splits)는 recipe+staging로 재생성 → git 제외.
 
 # ── 실험 원장(runs/) ──
 # 프로비넌스·비교표(meta.json/metrics.json/train.log/index.jsonl)는 추적,

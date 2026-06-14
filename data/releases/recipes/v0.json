@@ -1,0 +1,9 @@
+{
+  "version": "v0",
+  "desc": "AI-Hub 클린 dual 벤치마크(예측노이즈 없음). V2V 복구분 제외. test=v0 동결 정의.",
+  "include": [
+    {"source": "aihub", "status": "success", "role": "benchmark", "provenance": ["dual", "dual_dedup_merge"]}
+  ],
+  "test_from": ["aihub"],
+  "clean_filter": "현관==1"
+}

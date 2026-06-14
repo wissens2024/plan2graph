@@ -1,0 +1,1 @@
+{"version":"global_rplan","desc":"RPLAN 사전학습 풀(pretrain only, test 없음)","include":[{"source":"rplan","status":"success","role":"pretrain"}],"test_from":[]}
