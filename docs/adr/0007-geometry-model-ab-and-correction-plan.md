@@ -1,6 +1,6 @@
 # ADR-0007: T·G = 기하모델 A/B 비교 + 보정 단계(자동→인간) + 돌림 방지
 
-Status: Accepted
+Status: Superseded by ADR-0008
 Date: 2026-06-12
 Deciders: wissens2024
 
