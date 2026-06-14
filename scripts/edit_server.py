@@ -10,10 +10,10 @@ SVG 폐기. 편집 대상 = 그래프 JSON 그 자체(= 최종 산출 스키마)
 도면당 1회 저장. 알바용이라 '조작 지연 0'이 설계 기준.
 
 폴더 분리(ADR-0008):
-  data/staging/gline/graphs/    = 원본(자동변환) · 읽기전용
-  data/staging/gline/corrected/ = 작업(사람 보정) · 저장 위치 (graphs/ 밖 = 회계캐시 무효화 회피)
-  data/staging/gline/png/       = 원본 PNG 추출 캐시
-  data/staging/gline/_png_index.json = sig→(zip,entry) 캐시(1회 빌드)
+  data/staging/corrected/graphs/    = 원본(자동변환) · 읽기전용
+  data/staging/corrected/corrected/ = 작업(사람 보정) · 저장 위치 (graphs/ 밖 = 회계캐시 무효화 회피)
+  data/staging/corrected/png/       = 원본 PNG 추출 캐시
+  data/staging/corrected/_png_index.json = sig→(zip,entry) 캐시(1회 빌드)
 
 실행:  PYTHONPATH=src python scripts/edit_server.py --port 8600
 보기:  nginx /editor/ 또는  ssh -fN -L 8600:localhost:8600 ju@sse.aines.kr → http://localhost:8600
@@ -35,12 +35,12 @@ try:
     ROLES = list(topoedit.ROLES)
     ROLE_COLOR = dict(topoedit.ROLE_COLOR)
 except Exception:  # noqa: BLE001
-    GRAPHS = os.path.expanduser("~/plan2graph/data/staging/gline/graphs")
+    GRAPHS = os.path.expanduser("~/plan2graph/data/staging/corrected/graphs")
     ROLES = ["거실", "주방", "현관", "침실", "안방", "화장실", "욕실", "발코니",
              "드레스룸", "다목적공간", "복도", "전실", "기타", "알파룸"]
     ROLE_COLOR = {}
 
-_BASE = os.path.dirname(GRAPHS)                 # data/staging/gline
+_BASE = os.path.dirname(GRAPHS)                 # data/staging/corrected
 CORRECTED = os.path.join(_BASE, "corrected")    # 작업본(graphs/ 밖)
 PNG_CACHE = os.path.join(_BASE, "png")          # PNG 추출 캐시
 PNG_INDEX = os.path.join(_BASE, "_png_index.json")

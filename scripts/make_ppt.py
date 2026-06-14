@@ -217,7 +217,7 @@ flow(s, Inches(0.62), Inches(1.95),
 text(s, Inches(0.8), Inches(3.25), Inches(11.7), Inches(0.4),
      [("T · G = ‘같은 파이프라인, 기하모델만 다른’ A/B 비교 (ADR-0007)", {"size": 14, "color": GOLD, "bold": True})])
 table(s, Inches(0.8), Inches(3.85), Inches(11.7),
-      [["축", "T-라인 (baseline)", "G-라인 (소버린)"],
+      [["축", "Parsed (baseline)", "Corrected (소버린)"],
        ["기하모델", "약한 박스 — ‘위상+약한기하=못그림’ 증명", "강한 diffusion 엔진 (자체)"],
        ["데이터", "자동 추출 그래프", "+ 사람(알바) SVG 보정"],
        ["역할", "비교 기준선", "본 제품"]],
@@ -298,7 +298,7 @@ text(s, Inches(0.8), Inches(3.3), Inches(11.7), Inches(3.4),
        {"size": 13.5, "bullet": True}),
       ("통일 그래프(g-0.3) — SPA(방)+STR(벽)+OBJ(기구 ~9k) 지문 병합 → 연결공간 복원 · 문 재배정 · 개방연결",
        {"size": 13.5, "bullet": True}),
-      ("산출: G-라인 빌드 18,503 도면 / 40,495 세대 (provenance: dual·spa·str·objocr)",
+      ("산출: Corrected 빌드 18,503 도면 / 40,495 세대 (provenance: dual·spa·str·objocr)",
        {"size": 13.5, "bullet": True, "bold": True})], space=9)
 
 # ════════════════════════════════════════════════════════════════════════════

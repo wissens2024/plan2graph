@@ -2,7 +2,7 @@
 """
 korean_to_engine.py
 
-Convert a Korean unified-graph JSON (plan2graph gline graph) -> the sovereign
+Convert a Korean unified-graph JSON (plan2graph corrected graph) -> the sovereign
 Korean floor-plan diffusion engine training representation (ADR-0006).
 
 The engine reuses DiffPlanner's architecture & dataloaders (node_diff /
@@ -464,7 +464,7 @@ def _iter_graph_files():
         from plan2graph import topoedit
         gdir = str(topoedit.GRAPHS_DIR)
     except Exception:
-        gdir = os.path.expanduser("~/plan2graph/data/staging/gline/graphs")
+        gdir = os.path.expanduser("~/plan2graph/data/staging/corrected/graphs")
     for fn in sorted(os.listdir(gdir)):
         if fn.startswith("APT_") and fn.endswith(".json"):
             yield os.path.join(gdir, fn)

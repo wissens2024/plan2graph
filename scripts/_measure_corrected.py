@@ -1,4 +1,4 @@
-"""G-라인(staging/gline) 실측 — 기록 그대로. T-라인 매니페스트와 별개."""
+"""Corrected(staging/corrected) 실측 — 기록 그대로. Parsed 매니페스트와 별개."""
 import json
 import re
 from collections import Counter
@@ -6,9 +6,9 @@ from pathlib import Path
 import config
 from plan2graph import topoedit as te, dataset_status as ds
 
-base = config.DATA_DIR / "staging" / "gline"
+base = config.DATA_DIR / "staging" / "corrected"
 G = te.GRAPHS_DIR
-print("G-라인 폴더:", base)
+print("Corrected 폴더:", base)
 print("  하위 항목:", sorted(p.name for p in base.iterdir()) if base.exists() else "(없음)")
 print("  GRAPHS_DIR:", G, "exists=", G.exists())
 mani = base / "_manifest.json"
@@ -50,7 +50,7 @@ fps = [g0k for g0k in []]
 dup_like = sum(1 for f in files if "dup" in f.stem.lower())
 print("파일명에 dup 흔적:", dup_like, "(0이면 G엔 중복 엔트리 개념 없음 — 고유 원본만 변환)")
 print()
-print("=== gline_status(정본 G 회계) ===")
-a = ds.gline_status(G)
+print("=== corrected_status(정본 G 회계) ===")
+a = ds.corrected_status(G)
 print("  세대: use", a["use"], "/ fix", a["fix"], "/ excl", a["excl"], "/ done", a["done"], "= total", a["total"])
 print("  도면:", a["draw"], "| n_drawings", a.get("n_drawings"))

@@ -215,8 +215,8 @@ def apply_arch(G, balcony_extend: bool = True) -> list[str]:
 
 
 def apply_arch_program(rooms, edges, balcony_extend: bool = True):
-    """G-라인용 어댑터 — (rooms[(role,area,nwin)], edges[(i,j)]) 표현에 arch 룰 적용.
-    apply_arch(그래프)를 그대로 재사용(룰 로직 단일소스, T-라인과 동일). A2가 방을 신설하면
+    """Corrected용 어댑터 — (rooms[(role,area,nwin)], edges[(i,j)]) 표현에 arch 룰 적용.
+    apply_arch(그래프)를 그대로 재사용(룰 로직 단일소스, Parsed과 동일). A2가 방을 신설하면
     rooms에 append. 반환: (new_rooms, new_edges, fixes)."""
     import networkx as nx
     G = nx.Graph()

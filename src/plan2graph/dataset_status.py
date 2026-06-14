@@ -31,7 +31,7 @@ def reason_label(rule: str) -> str:
 
 
 # ── G회계 디스크 영속 캐시 ───────────────────────────────────────────────────
-# gline_status/gline_plan_status는 graphs/*.json(현재 40k·~1.8GB) 전수 파싱이라 1회 ~33s.
+# corrected_status/corrected_plan_status는 graphs/*.json(현재 40k·~1.8GB) 전수 파싱이라 1회 ~33s.
 # 대시보드 rerun(위젯 조작·option_menu)마다 재호출되면 CPU가 계속 100%로 묶임(실측 버그).
 # 결과를 작은 JSON으로 영속 캐시(키=파일수+디렉터리 mtime) → rerun·재시작에도 즉시 반환.
 # 파일 추가/삭제(빌드·freeze·사람 보정 corrected 저장)로 mtime 바뀌면 자동 무효화(정합 유지).
@@ -147,7 +147,7 @@ def scan_status(graphs_dir: Path, use_cache: bool = True) -> dict:
     반환: {total, success, quarantine, reasons:{rule:count}, by_id:{stem:(status,reason)}}.
     by_id 키는 파일 stem(=graph_id, 예 'RPLAN_42007').
 
-    ⚠️ gline 40k 전수 파싱 = ~26s. gline_status와 달리 함수 자체 캐시가 없어 호출자마다(검수
+    ⚠️ corrected 40k 전수 파싱 = ~26s. corrected_status와 달리 함수 자체 캐시가 없어 호출자마다(검수
     화면 by_id 등) 매번 26s 재계산되던 버그 → _acct_cached로 디스크 영속(키=파일수+mtime).
     빌드/freeze/보정으로 파일 바뀌면 자동 무효화. by_id의 tuple은 JSON 왕복서 list로 바뀌므로
     캐시 경유 시 tuple로 정규화한다."""
@@ -177,10 +177,10 @@ def scan_status(graphs_dir: Path, use_cache: bool = True) -> dict:
             "reasons": dict(reasons.most_common()), "by_id": by_id}
 
 
-def _gline_disp(g: dict) -> str:
-    """G 그래프 1건(세대) → 처분 1개 ∈ {done, use, fix, excl}. gline_status와 동일 규칙.
+def _corrected_disp(g: dict) -> str:
+    """G 그래프 1건(세대) → 처분 1개 ∈ {done, use, fix, excl}. corrected_status와 동일 규칙.
     corrected=true=보정완료(사람), 나머지는 validation으로 자동 분류.
-    [[gline-correction-not-verification]]·[[gline-single-source]]."""
+    [[corrected-correction-not-verification]]·[[corrected-single-source]]."""
     if g.get("corrected"):
         return "done"                              # 사람 보정완료 = 사용 확정
     v = g.get("validation") or {}
@@ -194,15 +194,15 @@ def _gline_disp(g: dict) -> str:
     return "use"
 
 
-def gline_status(graphs_dir: Path, use_cache: bool = True) -> dict:
-    """G-라인 보정 회계(단일 소스 staging/gline) — corrected=true=보정완료(사람), 나머지=자동 분류.
-    [[gline-correction-not-verification]]·[[gline-single-source]] 2축. 반환:
+def corrected_status(graphs_dir: Path, use_cache: bool = True) -> dict:
+    """Corrected 보정 회계(단일 소스 staging/corrected) — corrected=true=보정완료(사람), 나머지=자동 분류.
+    [[corrected-correction-not-verification]]·[[corrected-single-source]] 2축. 반환:
     {total, use, fix, excl, done, usable_now, usable_max, reasons, warns,
      draw:{use,fix,excl,done}, by_house:{HOUSE:{세대·도면 버킷}}}.
     세대(json 1건)와 도면(plan_id에서 _u\\d+ 제거) 둘 다 집계 — T 정본과 같은 단위 병기.
     40k 전수 파싱(~33s)이라 디스크 캐시(use_cache) — rerun·재시작에도 즉시(_acct_cached)."""
     if use_cache:
-        return _acct_cached(graphs_dir, "gline_status", lambda: gline_status(graphs_dir, use_cache=False),
+        return _acct_cached(graphs_dir, "corrected_status", lambda: corrected_status(graphs_dir, use_cache=False),
                             extra_key=_acct_key(_corrected_dir(graphs_dir)))
     import re
     cnt = Counter()                                    # 세대(unit) 버킷
@@ -219,7 +219,7 @@ def gline_status(graphs_dir: Path, use_cache: bool = True) -> dict:
                 g = json.loads(f.read_text(encoding="utf-8"))
             except Exception:  # noqa: BLE001
                 continue
-            d = "done" if f.stem in corrected else _gline_disp(g)
+            d = "done" if f.stem in corrected else _corrected_disp(g)
             cnt[d] += 1
             pid = g.get("plan_id") or f.stem
             draw = re.sub(r"_u\d+$", "", pid)
@@ -255,13 +255,13 @@ def gline_status(graphs_dir: Path, use_cache: bool = True) -> dict:
             "reasons": dict(reasons.most_common()), "warns": dict(warns.most_common())}
 
 
-def gline_plan_status(graphs_dir: Path, use_cache: bool = True) -> dict[str, str]:
+def corrected_plan_status(graphs_dir: Path, use_cache: bool = True) -> dict[str, str]:
     """도면(plan_id, _u 제거) → 대표 처분 ∈ {use,fix,excl,done}. G 검수화면 분류 드롭다운용.
-    상단 지표(gline_status)와 같은 소스·같은 규칙 → 한 화면 두 회계 불일치 제거.
+    상단 지표(corrected_status)와 같은 소스·같은 규칙 → 한 화면 두 회계 불일치 제거.
     40k 전수 파싱(~33s)이라 디스크 캐시(use_cache) — rerun·재시작에도 즉시(_acct_cached)."""
     if use_cache:
-        return _acct_cached(graphs_dir, "gline_plan_status",
-                            lambda: gline_plan_status(graphs_dir, use_cache=False),
+        return _acct_cached(graphs_dir, "corrected_plan_status",
+                            lambda: corrected_plan_status(graphs_dir, use_cache=False),
                             extra_key=_acct_key(_corrected_dir(graphs_dir)))
     import re
     prio = {"excl": 0, "fix": 1, "done": 2, "use": 3}
@@ -274,7 +274,7 @@ def gline_plan_status(graphs_dir: Path, use_cache: bool = True) -> dict[str, str
             except Exception:  # noqa: BLE001
                 continue
             draw = re.sub(r"_u\d+$", "", g.get("plan_id") or f.stem)
-            d = "done" if f.stem in corrected else _gline_disp(g)
+            d = "done" if f.stem in corrected else _corrected_disp(g)
             if draw not in out or prio[d] < prio[out[draw]]:
                 out[draw] = d
     return out
@@ -342,7 +342,7 @@ def aihub_label_combo(manifest_path: Path) -> dict:
             "total_draw": sum(draw.values()), "total_unit": sum(unit.values())}
 
 
-# provenance(라벨 구성) → G-라인 처분 라벨. 데이터 특성 기준(T §2와 동일 논리):
+# provenance(라벨 구성) → Corrected 처분 라벨. 데이터 특성 기준(T §2와 동일 논리):
 # dual·V2V복구 = 사용, objocr(이미지직접) = 보정필요. geomgraph 검증(역할미상 등)은 분류 축 아님(보정 상세).
 GLINE_PROV_LABEL = {
     "dual": "✅ 사용 · dual(직접변환)",
@@ -354,11 +354,11 @@ GLINE_LABEL_ORDER = list(dict.fromkeys(GLINE_PROV_LABEL.values())) + [
     "🛠 보정필요 · 미빌드(SPA보유·추출 전)", "🚫 제외 · 비-FP(평면도 아님)", "🚫 제외 · 중복(사본)"]
 
 
-def gline_label_combo(manifest_path: Path, graphs_dir: Path) -> dict:
-    """G검수 분류 콤보 — **G-라인 실제 데이터**(gline graphs)로 「라벨 구성 × 처분」 집계.
+def corrected_label_combo(manifest_path: Path, graphs_dir: Path) -> dict:
+    """G검수 분류 콤보 — **Corrected 실제 데이터**(corrected graphs)로 「라벨 구성 × 처분」 집계.
     T검수와 같은 카테고리 어휘·43,219 분모(받은 원본)지만, 처분·세대는 G가 실제 추출한 것:
     provenance(dual/방만/구조만/objocr)별 G 세대. 중복·비FP=manifest 제외. 미빌드=보정필요.
-    ※ T-라인 manifest 처분(변환실패·V2V대기)을 뿌리던 버그 폐기 — 그건 T 개념이지 G가 아님.
+    ※ Parsed manifest 처분(변환실패·V2V대기)을 뿌리던 버그 폐기 — 그건 T 개념이지 G가 아님.
     세대 = G 그래프 수(중복행엔 0 → 더블카운트 없음). 반환 = aihub_label_combo와 동일 스키마."""
     # G 그래프: 지문(sig) → provenance, 세대수
     g_prov: dict[str, str] = {}
@@ -403,8 +403,8 @@ def gline_label_combo(manifest_path: Path, graphs_dir: Path) -> dict:
 
 
 def aihub_t_status(manifest_path: Path) -> dict:
-    """T-라인 AI-Hub 회계(정본 manifest) — 처분 use/fix/excl, 도면·세대 병기, by_house.
-    gline_status와 같은 접근법(x['use']=세대, x['draw']['use']=도면)으로 종합 비교에서 동일 처리.
+    """Parsed AI-Hub 회계(정본 manifest) — 처분 use/fix/excl, 도면·세대 병기, by_house.
+    corrected_status와 같은 접근법(x['use']=세대, x['draw']['use']=도면)으로 종합 비교에서 동일 처리.
     세대 규칙: use=Σlen(graph_ids), 그 외(보정필요·제외 중복·비FP)=0(못 세거나 원본서 이미 셈).
     ※ 중복본을 원본 세대수로 더하던 옛 규칙은 중복집계 버그라 폐기(aihub_row_units 참고).
     도면 = manifest 행 1개(받은 raw PNG 1장). [[dataset-essence-is-numbers-categories]]."""

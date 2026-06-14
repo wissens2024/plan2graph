@@ -236,7 +236,7 @@ def run_objocr(spa_weights: str, str_weights: str,
       → 좌표를 시트로 역오프셋해 누적.
     결과는 predicted_img/{TYPE}_{sig}.json (시트 좌표, sig 키 — aihub_source.scan 이미지-anchor가
     조회, 빌드의 _states_from_dr가 다시 세대 분리). 방(SPA) 0이면 그래프 불가라 건너뜀.
-    노이즈는 빌드에서 보정필요로 분류, 사람이 교정([[gline-correction-not-verification]])."""
+    노이즈는 빌드에서 보정필요로 분류, 사람이 교정([[corrected-correction-not-verification]])."""
     import io
     import zipfile as _zip
     from ultralytics import YOLO

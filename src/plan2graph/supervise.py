@@ -41,16 +41,16 @@ def _cat(issue: str) -> str:
     return issue.split()[0] if issue else "?"
 
 
-def _tline_geom(prog, gen_fn, adj, seed, net, priors):
+def _parsed_geom(prog, gen_fn, adj, seed, net, priors):
     from plan2graph import geom_correct as gc, geom_gen as gg
     G, _ = gen_loop.generate_compliant(gen_fn, prog, max_tries=5, repair=True,
                                        seed=seed, adj_score=adj)
-    rooms, edges = gc.tline_graph_to_rooms(G, priors)   # T 위상 → rooms (treemap 아님)
+    rooms, edges = gc.parsed_graph_to_rooms(G, priors)   # T 위상 → rooms (treemap 아님)
     boxes = gg.generate(net, rooms)                      # 생성형 기하 AI
     return cr.from_floorgeom(rooms, boxes, edges)
 
 
-def _gline_geom(prog, priors, net):
+def _corrected_geom(prog, priors, net):
     from plan2graph import geom_correct as gc, rules_arch as ra, geom_gen as gg
     rooms = gc.program_to_rooms(prog, priors)
     edges = gc.convention_edges(rooms)
@@ -59,8 +59,8 @@ def _gline_geom(prog, priors, net):
     return cr.from_floorgeom(rooms, boxes, edges)
 
 
-def supervise(programs, line: str = "tline", seed: int = 0, run_id: str = "geom_g0") -> dict:
-    """program 리스트 → 헤드라인 지표(raw·post·실현율·결함분류). line=tline|gline."""
+def supervise(programs, line: str = "parsed", seed: int = 0, run_id: str = "geom_g0") -> dict:
+    """program 리스트 → 헤드라인 지표(raw·post·실현율·결함분류). line=parsed|corrected."""
     model = mb.fit(mb._load_split("v0", "train"))
     gen_fn, adj = gen_loop.baseline_gen_fn(model)
     from plan2graph import geom_correct as gc, geom_gen as gg
@@ -71,8 +71,8 @@ def supervise(programs, line: str = "tline", seed: int = 0, run_id: str = "geom_
     rate_sum = 0.0
     raw_cat, post_cat = Counter(), Counter()
     for i, prog in enumerate(programs):
-        geom = (_tline_geom(prog, gen_fn, adj, seed + i, net, priors) if line == "tline"
-                else _gline_geom(prog, priors, net))
+        geom = (_parsed_geom(prog, gen_fn, adj, seed + i, net, priors) if line == "parsed"
+                else _corrected_geom(prog, priors, net))
         raw = cr.verify(geom)
         real, tot = _adj_realization(geom)
         rate_sum += (real / tot) if tot else 1.0
@@ -108,22 +108,22 @@ if __name__ == "__main__":
     CATKO = {"R6": "인접미실현", "R7": "방고립", "R3": "문off-wall",
              "R4": "기구방밖", "R2": "폴리곤결손", "R8": "치수불가", "A3": "긴현관"}
     rows = {}
-    for line in ("tline", "gline"):
+    for line in ("parsed", "corrected"):
         h = supervise(progs, line=line)
         rows[line] = h
-    print(f"=== 감독기: 공용 자(cadrender.verify)로 T∥G 채점 ({rows['tline']['n']}개) ===")
-    print(f"{'지표':22}{'T-라인':>12}{'G-라인':>12}")
-    print(f"{'raw 통과율(교정전)':22}{rows['tline']['raw_pass_rate']*100:>11.1f}%"
-          f"{rows['gline']['raw_pass_rate']*100:>11.1f}%")
-    print(f"{'post 통과율(교정후)':22}{rows['tline']['post_pass_rate']*100:>11.1f}%"
-          f"{rows['gline']['post_pass_rate']*100:>11.1f}%")
-    print(f"{'평균 인접실현율':22}{rows['tline']['mean_adj_realization']*100:>11.1f}%"
-          f"{rows['gline']['mean_adj_realization']*100:>11.1f}%  ← 병목")
+    print(f"=== 감독기: 공용 자(cadrender.verify)로 T∥G 채점 ({rows['parsed']['n']}개) ===")
+    print(f"{'지표':22}{'Parsed':>12}{'Corrected':>12}")
+    print(f"{'raw 통과율(교정전)':22}{rows['parsed']['raw_pass_rate']*100:>11.1f}%"
+          f"{rows['corrected']['raw_pass_rate']*100:>11.1f}%")
+    print(f"{'post 통과율(교정후)':22}{rows['parsed']['post_pass_rate']*100:>11.1f}%"
+          f"{rows['corrected']['post_pass_rate']*100:>11.1f}%")
+    print(f"{'평균 인접실현율':22}{rows['parsed']['mean_adj_realization']*100:>11.1f}%"
+          f"{rows['corrected']['mean_adj_realization']*100:>11.1f}%  ← 병목")
     print("결함 발생 입력 수 (raw):")
-    cats = set(rows["tline"]["raw_defect_inputs"]) | set(rows["gline"]["raw_defect_inputs"])
+    cats = set(rows["parsed"]["raw_defect_inputs"]) | set(rows["corrected"]["raw_defect_inputs"])
     for c in sorted(cats):
-        t = rows["tline"]["raw_defect_inputs"].get(c, 0)
-        g = rows["gline"]["raw_defect_inputs"].get(c, 0)
+        t = rows["parsed"]["raw_defect_inputs"].get(c, 0)
+        g = rows["corrected"]["raw_defect_inputs"].get(c, 0)
         print(f"   {CATKO.get(c, c):14}{t:>9}{g:>12}")
     print("ℹ T·G 좌표 = 생성형 기하 AI(geom_g0). 차이는 위상 출처(T=neural / G=program). "
           "학습-실측 G 비교는 from_geomgraph 별도.")

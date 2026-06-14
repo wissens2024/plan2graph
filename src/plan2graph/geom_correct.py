@@ -38,8 +38,8 @@ def program_to_rooms(program: dict, priors: dict):
     return rooms
 
 
-def tline_graph_to_rooms(G, priors: dict):
-    """T-라인 위상그래프(networkx) → (rooms, edges) — 생성형 기하 AI(geom_gen) 입력.
+def parsed_graph_to_rooms(G, priors: dict):
+    """Parsed 위상그래프(networkx) → (rooms, edges) — 생성형 기하 AI(geom_gen) 입력.
 
     rooms=[(role, area_frac, nwin)], edges=room-index 쌍(외부 노드 제외).
     T 위상의 본질(neural 그래프)을 보존하고 좌표만 AI가 생성 — treemap 무관.

@@ -1,4 +1,4 @@
-"""G-라인(기하 geometry-rich) 데이터셋 자동 빌드.
+"""Corrected(기하 geometry-rich) 데이터셋 자동 빌드.
 
 AI-Hub 코퍼스 → (검출 라벨) → geomgraph 자동추출 → releases/<version>/geom.jsonl.
 사람 보정 없이 자동으로 g0 생성(인간조정 없는 버전이 생성모델로 감).

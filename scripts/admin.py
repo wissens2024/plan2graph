@@ -394,7 +394,7 @@ st.sidebar.caption("문 방향 클릭·드래그 즉시반영. nginx `/editor/`�
                    "(임시: `ssh -L 8600:localhost:8600` 후 localhost:8600).")
 
 # ════════════════════════════════════════════════════════════════════════════
-# 🧩 AI-Hub 검수 (G) — 원본 위에서 사람이 위상 직접 구축(자동추론 0) → staging/gline
+# 🧩 AI-Hub 검수 (G) — 원본 위에서 사람이 위상 직접 구축(자동추론 0) → staging/corrected
 # ════════════════════════════════════════════════════════════════════════════
 if which.startswith("🧩"):
     from plan2graph import topoedit
@@ -499,7 +499,7 @@ if which.startswith("🧮"):
     # ── 데이터셋 버전(생성 학습용) — releases/<버전>/manifest.json 에서 직접 읽음(단일 출처) ──
     st.markdown("### 📦 데이터셋 버전 (생성 학습용)")
     st.caption("releases/<버전>/manifest.json 에서 직접 읽음 — GUI·문서·코드가 같은 출처라 숫자 일치. "
-               "T-라인=위상그래프(v0~) · G-라인=기하 2층 스키마(g0~).")
+               "Parsed=위상그래프(v0~) · Corrected=기하 2층 스키마(g0~).")
     import glob as _glob
     _vrows = []
     for _v, _line, _rp in config.list_releases():
@@ -508,7 +508,7 @@ if which.startswith("🧮"):
         except Exception:  # noqa: BLE001
             continue
         _vrows.append({"버전": _m.get("version", _v),
-                       "라인": "T-라인" if _line == "tline" else "G-라인",
+                       "라인": "Parsed" if _line == "parsed" else "Corrected",
                        "스키마": _m.get("schema", "?"),
                        "출처": "자동" if _m.get("auto") else "보정포함",
                        "주택형": ",".join(_m.get("houses", [])),
@@ -902,10 +902,10 @@ if which.startswith("📗"):
     # 콤보 세대수 = manifest 회계(검수와 같은 소스). 빌드는 검수에서. "미생성" 아님.
     from plan2graph import dataset_status as _dss
     _MAN = config.DATA_DIR / "staging" / "aihub" / "manifest.jsonl"
-    _GDIR = config.DATA_DIR / "staging" / "gline" / "graphs"
+    _GDIR = config.DATA_DIR / "staging" / "corrected" / "graphs"
 
     @st.cache_data(show_spinner=False)
-    def _t_dual_use(_sz):                       # T-라인 manifest: (dual 세대, use전체 세대)
+    def _t_dual_use(_sz):                       # Parsed manifest: (dual 세대, use전체 세대)
         dual = use = 0
         if _MAN.exists():
             for ln in _MAN.read_text(encoding="utf-8").splitlines():
@@ -920,14 +920,14 @@ if which.startswith("📗"):
                     dual += n
         return dual, use
 
-    def _g_dual_use():                          # G-라인 gline: (dual 세대, use전체 세대) · 디스크캐시
+    def _g_dual_use():                          # Corrected corrected: (dual 세대, use전체 세대) · 디스크캐시
         def _c():
-            u = _dss.gline_label_combo(_MAN, _GDIR)["unit"]
+            u = _dss.corrected_label_combo(_MAN, _GDIR)["unit"]
             gd = u.get("✅ 사용 · dual(직접변환)", 0)
             return [gd, gd + u.get("✅ 사용 · 방만→V2V STR복구", 0)
                     + u.get("✅ 사용 · 구조만→V2V SPA복구", 0)]
         try:
-            return _dss._acct_cached(_GDIR, "gline_dual_use", _c)
+            return _dss._acct_cached(_GDIR, "corrected_dual_use", _c)
         except Exception:
             return [None, None]
 

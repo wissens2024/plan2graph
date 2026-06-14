@@ -7,7 +7,7 @@
 
 T·G 공용 코어. 입력은 공통 Geometry — 좌표는 생성형 기하 AI(geom_gen)가 만들고
 from_floorgeom(rooms,boxes,edges)로 Geometry화(T·G 공통). 실측 G 그래프는 from_geomgraph.
-스키마는 분리 유지(ADR-0002), 렌더 출력만 공용(=도면 품질 비교). (옛 treemap from_tline_graph 폐기)
+스키마는 분리 유지(ADR-0002), 렌더 출력만 공용(=도면 품질 비교). (옛 treemap from_parsed_graph 폐기)
 """
 from __future__ import annotations
 
@@ -141,7 +141,7 @@ def from_geomgraph(g: dict) -> Geometry:
 # ════════════════════════════════════════════════════════════════════════════
 def from_floorgeom(rooms, boxes, edges, *, width_m=12.0, height_m=9.0,
                    px_per_m=100.0) -> Geometry:
-    """T-라인 treemap 출력 → 공통 Geometry. boxes=[[cx,cy,w,h]] 0..1, rooms=[(role,frac,nwin)],
+    """Parsed treemap 출력 → 공통 Geometry. boxes=[[cx,cy,w,h]] 0..1, rooms=[(role,frac,nwin)],
     edges=[(i,j)] 인접. **박스형 그대로**(이상한 집 유지) — G의 실측형과 비교용."""
     W, H = width_m * px_per_m, height_m * px_per_m
     scale_mm = 1000.0 / px_per_m                      # 1m=px_per_m px → mm/px
@@ -164,7 +164,7 @@ def from_floorgeom(rooms, boxes, edges, *, width_m=12.0, height_m=9.0,
             doors.append(DoorG(pos=((centers[i][0] + centers[j][0]) / 2,
                                     (centers[i][1] + centers[j][1]) / 2),
                                width_px=W * 0.04, rooms=(i, j)))
-    return Geometry(plan_id="tline", house="?", scale_mm_per_px=scale_mm,
+    return Geometry(plan_id="parsed", house="?", scale_mm_per_px=scale_mm,
                     bbox=(0, 0, W, H), rooms=rms, walls=walls, doors=doors, windows=[])
 
 

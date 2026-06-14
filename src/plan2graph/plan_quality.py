@@ -11,7 +11,7 @@ korean_to_engine.py(엔진 입력 게이트)와 검수 UI가 같은 함수를 �
 
 사용:
     from plan2graph.plan_quality import classify
-    clean, reasons = classify(graph_dict)   # graph = gline graphs/APT_*.json 로드 결과
+    clean, reasons = classify(graph_dict)   # graph = corrected graphs/APT_*.json 로드 결과
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def _area(r):
 
 
 def classify(graph: dict):
-    """graph(gline 그래프 dict) → (clean: bool, reasons: list[str]).
+    """graph(corrected 그래프 dict) → (clean: bool, reasons: list[str]).
 
     clean=True  → 온전(사용): 학습/엔진 입력 가능.
     clean=False → 보정필요: 사유(reasons)와 함께 알바 보정 큐로.

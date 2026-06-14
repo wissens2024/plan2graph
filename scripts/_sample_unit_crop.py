@@ -1,6 +1,6 @@
 """샘플(개념증명): objocr 시트를 세대별로 쪼개 이미지 크롭 → 세대 크롭에서 SPA/STR 재검출.
 전체시트 1패스 검출의 노이즈 대신, 세대 단위 이미지로 검출하면 깨끗해지는지 눈으로 확인.
-세대 분리 = build_gline_auto._states_from_dr(현관 가진 연결요소) 재사용. 폴더=data/v2v/unit_crops.
+세대 분리 = build_corrected_auto._states_from_dr(현관 가진 연결요소) 재사용. 폴더=data/v2v/unit_crops.
 실행: PYTHONPATH=.:src python scripts/_sample_unit_crop.py [N]
 """
 import io
@@ -15,7 +15,7 @@ import config  # noqa: E402
 from PIL import Image, ImageDraw  # noqa: E402
 from ultralytics import YOLO  # noqa: E402
 from plan2graph import aihub_source as A, v2v_infer as V  # noqa: E402
-import build_gline_auto as B  # noqa: E402
+import build_corrected_auto as B  # noqa: E402
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 3
 DEV = 1

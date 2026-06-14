@@ -1,7 +1,7 @@
 """보정(위상편집 SVG) → geometry-rich 그래프 → base(g0)에 덮어써 새 G 버전 빌드.
 사람이 위상편집으로 보정한 SVG를 실제 '사용 데이터셋'으로 흘려보내는 루프의 마지막 조각.
   base(g0, 자동) 레코드 + 보정 레코드(같은 unit_id는 보정이 덮어씀, corrected=True)
-  → releases/gline/<version>/geom.jsonl (+manifest). 📦 데이터셋·⚖️ 비교에 등장.
+  → releases/corrected/<version>/geom.jsonl (+manifest). 📦 데이터셋·⚖️ 비교에 등장.
 사용: python scripts/build_geom_corrected.py --base g0 --version g1
 """
 from __future__ import annotations

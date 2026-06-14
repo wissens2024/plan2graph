@@ -1,11 +1,11 @@
-"""geometry-rich graph 추출기 — docs/GEOMETRY_SCHEMA.md 구현 (G-라인, schema g-0.3).
+"""geometry-rich graph 추출기 — docs/GEOMETRY_SCHEMA.md 구현 (Corrected, schema g-0.3).
 
 위상편집 State(=Layer1, 자동 init_state 또는 사람 보정) + Drawing(검출 원시)
   → Layer2 geometry-rich graph(JSON). 파생 필드는 전부 여기서 계산(사람 입력 아님).
 자동 경로(사람보정 없음)는 topoedit.init_state(dr)를 그대로 넣으면 된다 — gold/auto가
 같은 추출기를 공유한다(프로그램이 1차 완전 SVG/그래프를 낸다는 원칙).
 
-이 추출기 = T-라인(schema.py, layout.nodes)과 절대 안 섞임(ADR-0002). 여기는 rooms 스키마.
+이 추출기 = Parsed(schema.py, layout.nodes)과 절대 안 섞임(ADR-0002). 여기는 rooms 스키마.
 
 ──────────────────────────────────────────────────────────────────────────────
 schema g-0.3 — GPT 제안 반영(벽·문방향·창귀속·외곽접촉) + 검증기/사유 + meta. 이전 0.2 대비:
@@ -510,7 +510,7 @@ def build(state, dr) -> dict:
 
 
 def validate(g: dict) -> dict:
-    """G-라인 스키마 검증(T-라인 rules.validate의 G판). 회계 사유코드 산출.
+    """Corrected 스키마 검증(Parsed rules.validate의 G판). 회계 사유코드 산출.
     hard(→quarantine): 면적없음·위상단절·방부족·필수공간없음. soft(→warning): 역할미상·문폭없음·현관없음.
     반환 {passed, reasons:[hard코드], warnings:[soft코드]}."""
     rooms = g.get("rooms", {})
@@ -572,7 +572,7 @@ if __name__ == "__main__":
     recs = [r for r in A.scan(house="APT") if "STR" in r["labels"]]
     if not recs:
         print("코퍼스 없음 — 서버 115(raw zip)에서 실행. 정식 빌드: "
-              "scripts/build_gline_auto.py --source aihub")
+              "scripts/build_corrected_auto.py --source aihub")
         raise SystemExit
     dr, _ = A.load(recs[0])
     units = T.segment_units(dr)

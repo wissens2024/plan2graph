@@ -47,27 +47,27 @@ PROCESSED_DIR = DATA_DIR / "processed"  # (레거시, 은퇴) — staging/aihub�
 INVENTORY_CSV = INTERIM_DIR / "inventory.csv"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 라인별 분리 (ADR-0002): releases·runs를 T-라인/G-라인 하위폴더로 격리.
-#   리졸버는 라인 하위폴더(tline/gline)를 먼저 찾고, 없으면 옛 flat 경로로 폴백.
+# 라인별 분리 (ADR-0002): releases·runs를 Parsed/Corrected 하위폴더로 격리.
+#   리졸버는 라인 하위폴더(parsed/corrected)를 먼저 찾고, 없으면 옛 flat 경로로 폴백.
 #   → 데이터 물리 이전 전에는 flat로 동작(무변화), 이전 후엔 자동으로 새 위치 사용.
 # ─────────────────────────────────────────────────────────────────────────────
 RELEASES_DIR = DATA_DIR / "releases"
 RUNS_DIR = PROJECT_ROOT / "runs"
-DATASET_LINES = ("tline", "gline")        # T=위상(자동 detection→그래프), G=위상+기하(SVG→추출)
+DATASET_LINES = ("parsed", "corrected")        # T=위상(자동 detection→그래프), G=위상+기하(SVG→추출)
 
 
 def dataset_line(version: str) -> str:
     """버전명 → 라인. 이미 이전됐으면 그 위치, 아니면 내용(geom.jsonl)·이름으로 추정."""
     v = str(version)
-    if (RELEASES_DIR / "gline" / v).exists():
-        return "gline"
-    if (RELEASES_DIR / "tline" / v).exists():
-        return "tline"
+    if (RELEASES_DIR / "corrected" / v).exists():
+        return "corrected"
+    if (RELEASES_DIR / "parsed" / v).exists():
+        return "parsed"
     if (RELEASES_DIR / v / "geom.jsonl").exists():     # 미이전 flat: 기하 데이터셋
-        return "gline"
+        return "corrected"
     if v.startswith("g") and not v.startswith("global"):
-        return "gline"
-    return "tline"
+        return "corrected"
+    return "parsed"
 
 
 def release_dir(version: str) -> Path:
@@ -111,8 +111,8 @@ def list_releases():
 
 
 def run_line(run_id: str) -> str:
-    """런 id → 라인. 기하 모델(geom*)=gline, 그 외(gen* 등)=tline."""
-    return "gline" if str(run_id).startswith("geom") else "tline"
+    """런 id → 라인. 기하 모델(geom*)=corrected, 그 외(gen* 등)=parsed."""
+    return "corrected" if str(run_id).startswith("geom") else "parsed"
 
 
 def run_write_dir(run_id: str) -> Path:

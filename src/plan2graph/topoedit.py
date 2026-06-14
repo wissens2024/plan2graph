@@ -10,7 +10,7 @@
   - 원시 라벨(SPA/STR/OBJ/OCR)과 PNG만 읽는다. coco·geometry 파서는 '데이터 판독'이지
     추론이 아니다(폴리곤화까지만). 위상은 전부 사람이 만든다.
   - 노드 = 라벨된 방(원시). 엣지 = 빈 상태에서 시작 → 사람이 연결공간·문·역할을 박는다.
-  - 결과는 신규 포맷(topo-human-v1)으로 data/staging/gline/ 에 저장(단일 진실, ADR-0003).
+  - 결과는 신규 포맷(topo-human-v1)으로 data/staging/corrected/ 에 저장(단일 진실, ADR-0003).
 
 구성: 데이터 로더 · 편집 상태/연산(순수) · 영속 · matplotlib 렌더(헤드리스) · Streamlit 화면.
 """
@@ -35,9 +35,9 @@ from plan2graph.coco import load_coco  # noqa: E402
 from plan2graph.geometry import assemble_drawing, Drawing  # noqa: E402
 
 # ── 저장 위치(신규, 기존 골드와 분리). staging=현재 단일 진실 ────────────────────
-# G-라인 단일 진실(ADR-0003) — 자동 베이스라인(build_gline_auto)·사람 보정이 한 폴더.
+# Corrected 단일 진실(ADR-0003) — 자동 베이스라인(build_corrected_auto)·사람 보정이 한 폴더.
 #   사람 보정완료 = 같은 graphs 폴더의 corrected=true(별 폴더 topo_human 폐기·통합).
-OUT_DIR = config.DATA_DIR / "staging" / "gline"
+OUT_DIR = config.DATA_DIR / "staging" / "corrected"
 REC_DIR = OUT_DIR / "records"
 LEDGER = OUT_DIR / "_ledger.jsonl"
 GRAPHS_DIR = OUT_DIR / "graphs"      # 자동+사람보정 공존. 사람 보정완료=corrected=true(= 사용 확정)
@@ -1157,8 +1157,8 @@ def render_editor(show_title: bool = True) -> None:
     @st.cache_data(show_spinner="분류 집계(라벨 구성 × 처분, 최초 1회)...")
     def _label_combo(_sz, _gn, _gm):
         # 디스크 캐시 경유 → 대시보드 재기동해도 30초 재집계 안 함(sig=크기·개수·mtime)
-        return _disk_cached("gline_label_combo", (_sz, _gn, _gm),
-                            lambda: _ds2.gline_label_combo(_mpath, GRAPHS_DIR))
+        return _disk_cached("corrected_label_combo", (_sz, _gn, _gm),
+                            lambda: _ds2.corrected_label_combo(_mpath, GRAPHS_DIR))
     _gn = sum(1 for _ in GRAPHS_DIR.glob("*.json")) if GRAPHS_DIR.is_dir() else 0
     _gm = int(GRAPHS_DIR.stat().st_mtime) if GRAPHS_DIR.is_dir() else 0
     _cmb = _label_combo(_mpath.stat().st_size if _mpath.exists() else 0, _gn, _gm)

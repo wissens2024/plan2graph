@@ -1,10 +1,10 @@
-"""G-라인 자동 베이스라인 배치 추출 — 코퍼스 전량 → geometry-rich 그래프(schema g-0.3).
+"""Corrected 자동 베이스라인 배치 추출 — 코퍼스 전량 → geometry-rich 그래프(schema g-0.3).
 
-원칙([[gline-auto-svg-then-human-upgrade]]): **프로그램이 1차 완전 그래프를 자동 생성**한다
+원칙([[corrected-auto-svg-then-human-upgrade]]): **프로그램이 1차 완전 그래프를 자동 생성**한다
 (사람 없이 성립). 사람(알바)은 그 위에서 GUI(topoedit)로 잔여를 손보정(corrected=true)한다.
 이 스크립트 = 그 자동 베이스라인(corrected=false) 생성기.
 
-위상 추론은 **T-라인의 검증된 방식 재사용**(topology.build_graph) — 문 법선 probe·개방통로
+위상 추론은 **Parsed의 검증된 방식 재사용**(topology.build_graph) — 문 법선 probe·개방통로
 (open_passages, OPEN_* 파라미터)·발코니 통로·iter_units(현관 가진 연결요소=세대). 즉 문-only가
 아니라 최대한 연결된 그래프를 자동으로 만든다(파라미터 튜닝으로 가용률 극대화, 잔여=알바).
 ※ T/G 스키마는 안 섞는다(ADR-0002) — 재사용하는 건 위상 '추론 방식'이고 산출은 G 스키마(rooms).
@@ -17,7 +17,7 @@
        dr → topology.build_graph(문·open·balcony) → iter_units(세대 분리)
        → State(role·polygon·fixtures) → suggest_roles → to_svg → REC_DIR/{plan}_u{i}.svg
   ② 빌드 = **SVG→그래프** (build_graphs): 저장 SVG(+dr) → geomgraph.build(g-0.3)
-       → gline/graphs/{plan}_u{i}.json (ADR-0002 분리) + _manifest.json(숫자·분류·사유).
+       → corrected/graphs/{plan}_u{i}.json (ADR-0002 분리) + _manifest.json(숫자·분류·사유).
        **반복 가능** — 파라미터·SVG 보정 후 재빌드로 보정필요→사용가능 전환.
   ※ "빌드"=그래프 만드는 단계(T·G 공통). 원본→SVG는 빌드 아니라 'SVG 변환'.
 
@@ -27,11 +27,11 @@
   use  = 통과 + 무경고
 
 실행(서버 115, raw zip 보유):
-  python scripts/build_gline_auto.py --source aihub --house APT --stage svg    # ① 선행만
-  python scripts/build_gline_auto.py --source aihub --house APT --stage build  # ② 빌드만(반복)
-  python scripts/build_gline_auto.py --source aihub --house APT                # all(①후②)
-  python scripts/build_gline_auto.py --source aihub --open-min-ratio 0.25      # 파라미터 튜닝
-  python scripts/build_gline_auto.py --stage svg                               # 로컬 dir 스모크
+  python scripts/build_corrected_auto.py --source aihub --house APT --stage svg    # ① 선행만
+  python scripts/build_corrected_auto.py --source aihub --house APT --stage build  # ② 빌드만(반복)
+  python scripts/build_corrected_auto.py --source aihub --house APT                # all(①후②)
+  python scripts/build_corrected_auto.py --source aihub --open-min-ratio 0.25      # 파라미터 튜닝
+  python scripts/build_corrected_auto.py --stage svg                               # 로컬 dir 스모크
 """
 from __future__ import annotations
 
@@ -54,16 +54,16 @@ from plan2graph import geomgraph as GG  # noqa: E402
 from plan2graph import topology as TP  # noqa: E402
 from plan2graph.topoedit import Node, State  # noqa: E402
 
-OUT_DIR = config.DATA_DIR / "staging" / "gline"      # G 단일 진실(ADR-0003): 자동+사람 보정 공존
+OUT_DIR = config.DATA_DIR / "staging" / "corrected"      # G 단일 진실(ADR-0003): 자동+사람 보정 공존
 GRAPHS_DIR = OUT_DIR / "graphs"                       # topoedit(사람)도 같은 폴더에 corrected=true 저장
 MANIFEST = OUT_DIR / "_manifest.json"
 
-# T-라인 via → G via 도메인({door, open}) 매핑. exterior/entrance는 방-방 아님 → 드롭.
+# Parsed via → G via 도메인({door, open}) 매핑. exterior/entrance는 방-방 아님 → 드롭.
 VIA_MAP = {"door": "door", "open": "open", "balcony": "open"}
 
 
 def _disposition(g: dict) -> str:
-    """validation → use/fix/excl (T-라인 처분모델과 대칭)."""
+    """validation → use/fix/excl (Parsed 처분모델과 대칭)."""
     v = g.get("validation", {})
     if not v.get("passed", False):
         return "excl"
@@ -104,7 +104,7 @@ def _states_from_dr(dr, plan_id: str, house: str):
 def _provenance(rec: dict) -> dict:
     """scan rec → 출처(provenance). 실라벨(zip) vs 예측(__file__: predicted_img=이미지직접,
     predicted=페어)로 구성 분류 → dual/spa_only/str_only/objocr. g0(dual)·g1(추가) freeze 필터
-    + ADR-0005 검수 콤보(구성×처분)용. 새 버킷 아님 — T-라인 라벨 구성과 동일 어휘."""
+    + ADR-0005 검수 콤보(구성×처분)용. 새 버킷 아님 — Parsed 라벨 구성과 동일 어휘."""
     labels = rec.get("labels", {})
 
     def kind(lt):
@@ -235,7 +235,7 @@ def build_graphs(source: str = "dir", src_dir: Path | None = None,
         "house": house or "ALL",
         "open_min_ratio": config.OPEN_MIN_RATIO, "open_max_gap_px": config.OPEN_MAX_GAP_PX,
         "n_plans": n_plans, "n_units": n_units, "n_svg_missing": n_missing, "n_err": n_err,
-        # ── 자동 분류(T-라인 구조) + 보정 회계([[gline-correction-not-verification]]) ──
+        # ── 자동 분류(Parsed 구조) + 보정 회계([[corrected-correction-not-verification]]) ──
         "분류_자동": {"사용": use, "보정필요": fix, "제외": excl},
         "사용가능_현재_자동": use,                 # 사람 손 없이 바로 사용가능
         "사용가능_상한_전부보정시": use + fix,      # 제외 빼고 모두 보정완료 가정(= n_units - 제외)
@@ -456,7 +456,7 @@ def build_parallel(source: str = "aihub", src_dir: Path | None = None,
 
 
 def revalidate() -> dict:
-    """저장된 gline 그래프를 **현재 검증기로 재검증** — validation/meta 갱신 + 매니페스트 재생성.
+    """저장된 corrected 그래프를 **현재 검증기로 재검증** — validation/meta 갱신 + 매니페스트 재생성.
     재빌드 없이 분류 정책 변경(예: 문폭없음 강등)을 반영. 기하 재계산 없음 → 빠름."""
     disp, reasons, warns, info = Counter(), Counter(), Counter(), Counter()
     n = 0
@@ -503,11 +503,11 @@ VERSION_SOURCES = {
 
 
 def freeze(version: str, sources=None) -> dict:
-    """staging/gline(현재) → releases/gline/<version> 동결([[gline-version-plan]]·[[staging-is-current]]).
+    """staging/corrected(현재) → releases/corrected/<version> 동결([[corrected-version-plan]]·[[staging-is-current]]).
     **provenance.source로 거른다**(g0=dual / g1=+추가, VERSION_SOURCES). 학습 입력(geom.jsonl)을 잠근다.
     출처 없는(구버전) 그래프는 필터 시 제외하고 그 수를 명시(silent truncation 금지)."""
     srcs = tuple(sources) if sources is not None else VERSION_SOURCES.get(version)
-    rel = config.RELEASES_DIR / "gline" / version
+    rel = config.RELEASES_DIR / "corrected" / version
     rel.mkdir(parents=True, exist_ok=True)
     n = 0
     by_src, no_prov = Counter(), 0
@@ -561,7 +561,7 @@ if __name__ == "__main__":
                     help="dir 소스일 때 코퍼스 디렉터리(linked 포맷). 정식 빌드는 --source aihub")
     ap.add_argument("--house", default=None, help="APT|DEH|ROW (생략=전부)")
     ap.add_argument("--limit", type=int, default=None, help="도면 수 상한(테스트)")
-    # 위상 자동 추론 파라미터 튜닝(T-라인 open_passages) — 가용률 극대화용
+    # 위상 자동 추론 파라미터 튜닝(Parsed open_passages) — 가용률 극대화용
     ap.add_argument("--open-min-ratio", type=float, default=None,
                     help="개방통로 벽 미피복 비율 임계(낮을수록 더 많이 연결). 기본 config")
     ap.add_argument("--open-max-gap", type=float, default=None,
@@ -577,7 +577,7 @@ if __name__ == "__main__":
     ap.add_argument("--revalidate", action="store_true",
                     help="재빌드 없이 저장 그래프를 현재 검증기로 재검증·매니페스트 갱신")
     ap.add_argument("--freeze", metavar="VER", default=None,
-                    help="staging/gline → releases/gline/<VER> 동결(g0, g1…). 학습 입력 잠금")
+                    help="staging/corrected → releases/corrected/<VER> 동결(g0, g1…). 학습 입력 잠금")
     a = ap.parse_args()
     if a.freeze:
         info = freeze(a.freeze)
