@@ -205,10 +205,10 @@ def _html():
  <div class=hint>
   <b>역할 모드</b>: 방 클릭→선택→팔레트(또는 1~9,0,a..f 단축키)<br>
   <b>인접 모드</b>: 방 A→방 B 클릭 = 문↔개방↔없음 순환<br>
-  <b>문</b> 클릭 = 여는 방향 90°<br>
   <b>E</b>키 = 선택 방을 현관 지정<br>
-  빨강=문 · 빨강점선?=방향미상 · 보라점선=인접 · 빨강테=현관<br>
-  휠=확대 · 드래그=이동
+  <b>배경 = 원본 도면</b> — 문·치수·여닫이는 여기서 직접 보세요.<br>
+  색 = 역할 · 노랑테 = 선택 · 보라점선 = 인접<br>
+  휠 = 확대 · 빈 곳 드래그 = 이동
  </div>
 </div>
 <div id="main"><svg id="svg"></svg><div id="toast"></div><div id="pngwarn">⚠ 원본 PNG 없음(인덱싱중일 수 있음) — 해석만 표시</div></div>
@@ -263,22 +263,7 @@ function render(){
     const ca=a&&a.centroid,cb=b&&b.centroid;if(!ca||!cb)return;const via=e.via||e[2];
     el('line',{x1:ca[0],y1:ca[1],x2:cb[0],y2:cb[1],stroke:via==='door'?'#dc2626':'#3b82f6',
       'stroke-width':2,'stroke-dasharray':via==='door'?'':'6 5',opacity:.5},svg);});
-  (G.doors||[]).forEach((d,i)=>drawDoor(d,i));
-  for(const id in (G.rooms||{})){if((G.rooms[id].role||'')==='현관'){const c=G.rooms[id].centroid;if(c)el('circle',{cx:c[0],cy:c[1],r:18,class:'ent'},svg);}}
-}
-function drawDoor(d,i){
-  const o=d.orientation||{},has=(o.swing_dir_deg!=null&&o.hinge),h=o.hinge||d.position||[0,0],R=o.radius_px||(d.width_px||40);
-  if(has){const a=o.swing_dir_deg*Math.PI/180,lx=h[0]+R*Math.cos(a),ly=h[1]+R*Math.sin(a);
-    el('line',{x1:h[0],y1:h[1],x2:lx,y2:ly,class:'door-leaf'},svg);
-    const a2=a-Math.PI/2;el('path',{d:'M '+lx+' '+ly+' A '+R+' '+R+' 0 0 0 '+(h[0]+R*Math.cos(a2))+' '+(h[1]+R*Math.sin(a2)),class:'door-arc'},svg);
-    el('circle',{cx:h[0],cy:h[1],r:5,fill:'#dc2626'},svg);
-  }else{const p=d.position||h;el('circle',{cx:p[0],cy:p[1],r:10,class:'door-q'},svg);
-    const t=el('text',{x:p[0],y:p[1]-13,'text-anchor':'middle',fill:'#dc2626','font-size':22},svg);t.textContent='?';}
-  const p=d.position||h;const hit=el('circle',{cx:p[0],cy:p[1],r:Math.max(R*0.8,18),class:'door-hit'},svg);
-  hit.addEventListener('click',ev=>{ev.stopPropagation();const oo=d.orientation||{};
-    if(!oo.hinge)oo.hinge=(d.position?[d.position[0],d.position[1]]:[h[0],h[1]]);
-    if(oo.radius_px==null)oo.radius_px=R;oo.swing_dir_deg=(((oo.swing_dir_deg||0)+90)%360);d.orientation=oo;
-    setDirty(true);render();toast('문 여는방향 → '+oo.swing_dir_deg.toFixed(0)+'°');});
+  // 문·치수·여닫이는 배경 PNG(원본 도면)에 이미 그려져 있다 → 오버레이로 중복 안 그림.
 }
 function onRoom(id){
   if(mode==='role'){sel=id;render();}

@@ -129,10 +129,19 @@ def disposition_combo(summary: dict) -> list[tuple[str, int]]:
     return known + extra
 
 
-def scan_status(graphs_dir: Path) -> dict:
+def scan_status(graphs_dir: Path, use_cache: bool = True) -> dict:
     """graphs_dir/*.json 메타 집계.
     반환: {total, success, quarantine, reasons:{rule:count}, by_id:{stem:(status,reason)}}.
-    by_id 키는 파일 stem(=graph_id, 예 'RPLAN_42007')."""
+    by_id 키는 파일 stem(=graph_id, 예 'RPLAN_42007').
+
+    ⚠️ gline 40k 전수 파싱 = ~26s. gline_status와 달리 함수 자체 캐시가 없어 호출자마다(검수
+    화면 by_id 등) 매번 26s 재계산되던 버그 → _acct_cached로 디스크 영속(키=파일수+mtime).
+    빌드/freeze/보정으로 파일 바뀌면 자동 무효화. by_id의 tuple은 JSON 왕복서 list로 바뀌므로
+    캐시 경유 시 tuple로 정규화한다."""
+    if use_cache:
+        v = _acct_cached(graphs_dir, "scan_status", lambda: scan_status(graphs_dir, use_cache=False))
+        v["by_id"] = {k: tuple(t) for k, t in v.get("by_id", {}).items()}   # list→tuple 정규화
+        return v
     total = success = 0
     reasons: Counter = Counter()
     by_id: dict[str, tuple[str, str]] = {}
