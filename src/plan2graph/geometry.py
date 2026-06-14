@@ -34,6 +34,7 @@ class Element:
     centroid: tuple[float, float] | None
     ocr_text: str | None = None
     broken: bool = False       # 폴리곤 보정 실패
+    attrs: dict = field(default_factory=dict)   # 원본 annotation attributes(rotation·occluded 등) — g-0.4 가구 방향
 
 
 @dataclass
@@ -136,6 +137,7 @@ def _element_from_annotation(a: Annotation, kind: str) -> Element:
         polygon=poly if (poly is not None and not poly.is_empty) else None,
         bbox=a.bbox, area_px=area_px, centroid=centroid,
         ocr_text=a.ocr_text, broken=bool(broken),
+        attrs=(a.attributes or {}),
     )
 
 

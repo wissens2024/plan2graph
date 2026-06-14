@@ -24,7 +24,7 @@ import math
 
 import networkx as nx
 
-SCHEMA_VERSION = "g-0.3"
+SCHEMA_VERSION = "g-0.4"   # g-0.4(ADR-0010): 벽두께·경계 wall|open|door·open벽 비표시·Tier A 가구. 가산적
 
 # role → 동선 위계(KR_CONVENTIONS). connector·공용부=service. topoedit.ROLES 전부 커버
 #   (역할 누락 시 'other'로 떨어지던 구멍 메움 — 역할미상 사유는 validate가 별도 표시).
@@ -158,6 +158,7 @@ def _derive_walls(rooms_xy, scale, tol=18.0, cover_frac=0.5):
             "length_px": round(seg.length, 1),
             "length_m": (round(seg.length * scale, 2) if scale else None),
             "rooms": rms, "openings": [],
+            "thickness_mm": 200 if ty == "exterior" else 120,   # g-0.4: 외벽~200/내벽~120(open은 build서 0)
         })
     return out
 
@@ -385,6 +386,7 @@ def build(state, dr) -> dict:
             "wall_ids": [w["id"] for w in walls if nid in w["rooms"]],
             "door_ids": [],
             "window_ids": [],
+            "fixture_ids": [],
             "polygon": [[round(x, 1), round(y, 1)] for x, y in poly.exterior.coords],
         }
 
@@ -398,6 +400,8 @@ def build(state, dr) -> dict:
             continue
         G.add_edge(a, b)
         edges.append({"from": a, "to": b, "via": e.get("via"),
+                      "boundary": ("door" if e.get("via") == "door"
+                                   else "open" if e.get("via") == "open" else e.get("via")),
                       "door_id": None,
                       # 사람 보정값(있으면 doors 루프가 탐지보다 우선) — 문 방향·위치 클릭 입력
                       "door_swing_deg": e.get("door_swing_deg"), "door_pos": e.get("door_pos"),
@@ -485,6 +489,36 @@ def build(state, dr) -> dict:
                     if wl["id"] == on_wall:
                         wl["openings"].append(wid)
 
+    # g-0.4 가구(Tier A, 검출 OBJ만) — 구조화 + 방 fixture_ids. Tier B(역할추론)는 완성층 담당.
+    from .fixture_catalog import DETECTED, detected_name
+    fixtures = []
+    for nid, objs in fix_by.items():
+        for o in objs:
+            name = detected_name(o.class_name) or o.class_name.replace("객체_", "")
+            spec = DETECTED.get(name, {})
+            try:
+                rot = round(float((getattr(o, "attrs", {}) or {}).get("rotation", 0.0) or 0.0), 1)
+            except (TypeError, ValueError):
+                rot = 0.0
+            fid = f"fx{len(fixtures)}"
+            fixtures.append({
+                "id": fid, "name": name, "category": spec.get("category"),
+                "room_id": nid,
+                "position": ([round(o.centroid[0], 1), round(o.centroid[1], 1)] if o.centroid else None),
+                "bbox_px": o.bbox, "orientation_deg": rot,
+                "size_mm": spec.get("size_mm"),
+                "source": "obj_detected", "confidence": 1.0,
+            })
+            if nid in rooms:
+                rooms[nid]["fixture_ids"].append(fid)
+
+    # g-0.4 open-plan 경계 벽은 그리지 않음 — via=open 방쌍의 내벽을 type "open"(thickness 0)으로
+    open_pairs = {frozenset((e["from"], e["to"])) for e in edges if e.get("via") == "open"}
+    for w in walls:
+        if w["type"] == "interior" and len(w["rooms"]) == 2 and frozenset(w["rooms"]) in open_pairs:
+            w["type"] = "open"
+            w["thickness_mm"] = 0
+
     g = {
         "schema_version": SCHEMA_VERSION,
         "plan_id": state.plan_id, "house": state.house,
@@ -492,7 +526,9 @@ def build(state, dr) -> dict:
         "bbox_px": [round(ux0, 1), round(uy0, 1), round(UW, 1), round(UH, 1)],
         "n_rooms": len(rooms), "n_edges": len(edges),
         "n_walls": len(walls), "n_doors": len(doors), "n_windows": len(windows),
+        "n_fixtures": len(fixtures),
         "rooms": rooms, "edges": edges, "walls": walls, "doors": doors, "windows": windows,
+        "fixtures": fixtures,
     }
     enhance_roles_g(g)                      # 기타방 위상·기하 역할 보강(역할미상↓) — 검증 전
     g["validation"] = validate(g)
