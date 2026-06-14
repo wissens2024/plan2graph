@@ -34,6 +34,7 @@ PRIVACY = {
     "화장실": "private", "욕실": "private", "전용욕실": "private", "전용화장실": "private",
     "발코니": "service", "실외기실": "service", "복도": "service", "전실": "service",
     "다목적공간": "service", "계단실": "service", "엘리베이터": "service",
+    "알파룸": "private",
     "구조물": "structure", "실외": "exterior",
 }
 CONNECTOR_ROLES = ("복도", "전실")

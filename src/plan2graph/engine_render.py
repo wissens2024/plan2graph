@@ -24,7 +24,7 @@ CAT_NAME = {
 ENTRANCE_ROLE = "현관"
 ASSUMED_PLAN_WIDTH_MM = 12000.0   # 외곽 가로 12m 가정(절대척도는 사람 길이입력이 정답)
 TOUCH_TOL = 4.0
-WINDOW_ROLES = ("거실", "안방", "침실", "주방", "다목적공간")
+WINDOW_ROLES = ("거실", "안방", "침실", "주방", "다목적공간", "알파룸")
 
 
 def _box_poly(b):

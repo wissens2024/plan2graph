@@ -55,3 +55,15 @@ venv/
 .idea/
 # Claude Code 도구 설정(로컬) — 공동저자 금지는 로컬/글로벌 git 설정에 의존
 /.claude/
+
+# ── 추가 차단(2026-06-14, ADR-0008 동기화) ──
+# 대용량 학습 코퍼스 본문(서버 단일) — 릴리스 메타만 추적, geom 본문 제외
+/data/releases/**/geom.jsonl
+# staging = 현재 작업 데이터(서버 단일·재생성)
+/data/staging/
+# 백업·번들·루트 로그·진단 스크래치
+*.bak
+*.preadr.bak
+*.bundle
+/*.log
+/scripts/_diag_*.py

@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
-"""edit_server — 보정(편집) 웹 에디터 프로토타입 (의존성 0: stdlib http.server).
+"""edit_server — 보정(편집) 웹 에디터 프로토타입 (의존성 0 핵심 + 선택적 shapely).
 
 Streamlit이 약한 '클릭→즉시반영' 인터랙션을 웹 SVG로 시연:
   · 문 클릭 → 여는 방향(swing_dir_deg) 90° 회전, 즉시 다시 그림 (서버 왕복 없음)
   · 문 드래그 → 위치 이동
-기존 gline 그래프(JSON)를 읽어 SVG로 렌더. 저장은 graphs/_edits/<id>.json (원본 미수정).
+기존 gline 그래프(JSON)를 읽어 SVG로 렌더. 저장은 _edits/<id>.json (원본 미수정).
+
+성능/표시 보강:
+  · 문 orientation 없으면 polygon(스윙 호)에서 geomgraph._door_orientation 로 방향 추론
+    (저장 데이터엔 orientation 결손이 많음 → 추론 못하면 점선 '?' 중립표시, 클릭으로 지정).
+  · 드래그 중 render()를 requestAnimationFrame 으로 합쳐 프레임당 1회만 (DOM thrash 제거).
+  · 목록은 38k 파일 glob 대신 os.scandir 로 열거.
 
 실행(서버):  PYTHONPATH=src python scripts/edit_server.py --port 8600
 보기(로컬):  ssh -fN -L 8600:localhost:8600 ju@sse.aines.kr  →  http://localhost:8600
 """
 import argparse
-import glob
 import json
 import os
 import sys
@@ -28,6 +33,36 @@ except Exception:
 EDITS = os.path.join(os.path.dirname(GRAPHS), "_edits")
 os.makedirs(EDITS, exist_ok=True)
 
+
+def _enrich_doors(text):
+    """문에 orientation 결손이면 polygon(arc)에서 여닫이 방향 추론(geomgraph 재사용).
+    추론 가능한 문만 채우고, 안 되면 그대로 둠(클라이언트가 중립표시). 실패는 원문 반환."""
+    try:
+        from plan2graph import geomgraph
+        from shapely.geometry import Polygon
+    except Exception:
+        return text
+    try:
+        g = json.loads(text)
+    except Exception:
+        return text
+    changed = False
+    for d in (g.get("doors") or []):
+        if d.get("orientation"):
+            continue
+        poly = d.get("polygon")
+        if not poly or len(poly) < 5:
+            continue
+        try:
+            o = geomgraph._door_orientation(Polygon([tuple(p) for p in poly]))
+        except Exception:
+            o = None
+        if o:
+            d["orientation"] = o
+            changed = True
+    return json.dumps(g, ensure_ascii=False) if changed else text
+
+
 HTML = r"""<!doctype html><html><head><meta charset="utf-8"><title>보정 에디터(프로토타입)</title>
 <style>
  *{box-sizing:border-box} body{font-family:system-ui,sans-serif;margin:0;display:flex;height:100vh}
@@ -38,6 +73,7 @@ HTML = r"""<!doctype html><html><head><meta charset="utf-8"><title>보정 에디
  .win{stroke:#2563eb;stroke-width:6}
  .door-leaf{stroke:#dc2626;stroke-width:4;fill:none}
  .door-arc{stroke:#f59e0b;stroke-width:2.5;fill:none;stroke-dasharray:5 4}
+ .door-q{fill:none;stroke:#dc2626;stroke-width:3;stroke-dasharray:4 3}
  .door-hit{fill:rgba(0,0,0,.001);cursor:pointer}
  .wall-hit{stroke:rgba(0,0,0,.001);stroke-width:16;cursor:move}
  .wpt{fill:#9ca3af;stroke:#fff;stroke-width:1.5;cursor:grab}
@@ -57,16 +93,18 @@ HTML = r"""<!doctype html><html><head><meta charset="utf-8"><title>보정 에디
  <b>문 드래그</b> = 위치 이동<br>
  모두 <b>즉시 반영</b> · 서버 왕복 없음<br><br>
  <b>벽 드래그</b> = 평행이동 · <b>벽 끝점(회색점)</b> = 그 점만 이동<br><br>
- 빨강=문 · 주황=swing 호 · 파랑=창 · 검정=외벽 · 회색점=벽 끝점</div>
+ 빨강=문 · 주황=swing 호 · 빨강점선 '?'=방향 미상(클릭해 지정)<br>
+ 파랑=창 · 검정=외벽 · 회색점=벽 끝점</div>
 </div>
 <div id="main"><svg id="svg"></svg></div>
 <script>
 const NS='http://www.w3.org/2000/svg', svg=document.getElementById('svg');
-let G=null,GID=null,dirty=false,dragItem=null,last=null,justDragged=false;
+let G=null,GID=null,dirty=false,dragItem=null,last=null,justDragged=false,_raf=0;
 function el(t,a){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;}
 function setStatus(s){document.getElementById('status').textContent=s+(dirty?'  ·  변경됨*':'');}
 function svgPt(ev){const p=svg.createSVGPoint();p.x=ev.clientX;p.y=ev.clientY;
   const r=p.matrixTransform(svg.getScreenCTM().inverse());return [r.x,r.y];}
+function scheduleRender(){if(_raf)return;_raf=requestAnimationFrame(()=>{_raf=0;render();});}
 async function loadList(){
   const ids=await (await fetch('api/graphs?n=80')).json();
   const sel=document.getElementById('sel');sel.innerHTML='';
@@ -101,25 +139,36 @@ function drawWall(w){const s=w.segment;if(!s||s.length<2)return;
     svg.appendChild(pt);});
 }
 function drawDoor(d,i){
-  const o=d.orientation||{},h=o.hinge||d.position||[0,0],deg=o.swing_dir_deg||0,R=o.radius_px||(d.width_px||40);
-  const a=deg*Math.PI/180,lx=h[0]+R*Math.cos(a),ly=h[1]+R*Math.sin(a);
-  svg.appendChild(el('line',{x1:h[0],y1:h[1],x2:lx,y2:ly,class:'door-leaf'}));
-  const a2=a-Math.PI/2,sx=h[0]+R*Math.cos(a2),sy=h[1]+R*Math.sin(a2);
-  svg.appendChild(el('path',{d:'M '+lx+' '+ly+' A '+R+' '+R+' 0 0 0 '+sx+' '+sy,class:'door-arc'}));
-  svg.appendChild(el('circle',{cx:h[0],cy:h[1],r:5,fill:'#dc2626'}));
+  const o=d.orientation||{};
+  const hasDir=(o.swing_dir_deg!=null&&o.hinge);
+  const h=o.hinge||d.position||[0,0],R=o.radius_px||(d.width_px||40);
+  if(hasDir){
+    const a=o.swing_dir_deg*Math.PI/180,lx=h[0]+R*Math.cos(a),ly=h[1]+R*Math.sin(a);
+    svg.appendChild(el('line',{x1:h[0],y1:h[1],x2:lx,y2:ly,class:'door-leaf'}));
+    const a2=a-Math.PI/2,sx=h[0]+R*Math.cos(a2),sy=h[1]+R*Math.sin(a2);
+    svg.appendChild(el('path',{d:'M '+lx+' '+ly+' A '+R+' '+R+' 0 0 0 '+sx+' '+sy,class:'door-arc'}));
+    svg.appendChild(el('circle',{cx:h[0],cy:h[1],r:5,fill:'#dc2626'}));
+  }else{
+    const p=d.position||h;
+    svg.appendChild(el('circle',{cx:p[0],cy:p[1],r:10,class:'door-q'}));
+    const t=el('text',{x:p[0],y:p[1]-13,'text-anchor':'middle',fill:'#dc2626'});t.textContent='?';svg.appendChild(t);
+  }
   const cx=d.position?d.position[0]:h[0],cy=d.position?d.position[1]:h[1];
   const hit=el('circle',{cx:cx,cy:cy,r:Math.max(R*0.8,20),class:'door-hit'});
   hit.addEventListener('mousedown',ev=>{last=svgPt(ev);ev.stopPropagation();
     dragItem={label:'문 이동',move:(dx,dy)=>{if(d.position){d.position[0]+=dx;d.position[1]+=dy;}
       const o2=d.orientation;if(o2&&o2.hinge){o2.hinge[0]+=dx;o2.hinge[1]+=dy;}}};});
   hit.addEventListener('click',ev=>{ev.stopPropagation();if(justDragged){justDragged=false;return;}
-    const oo=d.orientation||{};oo.swing_dir_deg=(( (oo.swing_dir_deg||0)+90)%360);d.orientation=oo;
-    dirty=true;render();setStatus('문 '+(d.id||i)+' 여는방향 → '+oo.swing_dir_deg.toFixed(0)+'°');});
+    const oo=d.orientation||{};
+    if(!oo.hinge)oo.hinge=(d.position?[d.position[0],d.position[1]]:[h[0],h[1]]);
+    if(oo.radius_px==null)oo.radius_px=R;
+    oo.swing_dir_deg=(((oo.swing_dir_deg||0)+90)%360);d.orientation=oo;
+    dirty=true;scheduleRender();setStatus('문 '+(d.id||i)+' 여는방향 → '+oo.swing_dir_deg.toFixed(0)+'°');});
   svg.appendChild(hit);
 }
 window.addEventListener('mousemove',ev=>{if(!dragItem)return;const p=svgPt(ev);
   const dx=p[0]-last[0],dy=p[1]-last[1];last=p;if(Math.abs(dx)+Math.abs(dy)<0.01)return;
-  dragItem.move(dx,dy);dirty=true;justDragged=true;render();});
+  dragItem.move(dx,dy);dirty=true;justDragged=true;scheduleRender();});
 window.addEventListener('mouseup',()=>{if(dragItem){setStatus(dragItem.label||'이동');dragItem=null;}});
 document.getElementById('save').onclick=async()=>{if(!G)return;
   await fetch('api/graph/'+GID,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(G)});
@@ -143,16 +192,27 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, HTML, "text/html; charset=utf-8")
         if u.path == "/api/graphs":
             n = int(parse_qs(u.query).get("n", ["80"])[0])
-            ids = [os.path.basename(f)[:-5]
-                   for f in sorted(glob.glob(os.path.join(GRAPHS, "APT_*.json")))[:n]]
-            return self._send(200, json.dumps(ids))
+            ids = []
+            try:
+                with os.scandir(GRAPHS) as it:
+                    for e in it:
+                        nm = e.name
+                        if nm.startswith("APT_") and nm.endswith(".json"):
+                            ids.append(nm[:-5])
+            except FileNotFoundError:
+                pass
+            ids.sort()
+            return self._send(200, json.dumps(ids[:n]))
         if u.path.startswith("/api/graph/"):
             gid = u.path[len("/api/graph/"):]
             ep = os.path.join(EDITS, gid + ".json")
             p = ep if os.path.exists(ep) else os.path.join(GRAPHS, gid + ".json")
             if not os.path.exists(p):
                 return self._send(404, "{}")
-            return self._send(200, open(p, encoding="utf-8").read())
+            text = open(p, encoding="utf-8").read()
+            if p != ep:                       # 원본만 보강(_edits는 이미 사람손 거침)
+                text = _enrich_doors(text)
+            return self._send(200, text)
         return self._send(404, "{}")
 
     def do_POST(self):
