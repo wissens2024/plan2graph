@@ -3,18 +3,17 @@
 
 SVG 폐기. 편집 대상 = 그래프 JSON 그 자체(= 최종 산출 스키마). 원본 PNG를 불변 배경으로
 깔고([[inspect-original-first]]), 그 위 추출 폴리곤에 **의미**만 보정한다:
-  · 방 클릭 → 역할 지정(거실/안방/알파룸/…)   · 문 클릭 → 여는 방향 90° 회전
-  · 두 방 클릭 → 인접(문/개방) 토글            · 현관 지정
-모든 편집은 브라우저에서 즉시 반영(서버 왕복 0), 도면당 1회 저장. Streamlit rerun 지연 없음.
+  · 역할(role) 지정     · 인접(door/open) 토글     · 과분할 노드 합치기(merge)
+  · 잘못된 노드 삭제     · 현관 지정
+문/치수/여닫이는 배경 PNG에 이미 그려져 있으므로 오버레이로 다시 그리지 않는다.
+모든 편집은 브라우저에서 즉시 반영(역할/인접/삭제=서버 왕복 0, 합치기만 shapely 1콜),
+도면당 1회 저장. 알바용이라 '조작 지연 0'이 설계 기준.
 
 폴더 분리(ADR-0008):
   data/staging/gline/graphs/    = 원본(자동변환) · 읽기전용
   data/staging/gline/corrected/ = 작업(사람 보정) · 저장 위치 (graphs/ 밖 = 회계캐시 무효화 회피)
   data/staging/gline/png/       = 원본 PNG 추출 캐시
   data/staging/gline/_png_index.json = sig→(zip,entry) 캐시(1회 빌드)
-
-변환 게이트 표시: plan_quality.classify(=convert_plan GATE-0)로 '사용가능/보정필요+사유'를
-인라인 표시 → 고침→재판정 닫힌 루프.
 
 실행:  PYTHONPATH=src python scripts/edit_server.py --port 8600
 보기:  nginx /editor/ 또는  ssh -fN -L 8600:localhost:8600 ju@sse.aines.kr → http://localhost:8600
@@ -157,90 +156,354 @@ def _status(g):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 노드 합치기 — 순수함수: (graph, ids) → 합쳐진 graph. shapely unary_union.
+#   과분할(한 공간이 N개 노드로 쪼개짐)을 1개로. 첫 id의 역할/속성을 기준(keep)으로 유지.
+# ─────────────────────────────────────────────────────────────────────────────
+def _merge_nodes(g, ids):
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+
+    rooms = g.get("rooms") or {}
+    ids = [str(i) for i in ids if str(i) in rooms]
+    # 순서 보존 dedup
+    seen, uids = set(), []
+    for i in ids:
+        if i not in seen:
+            seen.add(i)
+            uids.append(i)
+    ids = uids
+    if len(ids) < 2:
+        return g, "노드 2개 이상을 선택하세요"
+
+    keep = ids[0]                       # 기준 노드(역할·privacy 등 유지)
+    drop = set(ids[1:])
+    kept = rooms[keep]
+
+    # 폴리곤 union (buffer(0)로 자가교차 정리)
+    polys = []
+    for i in ids:
+        pg = rooms[i].get("polygon")
+        if pg and len(pg) >= 3:
+            try:
+                polys.append(Polygon([tuple(p) for p in pg]).buffer(0))
+            except Exception:  # noqa: BLE001
+                pass
+    if polys:
+        merged = unary_union(polys)
+        if merged.geom_type == "MultiPolygon":
+            merged = max(merged.geoms, key=lambda p: p.area)
+        if merged.geom_type == "Polygon" and not merged.is_empty:
+            kept["polygon"] = [[round(x, 1), round(y, 1)] for x, y in merged.exterior.coords]
+            c = merged.centroid
+            kept["centroid"] = [round(c.x, 1), round(c.y, 1)]
+            kept["area_px"] = round(merged.area, 1)
+            minx, miny, maxx, maxy = merged.bounds
+            kept["bbox_px"] = [round(minx, 1), round(miny, 1),
+                               round(maxx - minx, 1), round(maxy - miny, 1)]
+            kept["perimeter_px"] = round(merged.length, 1)
+
+    # 리스트 속성 병합(순서 보존 dedup)
+    for fld in ("fixtures", "door_ids", "window_ids", "wall_ids"):
+        out, s = [], set()
+        for i in ids:
+            for v in (rooms[i].get(fld) or []):
+                if v not in s:
+                    s.add(v)
+                    out.append(v)
+        kept[fld] = out
+    kept["n_windows"] = len(kept.get("window_ids") or [])
+    kept["has_window"] = bool(kept.get("window_ids"))
+
+    # 드롭 노드 제거
+    for i in drop:
+        rooms.pop(i, None)
+
+    # 엣지 재연결: drop→keep, self-loop 제거, 무방향 중복 제거(via는 door 우선)
+    keep_val = int(keep) if keep.lstrip("-").isdigit() else keep
+
+    def remap(x):
+        return keep_val if str(x) in drop else x
+
+    best = {}   # frozenset({a,b}) -> edge
+    for e in (g.get("edges") or []):
+        f, t = remap(e.get("from")), remap(e.get("to"))
+        if str(f) == str(t):
+            continue
+        e = dict(e)
+        e["from"], e["to"] = f, t
+        k = frozenset((str(f), str(t)))
+        prev = best.get(k)
+        if prev is None or (e.get("via") == "door" and prev.get("via") != "door"):
+            best[k] = e
+    g["edges"] = list(best.values())
+
+    g["n_rooms"] = len(rooms)
+    g["n_edges"] = len(g["edges"])
+    return g, None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # HTML (의미주석 UI — PNG 배경 + 폴리곤 오버레이, 전부 클라이언트 사이드)
 # ─────────────────────────────────────────────────────────────────────────────
 def _html():
     pal = json.dumps(PALETTE, ensure_ascii=False)
     col = json.dumps(ROLE_COLOR, ensure_ascii=False)
-    return r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
-<title>정보 보정 에디터 (ADR-0008)</title>
+    return _HTML.replace("__PAL__", pal).replace("__COL__", col)
+
+
+_HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>정보 보정 에디터</title>
 <style>
- *{box-sizing:border-box} body{font-family:system-ui,sans-serif;margin:0;display:flex;height:100vh;overflow:hidden}
- #side{width:240px;padding:10px;border-right:1px solid #e5e7eb;overflow:auto;flex-shrink:0;font-size:13px}
- #main{flex:1;position:relative;background:#f4f4f5}
+ :root{
+   --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a; --line2:#363c49;
+   --txt:#e6e8ee; --muted:#9aa3b2; --accent:#3b82f6; --accent2:#22d3ee;
+   --ok-bg:#0f3a25; --ok-fg:#4ade80; --bad-bg:#3a1620; --bad-fg:#fb7185; --na-bg:#23272f; --na-fg:#9aa3b2;
+   --sel:#f59e0b; --adj:#a855f7; --merge:#22d3ee; --del:#ef4444;
+ }
+ *{box-sizing:border-box} html,body{margin:0;height:100%}
+ body{font-family:"Pretendard",system-ui,-apple-system,"Segoe UI",sans-serif;
+   background:var(--bg);color:var(--txt);display:flex;height:100vh;overflow:hidden;font-size:13px}
+
+ /* ── Sidebar ── */
+ #side{width:288px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--line);
+   display:flex;flex-direction:column;height:100vh}
+ #side .scroll{flex:1;overflow:auto;padding:12px 14px}
+ .brand{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:800;letter-spacing:-.2px;
+   padding:14px 14px 10px;border-bottom:1px solid var(--line)}
+ .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--accent2);box-shadow:0 0 10px var(--accent2)}
+
+ /* plan_id 복사 바 */
+ .idbar{display:flex;align-items:center;gap:6px;margin:2px 0 10px;background:var(--panel2);
+   border:1px solid var(--line);border-radius:8px;padding:7px 8px}
+ .idbar code{flex:1;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--accent2);
+   user-select:all;white-space:nowrap;overflow:auto;scrollbar-width:none}
+ .idbar code::-webkit-scrollbar{display:none}
+ .icobtn{border:1px solid var(--line2);background:#222733;color:var(--txt);border-radius:6px;
+   padding:4px 7px;cursor:pointer;font-size:12px;line-height:1;flex-shrink:0}
+ .icobtn:hover{background:#2c3340;border-color:var(--accent)}
+ .icobtn:active{transform:scale(.94)}
+
+ /* 진행도 */
+ .prog{margin:4px 0 12px}
+ .prog .row{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-bottom:5px}
+ .prog .row b{color:var(--txt)}
+ .bar{height:6px;background:var(--panel2);border-radius:99px;overflow:hidden}
+ .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));width:0%}
+
+ /* 검색 + 리스트 */
+ .lbl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin:14px 0 6px}
+ #search{width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);
+   color:var(--txt);font-size:12.5px;outline:none}
+ #search:focus{border-color:var(--accent)}
+ #list{margin-top:6px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel2)}
+ #list .opt{padding:7px 10px;cursor:pointer;border-bottom:1px solid var(--line);font-size:12px;
+   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
+ #list .opt:last-child{border-bottom:none}
+ #list .opt:hover{background:#222733}
+ #list .opt.on{background:#1d3a5c;color:#fff}
+ #list .opt .ck{flex-shrink:0;width:14px;text-align:center;font-size:11px}
+ #list .opt.done .ck{color:var(--ok-fg)}
+ .nav{display:flex;gap:8px;margin-top:8px}
+ .nav button{flex:1;padding:8px;border-radius:8px;border:1px solid var(--line2);background:var(--panel2);
+   color:var(--txt);cursor:pointer;font-size:12.5px;font-weight:600}
+ .nav button:hover{background:#2a303c;border-color:var(--accent)}
+
+ /* 상태 pill */
+ #stat{margin:12px 0;padding:10px 12px;border-radius:9px;font-size:12.5px;font-weight:700;line-height:1.4}
+ #stat.ok{background:var(--ok-bg);color:var(--ok-fg)}
+ #stat.bad{background:var(--bad-bg);color:var(--bad-fg)}
+ #stat.na{background:var(--na-bg);color:var(--na-fg)}
+ #stat .why{font-weight:500;font-size:11.5px;margin-top:4px;opacity:.92}
+
+ /* 모드 세그먼트 */
+ .seg{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:6px 0 10px}
+ .seg button{padding:9px 6px;border-radius:9px;border:1px solid var(--line2);background:var(--panel2);
+   color:var(--txt);cursor:pointer;font-size:12.5px;font-weight:700;display:flex;align-items:center;
+   justify-content:center;gap:5px;transition:.12s}
+ .seg button .k{font-size:10px;opacity:.55;font-weight:600}
+ .seg button:hover{border-color:var(--accent)}
+ .seg button.on{color:#0b0d12}
+ .seg button[data-m=role].on{background:var(--sel);border-color:var(--sel)}
+ .seg button[data-m=adj].on{background:var(--adj);border-color:var(--adj);color:#fff}
+ .seg button[data-m=merge].on{background:var(--merge);border-color:var(--merge)}
+ .seg button[data-m=del].on{background:var(--del);border-color:var(--del);color:#fff}
+
+ /* 모드별 동적 패널 */
+ #ctx{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px;margin-bottom:8px;min-height:56px}
+ #ctx .ctitle{font-size:11px;font-weight:700;color:var(--muted);margin-bottom:7px}
+ .pal{display:flex;flex-wrap:wrap;gap:6px}
+ .pal .chip{display:flex;align-items:center;gap:6px;padding:5px 9px 5px 7px;border-radius:7px;
+   border:1px solid var(--line2);background:#222733;cursor:pointer;font-size:12px;font-weight:600;user-select:none}
+ .pal .chip:hover{border-color:#fff}
+ .pal .chip .sw{width:11px;height:11px;border-radius:3px;flex-shrink:0}
+ .pal .chip .k{font-size:9.5px;color:var(--muted);font-weight:700}
+ .bigbtn{width:100%;padding:10px;border-radius:9px;border:none;cursor:pointer;font-size:13px;font-weight:800;margin-top:8px}
+ .bigbtn.go{background:var(--merge);color:#0b0d12}
+ .bigbtn.go:disabled{opacity:.4;cursor:not-allowed}
+ .bigbtn.ghost{background:#222733;color:var(--txt);border:1px solid var(--line2);font-weight:600;margin-top:6px}
+ .chiprow{display:flex;flex-wrap:wrap;gap:5px;margin:4px 0}
+ .chiprow .t{padding:3px 8px;border-radius:6px;background:#0e2630;border:1px solid var(--merge);
+   color:var(--merge);font-size:11px;font-weight:700}
+ .chiprow .t.keep{background:var(--merge);color:#0b0d12}
+
+ .help{font-size:11px;color:var(--muted);line-height:1.7;margin-top:6px}
+ .help kbd{background:#222733;border:1px solid var(--line2);border-radius:4px;padding:1px 5px;
+   font-family:ui-monospace,monospace;font-size:10.5px;color:var(--txt)}
+ details.legend{margin-top:10px}
+ details.legend summary{cursor:pointer;font-size:11.5px;color:var(--muted);font-weight:700;list-style:none}
+ details.legend summary::-webkit-details-marker{display:none}
+ details.legend summary:before{content:"▸ ";color:var(--accent)}
+ details.legend[open] summary:before{content:"▾ "}
+
+ /* 저장 바(고정) */
+ .savebar{padding:12px 14px;border-top:1px solid var(--line);display:flex;gap:8px;background:var(--panel)}
+ #save{flex:1;padding:11px;border-radius:9px;border:none;cursor:pointer;font-size:13.5px;font-weight:800;
+   background:var(--accent);color:#fff}
+ #save.dirty{background:var(--sel);color:#0b0d12;animation:pulse 1.6s infinite}
+ @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.4)}50%{box-shadow:0 0 0 6px rgba(245,158,11,0)}}
+ #undo{padding:11px 13px;border-radius:9px;border:1px solid var(--line2);background:var(--panel2);
+   color:var(--txt);cursor:pointer;font-size:13px}
+ #undo:disabled{opacity:.35;cursor:not-allowed}
+
+ /* ── Canvas ── */
+ #main{flex:1;position:relative;background:
+   radial-gradient(circle at 1px 1px,#1c2027 1px,transparent 0) 0 0/22px 22px,#0b0d12}
  svg{width:100%;height:100vh;display:block;cursor:grab}
- image{opacity:.92}
- .room{fill-opacity:.30;stroke:#111;stroke-width:2;cursor:pointer}
- .room.sel{stroke:#f59e0b;stroke-width:5}
- .room.adj{stroke:#7c3aed;stroke-width:5;stroke-dasharray:8 4}
- .rlabel{font-size:20px;fill:#111;font-weight:700;pointer-events:none;paint-order:stroke;stroke:#fff;stroke-width:4}
- .door-leaf{stroke:#dc2626;stroke-width:4;fill:none} .door-arc{stroke:#f59e0b;stroke-width:2.5;fill:none;stroke-dasharray:5 4}
- .door-q{fill:none;stroke:#dc2626;stroke-width:3;stroke-dasharray:4 3} .door-hit{fill:rgba(0,0,0,.001);cursor:pointer}
- .ent{fill:none;stroke:#d9534f;stroke-width:5}
- select,button{width:100%;padding:7px;margin:4px 0;cursor:pointer;font-size:13px}
- #pal button{width:auto;display:inline-block;margin:2px;padding:5px 8px;border:1px solid #ccc;border-radius:4px}
- .hint{font-size:11px;color:#6b7280;line-height:1.5} h3,h4{margin:6px 0}
- #stat{padding:8px;border-radius:6px;font-size:13px;font-weight:700;margin:6px 0}
- .ok{background:#dcfce7;color:#166534} .bad{background:#fee2e2;color:#991b1b} .na{background:#f3f4f6;color:#555}
- #toast{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:6px 12px;border-radius:6px;font-size:13px;opacity:0;transition:.2s;pointer-events:none}
- #pngwarn{position:absolute;bottom:8px;left:8px;background:#fef3c7;color:#92400e;padding:4px 8px;border-radius:5px;font-size:12px;display:none}
- .mode{display:flex;gap:4px} .mode button{flex:1}
- .mode button.on{background:#111;color:#fff}
+ svg.panning{cursor:grabbing}
+ image{opacity:.95}
+ .room{stroke-width:2;cursor:pointer;transition:fill-opacity .08s}
+ .room{fill-opacity:.26;stroke:#0b0d12;stroke-opacity:.55}
+ .room:hover{fill-opacity:.44}
+ .room.sel{stroke:var(--sel);stroke-width:5;stroke-opacity:1;fill-opacity:.5}
+ .room.adjA{stroke:var(--adj);stroke-width:5;stroke-opacity:1;stroke-dasharray:9 5;fill-opacity:.5}
+ .room.msel{stroke:var(--merge);stroke-width:5;stroke-opacity:1;fill-opacity:.5}
+ .room.mkeep{stroke:var(--merge);stroke-width:6;stroke-opacity:1;fill-opacity:.58;stroke-dasharray:none}
+ .room.delhover:hover{stroke:var(--del);stroke-width:5;stroke-opacity:1;fill:var(--del);fill-opacity:.4}
+ .rlabel{font-size:19px;fill:#fff;font-weight:800;pointer-events:none;
+   paint-order:stroke;stroke:#0b0d12;stroke-width:4.5;stroke-linejoin:round}
+ .rbadge{pointer-events:none}
+ .rbadge circle{fill:var(--merge);stroke:#0b0d12;stroke-width:2}
+ .rbadge text{fill:#0b0d12;font-size:15px;font-weight:800;text-anchor:middle;dominant-baseline:central}
+ .edge{pointer-events:none}
+
+ #toast{position:absolute;top:16px;left:50%;transform:translateX(-50%) translateY(-8px);
+   background:#0b0d12;color:#fff;padding:9px 16px;border-radius:9px;font-size:13px;font-weight:600;
+   border:1px solid var(--line2);opacity:0;transition:.18s;pointer-events:none;box-shadow:0 8px 28px rgba(0,0,0,.5)}
+ #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+ #pngwarn{position:absolute;bottom:14px;left:14px;background:#3a2e10;color:#fcd34d;padding:6px 11px;
+   border-radius:7px;font-size:12px;display:none;border:1px solid #6b5616}
+ #hud{position:absolute;bottom:14px;right:14px;display:flex;gap:8px}
+ #hud button{background:var(--panel);border:1px solid var(--line2);color:var(--txt);border-radius:8px;
+   padding:7px 11px;cursor:pointer;font-size:12px;font-weight:600}
+ #hud button:hover{border-color:var(--accent)}
+ .modetag{position:absolute;top:14px;left:14px;padding:6px 12px;border-radius:99px;font-size:12px;
+   font-weight:800;background:var(--panel);border:1px solid var(--line2)}
 </style></head><body>
 <div id="side">
- <h3>📝 정보 보정 <span class=hint>ADR-0008</span></h3>
- <div class="mode">
-   <button id="mRole" class="on" title="방 클릭→역할">역할</button>
-   <button id="mAdj" title="두 방 클릭→인접">인접</button>
+ <div class="brand"><span class="dot"></span>정보 보정 에디터</div>
+ <div class="scroll">
+   <div class="idbar">
+     <code id="pid" title="현재 도면 ID — 클릭하면 전체 선택">—</code>
+     <button class="icobtn" id="copyId" title="ID 복사">📋</button>
+   </div>
+   <div class="prog">
+     <div class="row"><span>보정 진행</span><span><b id="pdone">0</b> / <span id="ptot">0</span></span></div>
+     <div class="bar"><i id="pbar"></i></div>
+   </div>
+
+   <div id="stat" class="na">—</div>
+
+   <div class="lbl">편집 모드</div>
+   <div class="seg">
+     <button data-m="role" class="on">🎨 역할 <span class="k">R</span></button>
+     <button data-m="adj">🔗 인접 <span class="k">A</span></button>
+     <button data-m="merge">⛓ 합치기 <span class="k">M</span></button>
+     <button data-m="del">🗑 삭제 <span class="k">D</span></button>
+   </div>
+   <div id="ctx"></div>
+
+   <div class="lbl">도면 찾기</div>
+   <input id="search" placeholder="ID 일부로 검색 (예: cb4a)">
+   <div id="list"></div>
+   <div class="nav"><button id="prev">◀ 이전</button><button id="next">다음 ▶</button></div>
+
+   <details class="legend"><summary>범례 · 조작</summary>
+   <div class="help">
+     <span style="color:var(--sel)">●</span> 선택 ·
+     <span style="color:var(--adj)">●</span> 인접A ·
+     <span style="color:var(--merge)">●</span> 합치기 ·
+     <span style="color:var(--del)">●</span> 삭제<br>
+     <kbd>휠</kbd> 확대 · <kbd>드래그</kbd> 이동 · <kbd>F</kbd> 맞춤<br>
+     <kbd>R</kbd><kbd>A</kbd><kbd>M</kbd><kbd>D</kbd> 모드 · <kbd>Ctrl+Z</kbd> 되돌리기 · <kbd>Ctrl+S</kbd> 저장<br>
+     <b>배경 = 원본 도면</b> — 문·치수·여닫이는 PNG에서 직접 확인.
+   </div></details>
  </div>
- <div class=hint id="modehint">방을 클릭하고 아래 역할 선택(숫자키도 가능)</div>
- <h4>도면</h4>
- <select id="sel" size="10"></select>
- <div class="mode"><button id="prev">◀ 이전</button><button id="next">다음 ▶</button></div>
- <div id="stat" class="na">—</div>
- <button id="save">💾 저장 (corrected/)</button>
- <h4>역할 팔레트</h4>
- <div id="pal"></div>
- <hr>
- <div class=hint>
-  <b>역할 모드</b>: 방 클릭→선택→팔레트(또는 1~9,0,a..f 단축키)<br>
-  <b>인접 모드</b>: 방 A→방 B 클릭 = 문↔개방↔없음 순환<br>
-  <b>E</b>키 = 선택 방을 현관 지정<br>
-  <b>배경 = 원본 도면</b> — 문·치수·여닫이는 여기서 직접 보세요.<br>
-  색 = 역할 · 노랑테 = 선택 · 보라점선 = 인접<br>
-  휠 = 확대 · 빈 곳 드래그 = 이동
+ <div class="savebar">
+   <button id="undo" disabled title="되돌리기 (Ctrl+Z)">↶</button>
+   <button id="save">💾 저장</button>
  </div>
 </div>
-<div id="main"><svg id="svg"></svg><div id="toast"></div><div id="pngwarn">⚠ 원본 PNG 없음(인덱싱중일 수 있음) — 해석만 표시</div></div>
+<div id="main">
+  <svg id="svg"></svg>
+  <div class="modetag" id="modetag">🎨 역할</div>
+  <div id="toast"></div>
+  <div id="pngwarn">⚠ 원본 PNG 없음(인덱싱중일 수 있음) — 해석만 표시</div>
+  <div id="hud"><button id="fit">맞춤 (F)</button></div>
+</div>
 <script>
 const NS='http://www.w3.org/2000/svg', svg=document.getElementById('svg');
 const PALETTE=__PAL__, ROLE_COLOR=__COL__;
-let G=null,GID=null,dirty=false,mode='role',sel=null,adjA=null,vb=null;
+const MODES={role:'🎨 역할',adj:'🔗 인접',merge:'⛓ 합치기',del:'🗑 삭제'};
+let G=null,GID=null,dirty=false,mode='role',sel=null,adjA=null,mergeSel=[],vb=null;
+let LIST=[],undoStack=[];
+
 function el(t,a,p){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e;}
-function toast(s){const t=document.getElementById('toast');t.textContent=s;t.style.opacity=1;clearTimeout(t._);t._=setTimeout(()=>t.style.opacity=0,1400);}
-function setDirty(d){dirty=d;document.getElementById('save').textContent=d?'💾 저장* (corrected/)':'💾 저장 (corrected/)';}
-function colorOf(r){return ROLE_COLOR[r]||'#bcbcbc';}
-async function loadList(){
-  const ids=await (await fetch('api/graphs?n=300')).json();
-  const s=document.getElementById('sel');const cur=s.value;s.innerHTML='';
-  ids.forEach(o=>{const op=document.createElement('option');op.value=o.id;op.textContent=(o.corrected?'✔ ':'· ')+o.id.replace('APT_FP_','');s.appendChild(op);});
-  if(cur)s.value=cur;
-  s.onchange=()=>{vb=null;loadGraph(s.value);};
-  if(!GID&&ids.length){s.value=ids[0].id;loadGraph(ids[0].id);}
+function toast(s){const t=document.getElementById('toast');t.textContent=s;t.classList.add('show');
+  clearTimeout(t._);t._=setTimeout(()=>t.classList.remove('show'),1500);}
+function colorOf(r){return ROLE_COLOR[r]||'#9aa3b2';}
+function setDirty(d){dirty=d;const b=document.getElementById('save');
+  b.classList.toggle('dirty',d);b.textContent=d?'💾 저장 *':'💾 저장';}
+function pushUndo(){try{undoStack.push(JSON.stringify(G));if(undoStack.length>40)undoStack.shift();
+  document.getElementById('undo').disabled=false;}catch(e){}}
+function undo(){if(!undoStack.length)return;G=JSON.parse(undoStack.pop());
+  document.getElementById('undo').disabled=!undoStack.length;sel=null;adjA=null;mergeSel=[];
+  setDirty(true);render();showStatusLocal();toast('되돌림');}
+function showStatusLocal(){/* 로컬 변경 후엔 게이트 재판정은 저장 시 — 표시는 유지 */}
+
+// ── 목록/검색 ───────────────────────────────────────────────────────────────
+async function loadList(q){
+  const r=await(await fetch('api/graphs?n=250'+(q?'&q='+encodeURIComponent(q):''))).json();
+  LIST=r.items;
+  document.getElementById('pdone').textContent=r.corrected;
+  document.getElementById('ptot').textContent=r.total;
+  document.getElementById('pbar').style.width=(r.total?100*r.corrected/r.total:0).toFixed(1)+'%';
+  renderList();
+  if(!GID&&LIST.length)loadGraph(LIST[0].id);
+}
+function renderList(){
+  const box=document.getElementById('list');box.innerHTML='';
+  LIST.forEach(o=>{const d=document.createElement('div');
+    d.className='opt'+(o.corrected?' done':'')+(o.id===GID?' on':'');
+    d.innerHTML='<span class="ck">'+(o.corrected?'✔':'·')+'</span>'+o.id.replace('APT_FP_','');
+    d.title=o.id;d.onclick=()=>{vb=null;loadGraph(o.id);};box.appendChild(d);});
 }
 async function loadGraph(id){
-  const r=await (await fetch('api/graph/'+id)).json();
+  const r=await(await fetch('api/graph/'+id)).json();
   if(r.error){toast('로드 실패: '+r.error);return;}
-  G=r.graph;GID=id;sel=null;adjA=null;setDirty(false);
-  document.getElementById('sel').value=id;
-  showStatus(r.status);render();
+  G=r.graph;GID=id;sel=null;adjA=null;mergeSel=[];undoStack=[];
+  document.getElementById('undo').disabled=true;setDirty(false);
+  document.getElementById('pid').textContent=id;
+  showStatus(r.status);renderList();render();
 }
 function showStatus(st){
   const e=document.getElementById('stat');
-  if(!st||st.clean===null){e.className='na';e.textContent='판정불가';return;}
-  if(st.clean){e.className='ok';e.textContent='✅ 사용가능 (변환 통과)';}
-  else{e.className='bad';e.textContent='❌ 보정필요: '+(st.reasons||[]).join(', ');}
+  if(!st||st.clean===null){e.className='na';e.textContent='판정 불가';return;}
+  if(st.clean){e.className='ok';e.innerHTML='✅ 변환 통과 — 사용가능';}
+  else{e.className='bad';e.innerHTML='❌ 보정 필요<div class="why">'+(st.reasons||[]).join(' · ')+'</div>';}
 }
+
+// ── 캔버스 ──────────────────────────────────────────────────────────────────
 function bbox(){const b=G.bbox_px||[0,0,1000,1000];const pad=Math.max(b[2],b[3])*0.06;
   return [b[0]-pad,b[1]-pad,b[2]+2*pad,b[3]+2*pad];}
 function render(){
@@ -248,69 +511,179 @@ function render(){
   if(!vb)vb=bbox();
   svg.setAttribute('viewBox',vb.join(' '));
   const img=el('image',{href:'api/png/'+GID,x:0,y:0,preserveAspectRatio:'none'},svg);
-  const probe=new Image();   // 자연크기(=원본 시트 px=폴리곤 좌표계)로 명시 → 정렬 보장
-  probe.onload=()=>{img.setAttribute('width',probe.naturalWidth);img.setAttribute('height',probe.naturalHeight);document.getElementById('pngwarn').style.display='none';};
+  const probe=new Image();
+  probe.onload=()=>{img.setAttribute('width',probe.naturalWidth);img.setAttribute('height',probe.naturalHeight);
+    document.getElementById('pngwarn').style.display='none';};
   probe.onerror=()=>{document.getElementById('pngwarn').style.display='block';};
   probe.src='api/png/'+GID;
-  for(const id in (G.rooms||{})){const r=G.rooms[id],pg=r.polygon;if(!pg||pg.length<3)continue;
-    const cls='room'+(sel===id?' sel':'')+(adjA===id?' adj':'');
-    const po=el('polygon',{points:pg.map(p=>p[0]+','+p[1]).join(' '),class:cls,fill:colorOf(r.role),'data-id':id},svg);
-    po.addEventListener('click',ev=>{ev.stopPropagation();onRoom(id);});
-    const c=r.centroid||pg[0];
-    const t=el('text',{x:c[0],y:c[1],'text-anchor':'middle',class:'rlabel'},svg);t.textContent=r.role||'?';
+
+  // 엣지(비상호작용 — 클릭 가로채지 않게 pointer-events:none + 맨 아래)
+  const eg=el('g',{class:'edge'},svg);
+  (G.edges||[]).forEach(e=>{const a=G.rooms[e.from],b=G.rooms[e.to];
+    const ca=a&&a.centroid,cb=b&&b.centroid;if(!ca||!cb)return;const via=e.via;
+    el('line',{x1:ca[0],y1:ca[1],x2:cb[0],y2:cb[1],stroke:via==='door'?'#fb7185':'#38bdf8',
+      'stroke-width':2.2,'stroke-dasharray':via==='door'?'':'7 6',opacity:.6},eg);});
+
+  // 방: 큰 것 먼저 → 작은 것이 위에(겹침/중첩서 작은방 클릭 보장)
+  const entries=Object.entries(G.rooms||{}).filter(([id,r])=>r.polygon&&r.polygon.length>=3);
+  entries.sort((x,y)=>(y[1].area_px||0)-(x[1].area_px||0));
+  for(const [id,r] of entries){
+    let cls='room';
+    if(mode==='role'&&sel===id)cls+=' sel';
+    if(mode==='adj'&&adjA===id)cls+=' adjA';
+    if(mode==='merge'){const i=mergeSel.indexOf(id);if(i===0)cls+=' mkeep';else if(i>0)cls+=' msel';}
+    if(mode==='del')cls+=' delhover';
+    const po=el('polygon',{points:r.polygon.map(p=>p[0]+','+p[1]).join(' '),class:cls,
+      fill:colorOf(r.role),'data-id':id},svg);
+    po.addEventListener('click',ev=>{ev.stopPropagation();if(justPanned)return;onRoom(id);});
   }
-  (G.edges||[]).forEach(e=>{const a=G.rooms[e.from||e[0]],b=G.rooms[e.to||e[1]];
-    const ca=a&&a.centroid,cb=b&&b.centroid;if(!ca||!cb)return;const via=e.via||e[2];
-    el('line',{x1:ca[0],y1:ca[1],x2:cb[0],y2:cb[1],stroke:via==='door'?'#dc2626':'#3b82f6',
-      'stroke-width':2,'stroke-dasharray':via==='door'?'':'6 5',opacity:.5},svg);});
-  // 문·치수·여닫이는 배경 PNG(원본 도면)에 이미 그려져 있다 → 오버레이로 중복 안 그림.
+  // 라벨(맨 위, 비상호작용)
+  for(const [id,r] of entries){const c=r.centroid||r.polygon[0];
+    const t=el('text',{x:c[0],y:c[1],'text-anchor':'middle',class:'rlabel'},svg);t.textContent=r.role||'?';
+    if(mode==='merge'){const i=mergeSel.indexOf(id);if(i>=0){
+      const g=el('g',{class:'rbadge'},svg);el('circle',{cx:c[0]+30,cy:c[1]-20,r:13},g);
+      const bt=el('text',{x:c[0]+30,y:c[1]-20},g);bt.textContent=(i+1);}}
+  }
+  document.getElementById('modetag').textContent=MODES[mode];
 }
+
+// ── 방 클릭 디스패치 ─────────────────────────────────────────────────────────
 function onRoom(id){
-  if(mode==='role'){sel=id;render();}
-  else{if(adjA===null){adjA=id;render();toast('A='+(G.rooms[id].role||id)+' — B 클릭');}
-    else if(adjA===id){adjA=null;render();}
-    else{toggleAdj(adjA,id);adjA=null;render();}}
+  if(!G.rooms[id])return;
+  if(mode==='role'){sel=id;render();
+    toast('선택: '+(G.rooms[id].role||id)+' — 역할 클릭/숫자키');}
+  else if(mode==='adj'){
+    if(adjA===null){adjA=id;render();toast('A = '+(G.rooms[id].role||id)+' — 인접할 B 클릭');}
+    else if(adjA===id){adjA=null;render();toast('취소');}
+    else{toggleAdj(adjA,id);adjA=null;render();}
+  }else if(mode==='merge'){
+    const i=mergeSel.indexOf(id);
+    if(i>=0)mergeSel.splice(i,1);else mergeSel.push(id);
+    render();renderCtx();
+  }else if(mode==='del'){
+    pushUndo();const role=G.rooms[id].role||id;delete G.rooms[id];
+    G.edges=(G.edges||[]).filter(e=>String(e.from)!==id&&String(e.to)!==id);
+    setDirty(true);render();toast('삭제: '+role);
+  }
 }
 function toggleAdj(a,b){
-  G.edges=G.edges||[];
-  const idx=G.edges.findIndex(e=>{const f=e.from||e[0],t=e.to||e[1];return (f==a&&t==b)||(f==b&&t==a);});
-  if(idx<0){G.edges.push({from:a,to:b,via:'door'});toast('인접 추가: 문');}
-  else{const e=G.edges[idx];const via=e.via||e[2];
-    if(via==='door'){if(Array.isArray(e))e[2]='open';else e.via='open';toast('인접: 개방');}
+  pushUndo();G.edges=G.edges||[];
+  const idx=G.edges.findIndex(e=>{const f=String(e.from),t=String(e.to);
+    return (f===String(a)&&t===String(b))||(f===String(b)&&t===String(a));});
+  if(idx<0){G.edges.push({from:a,to:b,via:'door'});toast('인접 추가 → 문');}
+  else{const e=G.edges[idx];
+    if(e.via==='door'){e.via='open';e.door_id=null;toast('인접 → 개방');}
     else{G.edges.splice(idx,1);toast('인접 제거');}}
   setDirty(true);
 }
-function setRole(role){if(!sel){toast('먼저 방을 클릭');return;}G.rooms[sel].role=role;setDirty(true);render();toast(role);}
-const palBox=document.getElementById('pal');
-PALETTE.forEach((r,i)=>{const b=document.createElement('button');
-  const key=i<9?(i+1):(i===9?'0':String.fromCharCode(97+i-10));
-  b.textContent=r+' ('+key+')';b.style.borderLeft='6px solid '+colorOf(r);
-  b.onclick=()=>setRole(r);palBox.appendChild(b);});
+function setRole(role){if(!sel){toast('먼저 방을 클릭하세요');return;}
+  pushUndo();G.rooms[sel].role=role;setDirty(true);render();toast('역할 → '+role);}
+
+async function doMerge(){
+  if(mergeSel.length<2){toast('합칠 노드를 2개 이상 선택');return;}
+  pushUndo();
+  const r=await(await fetch('api/merge',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({graph:G,ids:mergeSel})})).json();
+  if(r.error){toast('합치기 실패: '+r.error);undoStack.pop();return;}
+  const n=mergeSel.length;G=r.graph;mergeSel=[];setDirty(true);render();renderCtx();
+  toast(n+'개 → 1개로 합침');
+}
+
+// ── 모드별 컨텍스트 패널 ────────────────────────────────────────────────────
+function renderCtx(){
+  const c=document.getElementById('ctx');
+  if(mode==='role'){
+    let h='<div class="ctitle">방 선택 후 역할 지정 (숫자/문자키 가능)</div><div class="pal">';
+    PALETTE.forEach((r,i)=>{const key=i<9?(i+1):(i===9?'0':String.fromCharCode(97+i-10));
+      h+='<span class="chip" data-r="'+r+'"><span class="sw" style="background:'+colorOf(r)+'"></span>'
+        +r+' <span class="k">'+key+'</span></span>';});
+    h+='</div><div class="help">선택 방에 <kbd>E</kbd> = 현관 지정</div>';
+    c.innerHTML=h;
+    c.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>setRole(ch.dataset.r));
+  }else if(mode==='adj'){
+    c.innerHTML='<div class="ctitle">두 방을 차례로 클릭</div>'
+      +'<div class="help">방 <b>A</b> → 방 <b>B</b> 클릭 시:<br>'
+      +'없음 → <span style="color:var(--bad-fg)">문(door)</span> → '
+      +'<span style="color:var(--accent2)">개방(open)</span> → 없음 …으로 순환.<br>'
+      +(adjA?'현재 A = <b style="color:var(--adj)">'+(G.rooms[adjA]?.role||adjA)+'</b> — B를 클릭':'A를 클릭하세요')+'</div>';
+  }else if(mode==='merge'){
+    let h='<div class="ctitle">과분할 노드 합치기 — 클릭으로 다중 선택</div>';
+    if(mergeSel.length){h+='<div class="chiprow">';
+      mergeSel.forEach((id,i)=>h+='<span class="t'+(i===0?' keep':'')+'">'+(i+1)+'. '+(G.rooms[id]?.role||id)+'</span>');
+      h+='</div><div class="help">①번 노드의 역할/속성을 유지합니다.</div>';}
+    else h+='<div class="help">합칠 노드들을 클릭하세요(2개 이상). 첫 선택이 기준.</div>';
+    h+='<button class="bigbtn go" id="mgo"'+(mergeSel.length<2?' disabled':'')+'>⛓ '+mergeSel.length+'개 합치기 (Enter)</button>';
+    if(mergeSel.length)h+='<button class="bigbtn ghost" id="mclr">선택 해제 (Esc)</button>';
+    c.innerHTML=h;
+    const go=document.getElementById('mgo');if(go)go.onclick=doMerge;
+    const cl=document.getElementById('mclr');if(cl)cl.onclick=()=>{mergeSel=[];render();renderCtx();};
+  }else if(mode==='del'){
+    c.innerHTML='<div class="ctitle">잘못된 노드 삭제</div>'
+      +'<div class="help">삭제할 방을 클릭하면 노드와 연결 엣지가 제거됩니다.<br>'
+      +'실수 시 <kbd>Ctrl+Z</kbd>로 되돌리기.</div>';
+  }
+}
+function setMode(m){mode=m;sel=null;adjA=null;mergeSel=[];
+  document.querySelectorAll('.seg button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
+  renderCtx();render();}
+document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>setMode(b.dataset.m));
+
+// ── 키보드 ──────────────────────────────────────────────────────────────────
 document.addEventListener('keydown',ev=>{
-  if(ev.target.tagName==='SELECT')return;
-  if(ev.key==='e'||ev.key==='E'){if(sel){G.rooms[sel].role='현관';setDirty(true);render();toast('현관 지정');}return;}
-  let i=-1;if(ev.key>='1'&&ev.key<='9')i=+ev.key-1;else if(ev.key==='0')i=9;
-  else if(ev.key>='a'&&ev.key<='f')i=10+ev.key.charCodeAt(0)-97;
-  if(i>=0&&i<PALETTE.length)setRole(PALETTE[i]);
+  const tag=ev.target.tagName;if(tag==='INPUT'||tag==='TEXTAREA')return;
+  if((ev.ctrlKey||ev.metaKey)&&ev.key.toLowerCase()==='z'){ev.preventDefault();undo();return;}
+  if((ev.ctrlKey||ev.metaKey)&&ev.key.toLowerCase()==='s'){ev.preventDefault();save();return;}
+  if(ev.ctrlKey||ev.metaKey||ev.altKey)return;
+  const k=ev.key.toLowerCase();
+  if(k==='f'){fit();return;}
+  if(k==='r'){setMode('role');return;} if(k==='m'){setMode('merge');return;} if(k==='d'){setMode('del');return;}
+  if(mode==='adj'||k==='a'){if(k==='a'&&mode!=='adj'){setMode('adj');return;}}
+  if(mode==='merge'){if(ev.key==='Enter'){doMerge();return;}if(ev.key==='Escape'){mergeSel=[];render();renderCtx();return;}}
+  if(mode==='role'){
+    if(k==='e'){if(sel){pushUndo();G.rooms[sel].role='현관';setDirty(true);render();toast('현관 지정');}return;}
+    let i=-1;if(ev.key>='1'&&ev.key<='9')i=+ev.key-1;else if(ev.key==='0')i=9;
+    else if(k>='a'&&k<='f')i=10+k.charCodeAt(0)-97;
+    if(i>=0&&i<PALETTE.length)setRole(PALETTE[i]);
+  }
 });
-document.getElementById('mRole').onclick=()=>{mode='role';adjA=null;document.getElementById('mRole').classList.add('on');document.getElementById('mAdj').classList.remove('on');document.getElementById('modehint').textContent='방 클릭→역할 선택(숫자키)';render();};
-document.getElementById('mAdj').onclick=()=>{mode='adj';sel=null;document.getElementById('mAdj').classList.add('on');document.getElementById('mRole').classList.remove('on');document.getElementById('modehint').textContent='방 A→방 B 클릭 = 문↔개방↔없음';render();};
-function move(d){const s=document.getElementById('sel');const n=s.selectedIndex+d;if(n>=0&&n<s.options.length){s.selectedIndex=n;vb=null;loadGraph(s.value);}}
+
+// ── prev/next/검색/복사/저장 ─────────────────────────────────────────────────
+function move(d){const i=LIST.findIndex(o=>o.id===GID);const n=i+d;
+  if(n>=0&&n<LIST.length){vb=null;loadGraph(LIST[n].id);}}
 document.getElementById('prev').onclick=()=>move(-1);
 document.getElementById('next').onclick=()=>move(1);
-document.getElementById('save').onclick=async()=>{if(!G)return;
-  const r=await (await fetch('api/graph/'+GID,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(G)})).json();
-  setDirty(false);if(r.status)showStatus(r.status);toast('저장됨 → corrected/');loadList();};
-let pan=null;
-svg.addEventListener('mousedown',ev=>{if(ev.target.tagName==='polygon'||ev.target.classList.contains('door-hit'))return;pan=[ev.clientX,ev.clientY,vb.slice()];});
-window.addEventListener('mousemove',ev=>{if(!pan||!vb)return;const sc=vb[2]/svg.clientWidth;
-  vb[0]=pan[2][0]-(ev.clientX-pan[0])*sc;vb[1]=pan[2][1]-(ev.clientY-pan[1])*sc;svg.setAttribute('viewBox',vb.join(' '));});
-window.addEventListener('mouseup',()=>pan=null);
+let st;document.getElementById('search').oninput=e=>{clearTimeout(st);
+  st=setTimeout(()=>loadList(e.target.value.trim()),220);};
+document.getElementById('copyId').onclick=async()=>{
+  try{await navigator.clipboard.writeText(GID);toast('복사됨: '+GID);}
+  catch(e){const r=document.createRange();r.selectNode(document.getElementById('pid'));
+    getSelection().removeAllRanges();getSelection().addRange(r);
+    try{document.execCommand('copy');toast('복사됨');}catch(_){toast('복사 실패 — 수동 선택하세요');}}
+};
+async function save(){if(!G)return;
+  const r=await(await fetch('api/graph/'+GID,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(G)})).json();
+  setDirty(false);if(r.status)showStatus(r.status);toast('저장됨 → corrected/');loadList(document.getElementById('search').value.trim());}
+document.getElementById('save').onclick=save;
+document.getElementById('undo').onclick=undo;
+
+// ── 팬/줌 ──────────────────────────────────────────────────────────────────
+function fit(){vb=bbox();svg.setAttribute('viewBox',vb.join(' '));}
+document.getElementById('fit').onclick=fit;
+let down=null,justPanned=false;
+svg.addEventListener('mousedown',ev=>{if(!vb)return;down=[ev.clientX,ev.clientY,vb.slice()];justPanned=false;});
+window.addEventListener('mousemove',ev=>{if(!down)return;const dx=ev.clientX-down[0],dy=ev.clientY-down[1];
+  if(!justPanned&&Math.abs(dx)+Math.abs(dy)<3)return;justPanned=true;svg.classList.add('panning');
+  const sc=down[2][2]/svg.clientWidth;vb[0]=down[2][0]-dx*sc;vb[1]=down[2][1]-dy*sc;
+  svg.setAttribute('viewBox',vb.join(' '));});
+window.addEventListener('mouseup',()=>{down=null;svg.classList.remove('panning');
+  if(justPanned)setTimeout(()=>justPanned=false,0);});
 svg.addEventListener('wheel',ev=>{ev.preventDefault();if(!vb)return;const f=ev.deltaY>0?1.1:0.9;
   const mx=vb[0]+vb[2]*ev.offsetX/svg.clientWidth,my=vb[1]+vb[3]*ev.offsetY/svg.clientHeight;
   vb[0]=mx-(mx-vb[0])*f;vb[1]=my-(my-vb[1])*f;vb[2]*=f;vb[3]*=f;svg.setAttribute('viewBox',vb.join(' '));},{passive:false});
-loadList();
-</script></body></html>""".replace("__PAL__", pal).replace("__COL__", col)
+
+renderCtx();loadList('');
+</script></body></html>"""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -329,7 +702,9 @@ class H(BaseHTTPRequestHandler):
         if p in ("/", "/index.html"):
             return self._send(200, _html(), "text/html; charset=utf-8")
         if p == "/api/graphs":
-            n = int(parse_qs(u.query).get("n", ["300"])[0])
+            qs = parse_qs(u.query)
+            n = int(qs.get("n", ["250"])[0])
+            q = (qs.get("q", [""])[0] or "").lower()
             done = set()
             if os.path.isdir(CORRECTED):
                 done = {f[:-5] for f in os.listdir(CORRECTED) if f.endswith(".json")}
@@ -342,8 +717,12 @@ class H(BaseHTTPRequestHandler):
                             ids.append(nm[:-5])
             except FileNotFoundError:
                 pass
+            total = len(ids)
+            if q:
+                ids = [i for i in ids if q in i.lower()]
             ids.sort()
-            out = [{"id": i, "corrected": i in done} for i in ids[:n]]
+            items = [{"id": i, "corrected": i in done} for i in ids[:n]]
+            out = {"total": total, "corrected": len(done), "items": items}
             return self._send(200, json.dumps(out, ensure_ascii=False))
         if p.startswith("/api/graph/"):
             gid = p[len("/api/graph/"):]
@@ -363,10 +742,20 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         u = urlparse(self.path)
+        ln = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(ln).decode("utf-8") if ln else "{}"
+        if u.path == "/api/merge":
+            try:
+                body = json.loads(raw)
+                g, err = _merge_nodes(body.get("graph") or {}, body.get("ids") or [])
+                if err:
+                    return self._send(200, json.dumps({"error": err}, ensure_ascii=False))
+                return self._send(200, json.dumps({"graph": g, "status": _status(g)}, ensure_ascii=False))
+            except Exception as e:  # noqa: BLE001
+                return self._send(200, json.dumps({"error": f"merge: {e}"}, ensure_ascii=False))
         if u.path.startswith("/api/graph/"):
             gid = u.path[len("/api/graph/"):].replace("/", "_")
-            ln = int(self.headers.get("Content-Length", 0))
-            g = json.loads(self.rfile.read(ln).decode("utf-8"))
+            g = json.loads(raw)
             g["corrected"] = True
             with open(os.path.join(CORRECTED, gid + ".json"), "w", encoding="utf-8") as f:
                 json.dump(g, f, ensure_ascii=False)
