@@ -247,9 +247,11 @@ function render(){
   while(svg.firstChild)svg.removeChild(svg.firstChild);
   if(!vb)vb=bbox();
   svg.setAttribute('viewBox',vb.join(' '));
-  const img=el('image',{href:'api/png/'+GID,x:0,y:0},svg);
-  img.setAttribute('onerror',"document.getElementById('pngwarn').style.display='block'");
-  img.addEventListener('load',()=>document.getElementById('pngwarn').style.display='none');
+  const img=el('image',{href:'api/png/'+GID,x:0,y:0,preserveAspectRatio:'none'},svg);
+  const probe=new Image();   // 자연크기(=원본 시트 px=폴리곤 좌표계)로 명시 → 정렬 보장
+  probe.onload=()=>{img.setAttribute('width',probe.naturalWidth);img.setAttribute('height',probe.naturalHeight);document.getElementById('pngwarn').style.display='none';};
+  probe.onerror=()=>{document.getElementById('pngwarn').style.display='block';};
+  probe.src='api/png/'+GID;
   for(const id in (G.rooms||{})){const r=G.rooms[id],pg=r.polygon;if(!pg||pg.length<3)continue;
     const cls='room'+(sel===id?' sel':'')+(adjA===id?' adj':'');
     const po=el('polygon',{points:pg.map(p=>p[0]+','+p[1]).join(' '),class:cls,fill:colorOf(r.role),'data-id':id},svg);
