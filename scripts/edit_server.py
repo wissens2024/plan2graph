@@ -190,8 +190,17 @@ def _merge_nodes(g, ids):
                 pass
     if polys:
         merged = unary_union(polys)
-        if merged.geom_type == "MultiPolygon":
-            merged = max(merged.geoms, key=lambda p: p.area)
+        # 과분할 조각은 벽선 두께만큼(보통 1~8px) 떨어져 union이 MultiPolygon이 되곤 한다.
+        # 모폴로지 클로징(buffer +g→ -g)으로 머리카락 갭만 메워 단일 폴리곤으로 만든다.
+        if merged.geom_type != "Polygon":
+            span = max(merged.bounds[2] - merged.bounds[0], merged.bounds[3] - merged.bounds[1], 1)
+            for gpx in (1.5, 3, 6, 12, max(span * 0.03, 12)):
+                closed = merged.buffer(gpx, join_style=2).buffer(-gpx, join_style=2)
+                if closed.geom_type == "Polygon" and not closed.is_empty:
+                    merged = closed
+                    break
+            else:
+                merged = max(merged.geoms, key=lambda p: p.area)   # 끝내 분리면 최대 조각
         if merged.geom_type == "Polygon" and not merged.is_empty:
             kept["polygon"] = [[round(x, 1), round(y, 1)] for x, y in merged.exterior.coords]
             c = merged.centroid
