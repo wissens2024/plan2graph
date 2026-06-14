@@ -385,23 +385,53 @@ try:  # 동그라미 없는 클릭형 메뉴(streamlit-option-menu). 미설치 �
 except ModuleNotFoundError:
     which = st.sidebar.radio("메뉴", _MENU, index=0, label_visibility="collapsed")
 
-# 보정(편집) 웹 에디터 링크 — Streamlit이 약한 클릭·드래그·즉시반영은 웹 SVG로(별도 서버 :8600).
+# 정보보정 웹 에디터 링크(ADR-0008) — 그래프 JSON 위 의미보정. 별도 서버 :8600.
 st.sidebar.markdown("---")
 st.sidebar.markdown(
     '<a href="/editor/" target="_blank" style="text-decoration:none;font-weight:600">'
-    '✏️ 보정 에디터 (웹·신규)</a>', unsafe_allow_html=True)
-st.sidebar.caption("문 방향 클릭·드래그 즉시반영. nginx `/editor/`→:8600 프록시 시 작동 "
+    '✏️ 정보보정 에디터 (웹)</a>', unsafe_allow_html=True)
+st.sidebar.caption("PNG 위 역할·인접·합치기·나누기 즉시반영 → edits/. nginx `/editor/`→:8600 "
                    "(임시: `ssh -L 8600:localhost:8600` 후 localhost:8600).")
 
 # ════════════════════════════════════════════════════════════════════════════
 # 🧩 AI-Hub 검수 · Corrected — R2G 파서 출력을 사람이 정보보정(역할·인접) → staging/corrected (ADR-0008/0009)
 # ════════════════════════════════════════════════════════════════════════════
 if which.startswith("🧩"):
-    from plan2graph import topoedit
+    # ADR-0008: 편집은 웹 에디터(:8600, edits/)로 이관. 이 화면 = 진행도·현황·막힌 사유(검수).
+    # (옛 topoedit.render_editor 박스드로잉 편집기 임베드 폐기 — 함수는 topoedit.py에 보존.)
+    from plan2graph import dataset_status as DS, sources
     st.title("🧩 AI-Hub 검수 · Corrected — R2G 파서 출력 + 인간 보정(HITL)")
-    # 상단 데이터셋 합계(사용/보정필요/제외/보정완료)는 종합현황·버전표에 있어 중복 → 제거.
-    # 대신 '사람 보정 건수'(SVG 보정완료 세대)를 편집기 상단 바에 표시(render_editor).
-    topoedit.render_editor(show_title=False)
+    st.caption("R2G 파서 그래프(graphs/)를 사람이 정보보정(역할·인접·합치기·나누기) → edits/. "
+               "실제 보정은 웹 에디터에서. 이 화면은 진행도·현황·막힌 사유.")
+    st.markdown('<a href="/editor/" target="_blank" style="display:inline-block;background:#1f6fd6;'
+                'color:#fff;padding:8px 16px;border-radius:6px;text-decoration:none;font-weight:700">'
+                '✏️ 웹 에디터로 보정하기</a>', unsafe_allow_html=True)
+    _cs = DS.corrected_status(sources.graphs_dir("corrected"))
+    m = st.columns(5)
+    m[0].metric("전체 세대", f"{_cs['total']:,}")
+    m[1].metric("사용(파서 통과)", f"{_cs['use']:,}")
+    m[2].metric("보정필요", f"{_cs['fix']:,}")
+    m[3].metric("제외", f"{_cs['excl']:,}")
+    m[4].metric("보정완료(edits/)", f"{_cs['done']:,}")
+    st.caption(f"사용가능 현재 {_cs['usable_now']:,} · 보정 다 하면 상한 {_cs['usable_max']:,} "
+               f"· 도면 {_cs.get('n_drawings', 0):,}장")
+    cL, cR = st.columns(2)
+    with cL:
+        if _cs.get("warns"):
+            st.markdown("**보정필요 사유 — 무엇을 고치면 사용가능?**")
+            st.dataframe([{"사유": k, "건수": v} for k, v in _cs["warns"].items()],
+                         use_container_width=True, hide_index=True)
+    with cR:
+        if _cs.get("reasons"):
+            st.markdown("**제외 사유 — 라벨로 못 살림**")
+            st.dataframe([{"사유": k, "건수": v} for k, v in _cs["reasons"].items()],
+                         use_container_width=True, hide_index=True)
+    bh = _cs.get("by_house", {})
+    if bh:
+        st.markdown("**거주형태별(세대)**")
+        st.dataframe([{"거주형태": h, "사용": v["unit"]["use"], "보정필요": v["unit"]["fix"],
+                       "제외": v["unit"]["excl"], "보정완료": v["unit"]["done"]}
+                      for h, v in sorted(bh.items())], use_container_width=True, hide_index=True)
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -625,7 +655,7 @@ if which.startswith("🏢"):
     view = st.radio(
         "보기 모드", ["그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
         index=0, horizontal=True,
-        help="그래프검수=구버전 위상 검수 · 나란히/겹쳐/원본만=라벨 육안확인 · "
+        help="그래프검수=원본∥그래프 오버레이 검수 · 나란히/겹쳐/원본만=라벨 육안확인 · "
              "사람 정보보정은 좌측 메뉴 🧩 AI-Hub 검수 · Corrected")
     # 보정(재변환) 도구 — 분류 콤보가 '보정필요(fix)'일 때만 노출(사용/제외/전체에선 숨김).
     _disp_by_label = {lab: dispo for (dispo, _r), lab in AIHUB_LABEL.items()}
