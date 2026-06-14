@@ -3,6 +3,8 @@
 > **단일 진실 = 서버(115) `data/staging/<source>/`.** 모든 수치는 코드로 측정·검증. 검수 GUI: https://plan2graph.aines.kr
 > 이 문서 = DATA_STATUS(현황) + DATASET_DESIGN(설계) 통합본. 휘발성 상세는 코드 포인터로만 둔다.
 > G-라인 g0/g1 = **objocr 2패스 재빌드 완료**(2026-06-11, n_units 40,495 · n_err 0). §5 확정값.
+>
+> ⚠️ **[검증 2026-06-15] 용어·폴더 갱신**: 라인 용어는 이제 **Parsed / Corrected**(ADR-0009) — 본 문서의 "T-라인/v*"·"G-라인/g*"는 **레거시 별칭**(=Parsed/Corrected). 그래프 스키마는 **g-0.4**(ADR-0010). 실제 폴더(서버 확인): `staging/corrected`(옛 gline)·`releases/{parsed,corrected}`(신규). ⚠️ **전환 중** — 레거시 `releases/v0/`(옛 T-line)가 git 추적으로 잔존, 신규 `parsed/corrected`는 미추적. 폴더/네이밍 완전 정리(freeze 재발행)는 **보류**(데이터 surgery 위험, 별도 작업).
 
 ---
 
@@ -59,11 +61,11 @@
 ```
 data/
   staging/<source>/    # 작업장(가변): graphs + manifest + ledger. 항상 현재 단일진실
-    aihub/  cubicasa5k/  rplan/  gline/        # gline=G-라인 단일진실(자동+사람보정, ADR-0003)
-  releases/            # 동결 스냅샷(불변) — 라인별 분리(ADR-0002)
-    tline/ v0 v2 global_all global_rplan global_cubicasa
-    gline/ g0 g1 g_global
-    recipes/<ver>.json   # T-라인 선언적 레시피(provenance 필터)
+    aihub/  cubicasa5k/  rplan/  corrected/    # corrected=Corrected 단일진실(자동+사람보정, ADR-0003/0009). 옛 이름 gline. [검증 2026-06-15]
+  releases/            # 동결 스냅샷(불변)
+    parsed/  corrected/      # Parsed/Corrected (ADR-0009). 옛 이름 tline/gline
+    v0/                      # ⚠️ 레거시(옛 T-line) — git 추적 잔존, 전환중
+    recipes/<ver>.json       # 선언적 레시피(provenance 필터)
 ```
 
 - **버전 = 선언적 조합**. provenance 필터로 v0/v2·g0/g1 구분(2026-06-11 구현, **ADR-0005**):
