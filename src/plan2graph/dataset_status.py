@@ -42,10 +42,23 @@ def _acct_key(graphs_dir: Path) -> list:
     return [n, int(graphs_dir.stat().st_mtime)]
 
 
-def _acct_cached(graphs_dir: Path, name: str, compute):
-    """compute()를 디스크 캐시. 키 일치 시 캐시 반환, 아니면 계산 후 저장."""
+def _corrected_dir(graphs_dir: Path) -> Path:
+    """사람 보정본 폴더(ADR-0008 폴더분리) — graphs/(원본) 옆 corrected/(작업)."""
+    return graphs_dir.parent / "corrected"
+
+
+def _corrected_ids(graphs_dir: Path) -> set:
+    """corrected/ 에 저장된 보정완료 unit stem 집합(에디터 저장분)."""
+    cd = _corrected_dir(graphs_dir)
+    return {f.stem for f in cd.glob("*.json")} if cd.is_dir() else set()
+
+
+def _acct_cached(graphs_dir: Path, name: str, compute, extra_key=None):
+    """compute()를 디스크 캐시. 키 일치 시 캐시 반환, 아니면 계산 후 저장.
+    extra_key: graphs/ 외 의존(예: corrected/ 변동)을 키에 더해 무효화 정합 유지
+    (scan_status 등 corrected 무관 호출자는 extra_key 없이 그대로 — 보정 저장에 불필요 재계산 안 함)."""
     cache = graphs_dir.parent / f"_cache_{name}.json"   # graphs/ 밖(parent)에 둠 → mtime 영향 없음
-    key = _acct_key(graphs_dir)
+    key = _acct_key(graphs_dir) + (list(extra_key) if extra_key else [])
     if cache.exists():
         try:
             d = json.loads(cache.read_text(encoding="utf-8"))
@@ -189,7 +202,8 @@ def gline_status(graphs_dir: Path, use_cache: bool = True) -> dict:
     세대(json 1건)와 도면(plan_id에서 _u\\d+ 제거) 둘 다 집계 — T 정본과 같은 단위 병기.
     40k 전수 파싱(~33s)이라 디스크 캐시(use_cache) — rerun·재시작에도 즉시(_acct_cached)."""
     if use_cache:
-        return _acct_cached(graphs_dir, "gline_status", lambda: gline_status(graphs_dir, use_cache=False))
+        return _acct_cached(graphs_dir, "gline_status", lambda: gline_status(graphs_dir, use_cache=False),
+                            extra_key=_acct_key(_corrected_dir(graphs_dir)))
     import re
     cnt = Counter()                                    # 세대(unit) 버킷
     reasons, warns = Counter(), Counter()
@@ -199,12 +213,13 @@ def gline_status(graphs_dir: Path, use_cache: bool = True) -> dict:
     house_unit: dict[str, Counter] = {}
     house_draw_disp: dict[str, dict[str, str]] = {}
     if graphs_dir.is_dir():
+        corrected = _corrected_ids(graphs_dir)         # ADR-0008: corrected/ 저장분 = 보정완료(done)
         for f in graphs_dir.glob("*.json"):
             try:
                 g = json.loads(f.read_text(encoding="utf-8"))
             except Exception:  # noqa: BLE001
                 continue
-            d = _gline_disp(g)
+            d = "done" if f.stem in corrected else _gline_disp(g)
             cnt[d] += 1
             pid = g.get("plan_id") or f.stem
             draw = re.sub(r"_u\d+$", "", pid)
@@ -246,18 +261,20 @@ def gline_plan_status(graphs_dir: Path, use_cache: bool = True) -> dict[str, str
     40k 전수 파싱(~33s)이라 디스크 캐시(use_cache) — rerun·재시작에도 즉시(_acct_cached)."""
     if use_cache:
         return _acct_cached(graphs_dir, "gline_plan_status",
-                            lambda: gline_plan_status(graphs_dir, use_cache=False))
+                            lambda: gline_plan_status(graphs_dir, use_cache=False),
+                            extra_key=_acct_key(_corrected_dir(graphs_dir)))
     import re
     prio = {"excl": 0, "fix": 1, "done": 2, "use": 3}
     out: dict[str, str] = {}
     if graphs_dir.is_dir():
+        corrected = _corrected_ids(graphs_dir)         # ADR-0008: corrected/ 저장분 = 보정완료(done)
         for f in graphs_dir.glob("*.json"):
             try:
                 g = json.loads(f.read_text(encoding="utf-8"))
             except Exception:  # noqa: BLE001
                 continue
             draw = re.sub(r"_u\d+$", "", g.get("plan_id") or f.stem)
-            d = _gline_disp(g)
+            d = "done" if f.stem in corrected else _gline_disp(g)
             if draw not in out or prio[d] < prio[out[draw]]:
                 out[draw] = d
     return out
