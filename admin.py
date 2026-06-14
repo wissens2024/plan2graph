@@ -363,8 +363,8 @@ def _record(**kw):
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
 st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
 _MENU = ["🧮 종합 현황",
-         "🏢 AI-Hub 검수 (T)", "🏠 CubiCasa 검수", "📐 RPLAN 검수",
-         "🧩 AI-Hub 검수 (G)", "📗 도면 생성",
+         "🏢 AI-Hub 검수 · Parsed", "🏠 CubiCasa 검수", "📐 RPLAN 검수",
+         "🧩 AI-Hub 검수 · Corrected", "📗 도면 생성",
          "⚖️ 성능 비교",
          "📜 법령 DB"]
 try:  # 동그라미 없는 클릭형 메뉴(streamlit-option-menu). 미설치 시 라디오로 폴백.
@@ -394,11 +394,11 @@ st.sidebar.caption("문 방향 클릭·드래그 즉시반영. nginx `/editor/`�
                    "(임시: `ssh -L 8600:localhost:8600` 후 localhost:8600).")
 
 # ════════════════════════════════════════════════════════════════════════════
-# 🧩 AI-Hub 검수 (G) — 자동변환 그래프를 사람이 정보보정(역할·인접) → staging/gline (ADR-0008)
+# 🧩 AI-Hub 검수 · Corrected — R2G 파서 출력을 사람이 정보보정(역할·인접) → staging/gline (ADR-0008/0009)
 # ════════════════════════════════════════════════════════════════════════════
 if which.startswith("🧩"):
     from plan2graph import topoedit
-    st.title("🧩 AI-Hub 검수 (G) — 자동변환 + 인간보정 그래프")
+    st.title("🧩 AI-Hub 검수 · Corrected — R2G 파서 출력 + 인간 보정(HITL)")
     # 상단 데이터셋 합계(사용/보정필요/제외/보정완료)는 종합현황·버전표에 있어 중복 → 제거.
     # 대신 '사람 보정 건수'(SVG 보정완료 세대)를 편집기 상단 바에 표시(render_editor).
     topoedit.render_editor(show_title=False)
@@ -499,7 +499,7 @@ if which.startswith("🧮"):
     # ── 데이터셋 버전(생성 학습용) — releases/<버전>/manifest.json 에서 직접 읽음(단일 출처) ──
     st.markdown("### 📦 데이터셋 버전 (생성 학습용)")
     st.caption("releases/<버전>/manifest.json 에서 직접 읽음 — GUI·문서·코드가 같은 출처라 숫자 일치. "
-               "T-라인=위상그래프(v0~) · G-라인=기하 2층 스키마(g0~).")
+               "Parsed=R2G 파서 출력(옛 T·tline) · Corrected=파서 출력+인간보정 HITL(옛 G·gline).")
     import glob as _glob
     _vrows = []
     for _v, _line, _rp in config.list_releases():
@@ -508,7 +508,7 @@ if which.startswith("🧮"):
         except Exception:  # noqa: BLE001
             continue
         _vrows.append({"버전": _m.get("version", _v),
-                       "라인": "T-라인" if _line == "tline" else "G-라인",
+                       "조건": "Parsed" if _line == "tline" else "Corrected",
                        "스키마": _m.get("schema", "?"),
                        "출처": "자동" if _m.get("auto") else "보정포함",
                        "주택형": ",".join(_m.get("houses", [])),
@@ -528,7 +528,7 @@ if which.startswith("🏢"):
     from PIL import Image as _PImage
     from plan2graph import inspect_excluded as _ix
 
-    st.title("🏢 AI-Hub 검수 (T) — 자동변환 그래프")
+    st.title("🏢 AI-Hub 검수 · Parsed — R2G 파서 출력(인간보정 없음)")
     # 상단 데이터셋 합계(사용/보정필요/제외)는 종합현황에 있어 중복 → 제거. 검수 본연(원본 육안)만.
     # (_aim_t 정의는 아래 '변환 보정' 기능에서 쓰이므로 유지 — 메트릭 렌더만 제거)
     _aim_t = config.DATA_DIR / "staging" / "aihub" / "manifest.jsonl"
@@ -626,7 +626,7 @@ if which.startswith("🏢"):
         "보기 모드", ["그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
         index=0, horizontal=True,
         help="그래프검수=구버전 위상 검수 · 나란히/겹쳐/원본만=라벨 육안확인 · "
-             "사람 위상 구축은 좌측 메뉴 🧩 AI-Hub 검수 (G)")
+             "사람 정보보정은 좌측 메뉴 🧩 AI-Hub 검수 · Corrected")
     # 보정(재변환) 도구 — 분류 콤보가 '보정필요(fix)'일 때만 노출(사용/제외/전체에선 숨김).
     _disp_by_label = {lab: dispo for (dispo, _r), lab in AIHUB_LABEL.items()}
     if _aim_t.exists() and _disp_by_label.get(cat) == "fix":
@@ -948,10 +948,10 @@ if which.startswith("📗"):
 
     # 콤보 고정 목록(출처·구성) — 사용자 확정. (dir 이름, 표시 라벨). 데이터 없어도 항상 표시.
     _ENGINE_DS = [
-        ("aihub_t_dual", "AI-Hub(T) dual"),
-        ("aihub_t_dual_corr", "AI-Hub(T) dual+보정"),
-        ("aihub_g_dual", "AI-Hub(G) dual"),
-        ("aihub_g_dual_corr", "AI-Hub(G) dual+보정"),
+        ("aihub_t_dual", "AI-Hub Parsed dual"),
+        ("aihub_t_dual_corr", "AI-Hub Parsed dual+보정"),
+        ("aihub_g_dual", "AI-Hub Corrected dual"),
+        ("aihub_g_dual_corr", "AI-Hub Corrected dual+보정"),
         ("rplan", "RPLAN"),
         ("cubicasa", "CubiCasa"),
     ]
