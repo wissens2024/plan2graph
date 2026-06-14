@@ -1178,12 +1178,12 @@ if which.startswith("📗"):
     st.stop()
 
 if which.startswith("⚖️"):
-    st.title("⚖️ 성능 비교 — 기하모델 A/B (도면 품질)")
-    st.caption("같은 파이프라인·같은 데이터, **기하모델만 변수**(ADR-0007). "
-               "T=약한 기하(박스 baseline) · G=강한 기하(소버린 엔진, ADR-0006). "
+    st.title("⚖️ 성능 비교 — Parsed ∥ Corrected (도면 품질)")
+    st.caption("같은 R2G 파서·같은 엔진(ADR-0006), **입력 품질만 변수**(ADR-0008·0009 = human-correction ablation). "
+               "Parsed=파서 출력(인간보정 없음) · Corrected=파서 출력+인간 보정(HITL). "
                "비교 잣대 = FID · 법규준수 · 완성도, 이미지+DXF 나란히.")
     st.info("준비 중 — 한국형 엔진(ARM-A 사전학습→파인튜닝 / ARM-B) 학습이 끝나면 "
-            "동결 test 샘플을 T∥G·ARM-A∥B·보정전후로 한 화면에 비교합니다. "
+            "동결 test 샘플을 Parsed∥Corrected·ARM-A∥B로 한 화면에 비교합니다. "
             "샘플→렌더 파이프라인(korean_sample → diffplanner_to_cadrender)은 준비 완료.")
     st.stop()
 
