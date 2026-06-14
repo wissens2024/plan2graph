@@ -438,7 +438,7 @@ if which.startswith("🧩"):
 # 🧮 검수 현황(종합) — AI-Hub·CubiCasa·RPLAN 변환 결과를 한 화면에서 비교
 # ════════════════════════════════════════════════════════════════════════════
 if which.startswith("🧮"):
-    from plan2graph import dataset_status
+    from plan2graph import dataset_status, sources
 
     st.title("🧮 검수 현황(종합)")
 
@@ -491,10 +491,21 @@ if which.startswith("🧮"):
         st.caption(f"사용 {d['use']:,} + 보정·복구 {d['fix']:,} + 제외 {d['excl']:,} = {d['total']:,} (=다운로드)")
         st.divider()
 
-    # ── 파이프라인 진행 상황 — 현재 구조(ADR-0006/0007): 박스회귀 폐기 → 자체 소버린 엔진 ──
+    # ── AI-Hub 인간보정(Corrected) 진행 — 파서출력 위 사람 정보보정(ADR-0008, edits/) ──
+    _cs = dataset_status.corrected_status(sources.graphs_dir("corrected"))
+    st.markdown("### ✏️ AI-Hub 인간보정(Corrected) 진행 — 세대")
+    _cc = st.columns(4)
+    _cc[0].metric("보정완료(edits/)", f"{_cs['done']:,}")
+    _cc[1].metric("보정필요", f"{_cs['fix']:,}")
+    _cc[2].metric("사용(파서 통과)", f"{_cs['use']:,}")
+    _cc[3].metric("사용가능 현재→상한", f"{_cs['usable_now']:,}→{_cs['usable_max']:,}")
+    st.caption("R2G 파서 출력을 사람이 정보보정 → edits/. 상세·보정은 좌측 🧩 Corrected / 웹 에디터.")
+    st.divider()
+
+    # ── 파이프라인 진행 상황 — ADR-0006(소버린 엔진) · ADR-0008/0009(비교축·용어) ──
     st.markdown("### 🧭 파이프라인 진행 상황 — 데이터 → 통일그래프 → 한국형 엔진 → 도면+DXF")
-    st.caption("현재 구조(ADR-0006/0007): 박스회귀 폐기 → 자체 소버린 엔진(DiffPlanner 골격 "
-               "한국형 확장). ✅완료 · 🔄진행 · ⬜예정. 엔진은 서버 ~/diffplanner_work.")
+    st.caption("ADR-0006 소버린 엔진(DiffPlanner 골격 한국형 확장) · ADR-0008 비교축(Parsed∥Corrected). "
+               "✅완료 · 🔄진행 · ⬜예정. 엔진은 서버 ~/diffplanner_work.")
     _DIFFP = Path("~/diffplanner_work").expanduser()
     _ckpt_root = _DIFFP / "ckpt_kr"
 
@@ -509,7 +520,7 @@ if which.startswith("🧮"):
     _stages = [
         ("1. 품질 게이트(온전/보정필요)", "plan_quality · 온전 64.7%", "✅",
          "src/plan2graph/plan_quality.py"),
-        ("2. 통일 그래프(2층 스키마)", "geomgraph", "✅", "src/plan2graph/geomgraph.py"),
+        ("2. 통일 그래프(R2G 파서)", "geomgraph", "✅", "src/plan2graph/geomgraph.py"),
         ("3. 엔진 데이터 변환(온전만 · 13역할/18방)",
          ("준비됨" if _kor_data.exists() else "—"), "✅" if _kor_data.exists() else "⬜",
          "scripts/korean_to_engine.py"),
@@ -520,7 +531,7 @@ if which.startswith("🧮"):
          "gate2_train_runbook.sh → ckpt_kr"),
         ("6. 샘플링 → 도면+DXF(neuro-symbolic 완성)", "korean_sample → cadrender", "✅",
          "scripts/diffplanner_to_cadrender.py"),
-        ("7. 비교(T∥G·ARM · FID·법규·완성도)", "⚖️ 성능 비교 화면", "⬜", "ADR-0007 ④"),
+        ("7. 비교(Parsed∥Corrected·ARM · FID·법규·완성도)", "⚖️ 성능 비교 화면", "⬜", "ADR-0008 비교축"),
     ]
     st.table([{"단계": s, "상태": stt, "산출물": a, "위치": loc}
               for s, a, stt, loc in _stages])
