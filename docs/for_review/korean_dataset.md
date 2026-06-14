@@ -1,6 +1,6 @@
 # 한국형 데이터 표현 (외부 검토용 — ChatGPT 등)
 
-> plan2graph가 한국 AI-Hub 아파트 평면도를 변환한 **통일 그래프(geomgraph g-0.3)**.
+> plan2graph가 한국 AI-Hub 아파트 평면도를 변환한 **통일 그래프(geomgraph g-0.4, ADR-0010)**.
 > 실제 샘플: `sample_parsed.json`(파서출력 7방) · `sample_corrected.json`(사람보정 9방).
 > 모든 수치는 실측(2026-06). 좌표 단위 = 픽셀(px), 축척 mm/px는 대부분 미정(아래).
 
@@ -20,16 +20,22 @@
 | 기구(가구) | **0%** | 없음 → 역할 기반 추론 필요 |
 | 축척(mm/px) | **0%** | 절대치수 미정 → 앵커/사람입력 필요 |
 
-## 3. 스키마 (geomgraph g-0.3)
-최상위 키: `schema_version, plan_id, house, scale_mm_per_px, bbox_px, n_rooms, n_edges, n_walls, n_doors, n_windows, rooms, edges, walls, doors, windows, validation, meta, unit_id, corrected, provenance`
+## 3. 스키마 (geomgraph g-0.4 — ADR-0010)
+> g-0.3 → g-0.4 변경: 완성 7레이어(벽두께·문스윙·창·가구·치수) + 방-방 경계 태그 + 축척 해소.
+> **★=g-0.4 신규/변경.** g-0.3 산출물은 빌더 갱신 후 점진 채움.
 
-- **rooms** (dict, key=str(int)): `role`·`base`(역할/원라벨)·`is_connector`(복도·전실)·`centroid`·`bbox_px[x,y,w,h]`·`area_px`·`area_m2`(null=축척미정)·`aspect_ratio`·`touches_exterior`·`has_window`·`n_windows`·`fixtures`(현재 [])·`privacy`(public/private/service)·`wall_ids`·`door_ids`·`window_ids`·`polygon`([[x,y],...])·`dist_from_entrance`
-- **edges** (list): `{from:int, to:int, via:"door"|"open", door_id, privacy_transition, dist_from_entrance}` — 방-방 인접(무방향). via=door(문) / open(개방연결).
-- **doors** (list): `{id, connects:[a,b], via, position[x,y], polygon, width_px(null많음), subtype, orientation(null많음), needs_orientation_review}`
-- **windows** (list): `{id, belongs_to:int, position, bbox_px, width_px, on_wall}`
-- **walls** (list): 코너 간 선분(벽).
-- **validation**: `{passed, reasons[], warnings[], info[]}` (geomgraph 무결성 R1~R8).
-- **meta**: `{house_type(APT/DEH/ROW), scale_mm_per_px, status(success/quarantine), reason, n_*}`
+최상위 키: `schema_version("g-0.4"), plan_id, house, ★scale{mm_per_px,source,anchor,confidence}, ★units("mm"), bbox_px, ★bbox_mm, n_*, rooms, edges, walls, doors, windows, ★fixtures, ★dimensions, validation, meta, unit_id, corrected, provenance`
+
+- **rooms** (dict, key=str(int)): `role`·`base`·`is_connector`(복도·전실=별도 노드)·★`connector_origin`("wall|open|derived")·`centroid`·`bbox_px`·`area_px`·`area_m2`(scale서 도출)·`aspect_ratio`·`touches_exterior`·`has_window`·`n_windows`·★`fixture_ids[]`·`privacy`·`wall_ids`·`door_ids`·`window_ids`·`polygon`·`dist_from_entrance`·★`label{name,place_at}`
+- **edges** (list): `{from, to, ★boundary:"wall"|"open"|"door", door_id, ★shared_segment[[x,y],[x,y]], privacy_transition, dist_from_entrance}` — **★boundary가 렌더의 벽 그림 여부 결정**(open=벽 안 그림→오픈플랜).
+- **doors** (list): `{id, connects:[a,b], position, polygon, ★width_mm, ★type("single|double|sliding|중문|folding|pocket"), ★swing{hinge_room,hinge_point,direction:"in|out",angle}, on_wall, needs_orientation_review}`
+- **windows** (list): `{id, belongs_to, position, bbox_px, ★width_mm, ★sill_height_mm, ★type("sliding|casement|fixed"), on_wall}`
+- **walls** (list): `{id, a, b, ★type("exterior|interior"), ★thickness_mm(외~200/내~120), ★sides[room,room]}` — **open 경계는 walls에 없음(=안 그림)**.
+- ★**fixtures** (list, 신규): `{id, name, category, room_id, position, footprint, orientation_deg, size_mm[w,d], source("obj_detected"|"role_inferred"), confidence}` — Tier A(OBJ 5종, rotation→orientation) + Tier B(역할 카탈로그 `fixture_catalog.py`).
+- ★**dimensions** (list, 신규): `{id, type("linear"|"overall"), from, to, value_mm, refers_to}` — scale+기하서 *도출*(사람 입력 X).
+- **validation**: `{passed, reasons[], warnings[], info[]}` (R1~R8 + ★g-0.4 불변: 벽 없는 경계=open, 복도 노드 존재).
+- **meta**: `{house_type, scale_mm_per_px, status, reason, n_*}`
+- **DXF 레이어**(렌더 규약): `A-WALL/A-DOOR/A-GLAZ/A-FURN/A-DIM/A-AREA/A-ANNO`.
 
 ⚠️ **두 개의 품질 게이트가 있음**(헷갈리기 쉬움):
 - `geomgraph validation`(R1~R8): 분리덩어리·문없는방·도달불가·현관없음·미해소문 등 *구조 무결성*.
@@ -46,7 +52,7 @@
 현관 →[좁은 복도]→ 거실  (복도에 욕실·침실 문이 달림)
 안방 →[화장대 전실/파우더룸]→ 드레스룸 · 전용욕실
 ```
-이 **연결공간 2종(복도, 파우더룸/전실)이 R2G 파서에서 옆 큰 방에 흡수**되는 게 핵심 결함 → 길쭉한 거실/드레스룸(전체 ~24%). 위상 허브가 사라짐. (사람 보정 SPLIT으로 분리·복원 = 거실→거실+복도, 드레스룸→드레스룸+파우더룸. 문/엣지 기하 재분배.)
+이 **연결공간 2종(복도, 파우더룸/전실)이 R2G 파서에서 옆 큰 방에 흡수**되어 위상 허브가 사라질 수 있음. ⚠️ **단 ADR-0010: 길쭉/비직사각 거실 자체는 결함 아님(한국 정상 기하)** — 결함은 *벽이 있는데 흡수된* 경우뿐. 그 경우만 사람 보정 SPLIT으로 분리·복원(거실→거실+복도, 문/엣지 재분배). 벽 없는 오픈플랜은 보존하되 방-방 경계를 `boundary:"open"`으로 표기(벽 안 그림). 종횡비 기준의 "흡수 24%"는 과대계상이라 폐기.
 
 ## 6. 알려진 데이터 이슈 (사실, 보정 대상)
 - **전실 → 현관 오라벨**: AI-Hub가 전실을 전부 "현관"으로 라벨(전실 0건). 체계적 오류.
