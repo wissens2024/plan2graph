@@ -67,3 +67,7 @@ venv/
 *.bundle
 /*.log
 /scripts/_diag_*.py
+
+# 렌더 스크래치(서브폴더·스크립트 미리보기) — 재생성, git 제외 (2026-06-14)
+/artifacts/*/*.png
+/scripts/*.png
