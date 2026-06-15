@@ -71,6 +71,82 @@ def _apply_house(g, code):
     return g
 
 
+# ── 평면도 구분 + 세대수 (단위/층) — 현관 수에서 기본값 도출, 사람이 보정 ──
+PLAN_KINDS = ["단위세대", "기준층", "기타"]
+
+
+def _n_entrance(g):
+    """현관 역할 방 개수 = 세대수 추정 신호([[derive-dont-duplicate-known-info]])."""
+    rooms = (g or {}).get("rooms") or {}
+    return sum(1 for r in rooms.values() if r.get("role") == "현관")
+
+
+def _kind_default(n):
+    return "단위세대" if (n or 1) <= 1 else "기준층"
+
+
+def _meta_of(g):
+    meta = g.get("meta")
+    if not isinstance(meta, dict):
+        meta = g["meta"] = {}
+    return meta
+
+
+def _derive_unit_meta(g):
+    """meta.n_households(현관수 기본)·meta.plan_kind(세대수 기본) 없으면 채움(비파괴)."""
+    if not g:
+        return g
+    meta = _meta_of(g)
+    if not isinstance(meta.get("n_households"), int):
+        meta["n_households"] = max(1, _n_entrance(g))
+    if meta.get("plan_kind") not in PLAN_KINDS:
+        meta["plan_kind"] = _kind_default(meta["n_households"])
+    return g
+
+
+def _kind_of(ent, meta=None):
+    """필터용: 사람보정(plan_kind) 우선, 없으면 세대수/현관수로 도출."""
+    if meta and meta.get("plan_kind") in PLAN_KINDS:
+        return meta["plan_kind"]
+    n = (meta or {}).get("n_households")
+    if not isinstance(n, int):
+        n = max(1, ent)
+    return _kind_default(n)
+
+
+# ── 스케일(축척) — mm/px. 수동(치수선 2점+실측 mm) 우선, 문폭 900mm 자동 폴백 ──
+DOOR_STD_MM = 900.0
+
+
+def _apply_scale(g, mm_per_px, source):
+    if not g or not mm_per_px or mm_per_px <= 0:
+        return g
+    v = round(float(mm_per_px), 4)
+    g["scale_mm_per_px"] = v
+    meta = _meta_of(g)
+    meta["scale_mm_per_px"] = v
+    meta["scale_source"] = source           # measured | door_est | default
+    return g
+
+
+def _scale_from_door(g):
+    """문 폭 ≈ 900mm 가정 → mm/px 추정(문 bbox 최장변의 중앙값)."""
+    import statistics
+    spans = []
+    for d in ((g or {}).get("doors") or []):
+        poly = d.get("polygon")
+        if poly and len(poly) >= 2:
+            xs = [p[0] for p in poly]
+            ys = [p[1] for p in poly]
+            s = max(max(xs) - min(xs), max(ys) - min(ys))
+            if s > 1:
+                spans.append(s)
+    if not spans:
+        return None
+    px = statistics.median(spans)
+    return round(DOOR_STD_MM / px, 4) if px > 0 else None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 원본 PNG 인덱스 (sig → (zip, entry)) — 1회 빌드 후 디스크 캐시. 백그라운드 로드.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -100,6 +176,44 @@ def _build_png_index():
         _PNG_IDX = {}
         _PNG_IDX_STATE = "error"
         print(f"[png-index] 빌드 실패: {e}")
+
+
+# ── 필터 인덱스(gid → {house, 현관수}) — 도면찾기 주거형태·단위/층 필터용. 1회 빌드·캐시 ──
+META_INDEX = os.path.join(_BASE, "_meta_index.json")
+_META_IDX = None
+_META_IDX_STATE = "idle"
+
+
+def _build_meta_index():
+    global _META_IDX, _META_IDX_STATE
+    _META_IDX_STATE = "building"
+    try:
+        if os.path.exists(META_INDEX):
+            with open(META_INDEX, encoding="utf-8") as f:
+                _META_IDX = json.load(f)
+            _META_IDX_STATE = "ready"
+            return
+        idx = {}
+        with os.scandir(GRAPHS) as it:
+            for e in it:
+                nm = e.name
+                if not (nm.startswith("APT_") and nm.endswith(".json")):
+                    continue
+                gid = nm[:-5]
+                try:
+                    g = json.load(open(e.path, encoding="utf-8"))
+                    house = (g.get("meta") or {}).get("house_type") or g.get("house") or gid.split("_")[0]
+                    idx[gid] = {"house": house, "ent": _n_entrance(g)}
+                except Exception:  # noqa: BLE001
+                    idx[gid] = {"house": gid.split("_")[0], "ent": 1}
+        _META_IDX = idx
+        with open(META_INDEX, "w", encoding="utf-8") as f:
+            json.dump(idx, f, ensure_ascii=False)
+        _META_IDX_STATE = "ready"
+    except Exception as e:  # noqa: BLE001
+        _META_IDX = {}
+        _META_IDX_STATE = "error"
+        print(f"[meta-index] 빌드 실패: {e}")
 
 
 def _sig_of(plan_id):
@@ -276,8 +390,9 @@ def _html():
     pal = json.dumps(PALETTE, ensure_ascii=False)
     col = json.dumps(ROLE_COLOR, ensure_ascii=False)
     hk = json.dumps([[h, HOUSE_KO[h]] for h in HOUSES], ensure_ascii=False)
+    pk = json.dumps(PLAN_KINDS, ensure_ascii=False)
     return (_HTML.replace("__PAL__", pal).replace("__COL__", col)
-            .replace("__HOUSE__", hk))
+            .replace("__HOUSE__", hk).replace("__KINDS__", pk))
 
 
 _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
@@ -288,7 +403,7 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a; --line2:#363c49;
    --txt:#e6e8ee; --muted:#9aa3b2; --accent:#3b82f6; --accent2:#22d3ee;
    --ok-bg:#0f3a25; --ok-fg:#4ade80; --bad-bg:#3a1620; --bad-fg:#fb7185; --na-bg:#23272f; --na-fg:#9aa3b2;
-   --sel:#f59e0b; --adj:#a855f7; --merge:#22d3ee; --del:#ef4444; --split:#84cc16;
+   --sel:#f59e0b; --adj:#a855f7; --merge:#22d3ee; --del:#ef4444; --split:#84cc16; --scale:#38bdf8;
  }
  *{box-sizing:border-box} html,body{margin:0;height:100%}
  body{font-family:"Pretendard",system-ui,-apple-system,"Segoe UI",sans-serif;
@@ -371,6 +486,24 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
  .seg button[data-m=del].on{background:var(--del);border-color:var(--del);color:#fff}
  .seg button[data-m=split]{grid-column:1/-1}
  .seg button[data-m=split].on{background:var(--split);border-color:var(--split);color:#0b0d12}
+ .seg button[data-m=scale]{grid-column:1/-1}
+ .seg button[data-m=scale].on{background:var(--scale);border-color:var(--scale);color:#0b0d12}
+
+ /* 도면찾기 필터 */
+ .filters{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:7px}
+ .filters select{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
+   border-radius:8px;padding:7px 8px;font-size:12px;outline:none;cursor:pointer}
+ .filters select:focus{border-color:var(--accent)}
+ .fcount{font-size:11px;color:var(--accent2);margin:5px 0 0;min-height:13px}
+
+ /* 스케일 측정 오버레이 */
+ .ruler{pointer-events:none}
+ .ruler .line{stroke:var(--scale);stroke-width:3.5;stroke-linecap:round}
+ .ruler .prev{stroke:var(--scale);stroke-width:2.5;stroke-dasharray:6 6;opacity:.85}
+ .ruler .pt{fill:#fff;stroke:var(--scale);stroke-width:2.5}
+ .ruler .tick{stroke:var(--scale);stroke-width:2}
+ .ruler .lbl{font-size:16px;font-weight:800;fill:#fff;text-anchor:middle;dominant-baseline:central;
+   paint-order:stroke;stroke:#0b0d12;stroke-width:4;stroke-linejoin:round}
 
  /* 모드별 동적 패널 */
  #ctx{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px;margin-bottom:8px;min-height:56px}
@@ -464,6 +597,12 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
      <select id="house"></select>
      <span class="hwarn" id="housewarn" title="파일명 접두와 거주형태가 다름">⚠</span>
    </div>
+   <div class="housebar" title="평면도 구분과 세대수 — 현관 수에서 기본값(수정 가능)">
+     <span class="hl">📐 평면도</span>
+     <select id="kind"></select>
+     <input id="nhh" type="number" min="1" max="99" title="세대수" style="width:48px">
+     <span class="hl" style="flex-shrink:0">세대</span>
+   </div>
    <div class="prog">
      <div class="row"><span>보정 완료 (전체 중)</span><span><b id="pdone">0</b> / <span id="ptot">0</span></span></div>
      <div class="bar"><i id="pbar"></i></div>
@@ -478,11 +617,17 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
      <button data-m="merge">⛓ 합치기 <span class="k">M</span></button>
      <button data-m="del">🗑 삭제 <span class="k">D</span></button>
      <button data-m="split">✂ 나누기 <span class="k">S</span></button>
+     <button data-m="scale">📏 스케일 <span class="k">L</span></button>
    </div>
    <div id="ctx"></div>
 
    <div class="lbl">도면 찾기</div>
+   <div class="filters">
+     <select id="fHouse" title="주거형태로 거르기"><option value="">주거형태 전체</option></select>
+     <select id="fKind" title="단위/층으로 거르기"><option value="">단위/층 전체</option></select>
+   </div>
    <input id="search" placeholder="ID 일부로 검색 (예: cb4a)">
+   <div id="listcount" class="fcount"></div>
    <div id="list"></div>
    <div class="nav"><button id="prev">◀ 이전</button><button id="next">다음 ▶</button></div>
 
@@ -492,9 +637,10 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
      <span style="color:var(--adj)">●</span> 인접A ·
      <span style="color:var(--merge)">●</span> 합치기 ·
      <span style="color:var(--del)">●</span> 삭제 ·
-     <span style="color:var(--split)">●</span> 나누기<br>
+     <span style="color:var(--split)">●</span> 나누기 ·
+     <span style="color:var(--scale)">●</span> 스케일<br>
      <kbd>휠</kbd> 확대 · <kbd>드래그</kbd> 이동 · <kbd>F</kbd> 맞춤<br>
-     <kbd>R</kbd><kbd>A</kbd><kbd>M</kbd><kbd>D</kbd><kbd>S</kbd> 모드 · <kbd>Ctrl+Z</kbd> 되돌리기 · <kbd>Ctrl+S</kbd> 저장<br>
+     <kbd>R</kbd><kbd>A</kbd><kbd>M</kbd><kbd>D</kbd><kbd>S</kbd><kbd>L</kbd> 모드 · <kbd>Ctrl+Z</kbd> 되돌리기 · <kbd>Ctrl+S</kbd> 저장<br>
      <b>배경 = 원본 도면</b> — 문·치수·여닫이는 PNG에서 직접 확인.
    </div></details>
  </div>
@@ -512,11 +658,12 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 </div>
 <script>
 const NS='http://www.w3.org/2000/svg', svg=document.getElementById('svg');
-const PALETTE=__PAL__, ROLE_COLOR=__COL__, HOUSES=__HOUSE__;
+const PALETTE=__PAL__, ROLE_COLOR=__COL__, HOUSES=__HOUSE__, KINDS=__KINDS__;
 const HOUSING_NORM={APT:'apartment',DEH:'detached',ROW:'rowhouse'};
-const MODES={role:'🎨 역할',adj:'🔗 인접',merge:'⛓ 합치기',del:'🗑 삭제',split:'✂ 나누기'};
+const MODES={role:'🎨 역할',adj:'🔗 인접',merge:'⛓ 합치기',del:'🗑 삭제',split:'✂ 나누기',scale:'📏 스케일'};
 let G=null,GID=null,dirty=false,mode='role',sel=null,adjA=null,mergeSel=[],vb=null;
 let splitSel=null,cutPts=[],splitRoles=null,snapOrtho=true;
+let rulerPts=[];                              // 스케일 측정 2점
 let LIST=[],undoStack=[];
 function evToUser(ev){const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;
   const u=pt.matrixTransform(svg.getScreenCTM().inverse());return [u.x,u.y];}
@@ -545,11 +692,17 @@ function showStatusLocal(){/* 로컬 변경 후엔 게이트 재판정은 저장
 
 // ── 목록/검색 ───────────────────────────────────────────────────────────────
 async function loadList(q){
-  const r=await(await fetch('api/graphs?n=250'+(q?'&q='+encodeURIComponent(q):''))).json();
+  const fh=document.getElementById('fHouse').value, fk=document.getElementById('fKind').value;
+  let url='api/graphs?n=250'+(q?'&q='+encodeURIComponent(q):'')
+    +(fh?'&house='+encodeURIComponent(fh):'')+(fk?'&kind='+encodeURIComponent(fk):'');
+  const r=await(await fetch(url)).json();
   LIST=r.items;
   document.getElementById('pdone').textContent=r.corrected;
   document.getElementById('ptot').textContent=r.total;
   document.getElementById('pbar').style.width=(r.total?100*r.corrected/r.total:0).toFixed(1)+'%';
+  // 필터 결과 개수 표시(전체와 다를 때만)
+  const lbl=document.getElementById('listcount');
+  if(lbl)lbl.textContent=(r.filtered!=null&&(fh||fk))?('검색결과 '+r.filtered+'개'+(r.indexing?' · 인덱싱중…':'')):'';
   renderList();
   if(!GID&&LIST.length)loadGraph(LIST[0].id);
 }
@@ -564,10 +717,10 @@ function renderList(){
 async function loadGraph(id){
   const r=await(await fetch('api/graph/'+id)).json();
   if(r.error){toast('로드 실패: '+r.error);return;}
-  G=r.graph;GID=id;sel=null;adjA=null;mergeSel=[];undoStack=[];
+  G=r.graph;GID=id;sel=null;adjA=null;mergeSel=[];rulerPts=[];undoStack=[];
   document.getElementById('undo').disabled=true;setDirty(false);
   document.getElementById('pid').textContent=id;
-  syncHouse();showStatus(r.status);renderList();render();
+  syncHouse();syncUnit();showStatus(r.status);renderList();render();
 }
 
 // ── 거주형태 보정 ────────────────────────────────────────────────────────────
@@ -585,6 +738,25 @@ function setHouse(code){                     // g.house · meta.house_type · me
   setDirty(true);syncHouse();
   toast('거주형태 → '+code+(code===(GID||'').split('_')[0]?'':' (파일명 접두와 다름 — 메타만 보정)'));
 }
+
+// ── 평면도 구분 + 세대수 (현관 수 기본, 사람 보정) ──────────────────────────────
+function nEntrance(){return Object.values((G&&G.rooms)||{}).filter(r=>r.role==='현관').length;}
+function curHH(){const m=(G&&G.meta)||{};
+  return Number.isInteger(m.n_households)?m.n_households:Math.max(1,nEntrance());}
+function curKind(){const m=(G&&G.meta)||{};
+  return KINDS.includes(m.plan_kind)?m.plan_kind:(curHH()<=1?'단위세대':'기준층');}
+function syncUnit(){
+  document.getElementById('kind').value=curKind();
+  document.getElementById('nhh').value=curHH();
+}
+function setKind(k){if(!G||!KINDS.includes(k)||curKind()===k)return;
+  pushUndo();G.meta=G.meta||{};G.meta.plan_kind=k;setDirty(true);syncUnit();toast('평면도 → '+k);}
+function setHH(n){n=Math.max(1,Math.min(99,parseInt(n,10)||1));if(!G||curHH()===n)return;
+  pushUndo();G.meta=G.meta||{};G.meta.n_households=n;
+  // 세대수와 구분 자동 정합(사람이 구분을 따로 안 정했으면)
+  if(!KINDS.includes(G.meta.plan_kind))G.meta.plan_kind=(n<=1?'단위세대':'기준층');
+  setDirty(true);syncUnit();toast('세대수 → '+n);}
+
 function showStatus(st){
   const e=document.getElementById('stat');
   if(!st||st.clean===null){e.className='na';e.textContent='판정 불가';return;}
@@ -635,7 +807,24 @@ function render(){
       const bt=el('text',{x:c[0]+30,y:c[1]-20},g);bt.textContent=(i+1);}}
   }
   if(mode==='split')drawCut();
+  if(mode==='scale')drawRuler();
   document.getElementById('modetag').textContent=MODES[mode];
+}
+// 스케일 측정 오버레이(2점 + 미리보기 선). pointer-events:none.
+function drawRuler(){
+  if(!rulerPts.length)return;
+  const g=el('g',{class:'ruler'},svg);
+  const sz=Math.max((vb&&vb[2])||1000,(vb&&vb[3])||1000),tick=sz*0.012;
+  if(rulerPts.length===1){const p=rulerPts[0];
+    el('line',{class:'prev',id:'rulerprev',x1:p[0],y1:p[1],x2:p[0],y2:p[1]},g);}
+  if(rulerPts.length===2){const[p0,p1]=rulerPts;
+    el('line',{class:'line',x1:p0[0],y1:p0[1],x2:p1[0],y2:p1[1]},g);
+    const dx=p1[0]-p0[0],dy=p1[1]-p0[1],L=Math.hypot(dx,dy)||1,nx=-dy/L,ny=dx/L;
+    [p0,p1].forEach(p=>el('line',{class:'tick',x1:p[0]-nx*tick,y1:p[1]-ny*tick,x2:p[0]+nx*tick,y2:p[1]+ny*tick},g));
+    const mx=(p0[0]+p1[0])/2,my=(p0[1]+p1[1])/2;
+    const t=el('text',{class:'lbl',x:mx+nx*tick*1.6,y:my+ny*tick*1.6},g);
+    t.textContent=Math.round(L)+'px';}
+  rulerPts.forEach(p=>el('circle',{class:'pt',cx:p[0],cy:p[1],r:6},g));
 }
 // 컷 오버레이(선택방·점·컷선·연장·좌우 역할 스와치). 전부 pointer-events:none.
 function drawCut(){
@@ -664,6 +853,7 @@ function drawCut(){
 
 // ── 방 클릭 디스패치 ─────────────────────────────────────────────────────────
 function onRoom(id,ev){
+  if(mode==='scale'){if(ev)addRulerPt(ev);return;}   // 스케일=좌표만(방 무관)
   if(!G.rooms[id])return;
   if(mode==='split'){
     if(!splitSel){splitSel=id;cutPts=[];splitRoles=null;render();renderCtx();
@@ -726,6 +916,39 @@ async function doSplit(){
 }
 function resetSplit(){splitSel=null;cutPts=[];splitRoles=null;render();renderCtx();}
 
+// ── 스케일(축척) 보정 ────────────────────────────────────────────────────────
+function addRulerPt(ev){if(rulerPts.length>=2)rulerPts=[];
+  rulerPts.push(evToUser(ev));render();renderCtx();
+  if(rulerPts.length===2)toast('두 점 거리 = '+rulerPx().toFixed(0)+'px — 실제 길이(mm) 입력');}
+function rulerPx(){if(rulerPts.length!==2)return 0;
+  return Math.hypot(rulerPts[1][0]-rulerPts[0][0],rulerPts[1][1]-rulerPts[0][1]);}
+function curScale(){return (G&&(G.scale_mm_per_px||(G.meta&&G.meta.scale_mm_per_px)))||null;}
+function totalAreaM2(s){if(!s)return null;let a=0;
+  for(const r of Object.values((G&&G.rooms)||{}))a+=(r.area_px||0);
+  return a*(s/1000)*(s/1000);}
+function applyScaleVal(mmpp,src){if(!G||!mmpp||mmpp<=0)return;
+  pushUndo();G.scale_mm_per_px=Math.round(mmpp*1e4)/1e4;G.meta=G.meta||{};
+  G.meta.scale_mm_per_px=G.scale_mm_per_px;G.meta.scale_source=src;
+  setDirty(true);renderCtx();
+  const a=totalAreaM2(G.scale_mm_per_px);
+  toast('스케일 '+G.scale_mm_per_px+' mm/px'+(a?(' · 전용 ≈'+a.toFixed(1)+'㎡'):''));}
+function applyRuler(){const mm=parseFloat(document.getElementById('rmm').value);
+  const px=rulerPx();
+  if(!(mm>0)){toast('실제 길이(mm)를 입력');return;}
+  if(!(px>0)){toast('도면 위에 2점을 찍으세요');return;}
+  applyScaleVal(mm/px,'measured');}
+async function autoScale(){
+  const r=await(await fetch('api/scale_auto',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({graph:G})})).json();
+  if(r.error||!r.scale){toast('자동 추정 실패(문 데이터 없음) — 치수선 2점으로 입력');return;}
+  applyScaleVal(r.scale,'door_est');toast('문폭 추정 → '+r.scale+' mm/px (검증 필요)');}
+async function batchScale(){const s=curScale();if(!s){toast('먼저 스케일을 정하세요');return;}
+  const r=await(await fetch('api/scale_batch',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({gid:GID,scale:s})})).json();
+  if(r.error){toast('일괄 적용 실패: '+r.error);return;}
+  toast('같은 단지 '+r.count+'개 도면에 스케일 적용됨');}
+function resetRuler(){rulerPts=[];render();renderCtx();}
+
 // ── 모드별 컨텍스트 패널 ────────────────────────────────────────────────────
 function renderCtx(){
   const c=document.getElementById('ctx');
@@ -784,9 +1007,33 @@ function renderCtx(){
     if(sR)sR.onchange=()=>{splitRoles=[sL.value,sR.value];render();renderCtx();};
     const sgo=document.getElementById('sgo');if(sgo)sgo.onclick=doSplit;
     const scl=document.getElementById('sclr');if(scl)scl.onclick=resetSplit;
+  }else if(mode==='scale'){
+    const s=curScale(),src=(G.meta&&G.meta.scale_source)||(s?'default':null);
+    const a=totalAreaM2(s);
+    let h='<div class="ctitle">스케일(축척) 보정 — 도면 1장당 실측 mm/px</div>';
+    h+='<div class="help">현재: <b style="color:var(--scale)">'+(s?(s+' mm/px'):'없음')+'</b>'
+      +(src?(' <span style="color:var(--muted)">('+({measured:'치수선 측정',door_est:'문폭 추정',default:'기본값(미보정)'}[src]||src)+')</span>'):'')
+      +(a?('<br>전용면적 검산 ≈ <b>'+a.toFixed(1)+'㎡</b>'):'')+'</div>';
+    h+='<div class="help" style="margin-top:6px"><b>① 치수선 2점 측정(정확)</b><br>'
+      +'원본의 인쇄된 치수선 양 끝을 클릭 ('+rulerPts.length+'/2)';
+    if(rulerPts.length===2)h+=' · <b style="color:var(--scale)">'+rulerPx().toFixed(0)+'px</b>';
+    h+='</div>'
+      +'<div style="display:flex;gap:6px;align-items:center;margin:6px 0">'
+      +'<input id="rmm" type="number" min="1" placeholder="실제 mm (예 3600)" style="flex:1">'
+      +'<button class="bigbtn go" id="rgo" style="margin:0;width:auto;padding:9px 12px;background:var(--scale)">적용</button></div>';
+    if(rulerPts.length)h+='<button class="bigbtn ghost" id="rclr">측정 다시 (Esc)</button>';
+    h+='<div class="help" style="margin-top:8px"><b>② 자동 추정(폴백)</b> — 치수선이 없을 때</div>'
+      +'<button class="bigbtn ghost" id="rauto">📏 문폭 900mm로 자동 추정</button>';
+    if(s)h+='<button class="bigbtn ghost" id="rbatch">같은 단지 전체에 이 스케일 적용</button>';
+    c.innerHTML=h;
+    const rgo=document.getElementById('rgo');if(rgo)rgo.onclick=applyRuler;
+    const rmm=document.getElementById('rmm');if(rmm)rmm.onkeydown=(e)=>{if(e.key==='Enter')applyRuler();};
+    const rcl=document.getElementById('rclr');if(rcl)rcl.onclick=resetRuler;
+    const rau=document.getElementById('rauto');if(rau)rau.onclick=autoScale;
+    const rba=document.getElementById('rbatch');if(rba)rba.onclick=batchScale;
   }
 }
-function setMode(m){mode=m;sel=null;adjA=null;mergeSel=[];splitSel=null;cutPts=[];splitRoles=null;
+function setMode(m){mode=m;sel=null;adjA=null;mergeSel=[];splitSel=null;cutPts=[];splitRoles=null;rulerPts=[];
   document.querySelectorAll('.seg button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
   renderCtx();render();}
 document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>setMode(b.dataset.m));
@@ -800,11 +1047,12 @@ document.addEventListener('keydown',ev=>{
   const k=ev.key.toLowerCase();
   if(k==='f'){fit();return;}
   if(k==='r'){setMode('role');return;} if(k==='m'){setMode('merge');return;} if(k==='d'){setMode('del');return;}
-  if(k==='s'){setMode('split');return;}
+  if(k==='s'){setMode('split');return;} if(k==='l'){setMode('scale');return;}
   if(mode==='adj'||k==='a'){if(k==='a'&&mode!=='adj'){setMode('adj');return;}}
   if(mode==='merge'){if(ev.key==='Enter'){doMerge();return;}if(ev.key==='Escape'){mergeSel=[];render();renderCtx();return;}}
   if(mode==='split'){if(ev.key==='Enter'){doSplit();return;}if(ev.key==='Escape'){resetSplit();return;}
     if(k==='o'){snapOrtho=!snapOrtho;renderCtx();toast('직각 스냅 '+(snapOrtho?'켜짐':'꺼짐'));return;}}
+  if(mode==='scale'){if(ev.key==='Escape'){resetRuler();return;}}
   if(mode==='role'){
     if(k==='e'){if(sel){pushUndo();G.rooms[sel].role='현관';setDirty(true);render();toast('현관 지정');}return;}
     let i=-1;if(ev.key>='1'&&ev.key<='9')i=+ev.key-1;else if(ev.key==='0')i=9;
@@ -837,6 +1085,18 @@ document.getElementById('undo').onclick=undo;
 (function(){const hsel=document.getElementById('house');
   hsel.innerHTML=HOUSES.map(h=>'<option value="'+h[0]+'">'+h[1]+'</option>').join('');
   hsel.onchange=()=>setHouse(hsel.value);})();
+// 평면도 구분/세대수 + 도면찾기 필터 채우기
+(function(){
+  const ksel=document.getElementById('kind');
+  ksel.innerHTML=KINDS.map(k=>'<option value="'+k+'">'+k+'</option>').join('');
+  ksel.onchange=()=>setKind(ksel.value);
+  document.getElementById('nhh').onchange=(e)=>setHH(e.target.value);
+  const fh=document.getElementById('fHouse');
+  fh.innerHTML='<option value="">주거형태 전체</option>'+HOUSES.map(h=>'<option value="'+h[0]+'">'+h[1]+'</option>').join('');
+  const fk=document.getElementById('fKind');
+  fk.innerHTML='<option value="">단위/층 전체</option>'+KINDS.map(k=>'<option value="'+k+'">'+k+'</option>').join('');
+  fh.onchange=fk.onchange=()=>loadList(document.getElementById('search').value.trim());
+})();
 
 // ── 팬/줌 ──────────────────────────────────────────────────────────────────
 function fit(){vb=bbox();svg.setAttribute('viewBox',vb.join(' '));}
@@ -853,18 +1113,22 @@ svg.addEventListener('wheel',ev=>{ev.preventDefault();if(!vb)return;const f=ev.d
   const mx=vb[0]+vb[2]*ev.offsetX/svg.clientWidth,my=vb[1]+vb[3]*ev.offsetY/svg.clientHeight;
   vb[0]=mx-(mx-vb[0])*f;vb[1]=my-(my-vb[1])*f;vb[2]*=f;vb[3]*=f;svg.setAttribute('viewBox',vb.join(' '));},{passive:false});
 
-// 나누기: 배경(PNG/빈 곳) 클릭으로도 컷 점 찍기(폴리곤은 onRoom 처리) + 미리보기 선
+// 나누기·스케일: 배경(PNG/빈 곳) 클릭으로도 점 찍기(폴리곤은 onRoom 처리) + 미리보기 선
 svg.addEventListener('click',ev=>{
-  if(mode!=='split'||!splitSel||cutPts.length>=2||justPanned)return;
-  if(ev.target.tagName==='polygon')return;
+  if(justPanned||ev.target.tagName==='polygon')return;
+  if(mode==='scale'){addRulerPt(ev);return;}
+  if(mode!=='split'||!splitSel||cutPts.length>=2)return;
   const u=evToUser(ev);
   cutPts.push(cutPts.length===1?snapPt(cutPts[0],u,ev):u);
   if(cutPts.length===2)splitRoles=defaultRoles(G.rooms[splitSel].role);
   render();renderCtx();});
 svg.addEventListener('mousemove',ev=>{
-  if(mode!=='split'||!splitSel||cutPts.length!==1)return;
-  const ln=document.getElementById('cutprev');if(!ln)return;
-  const u=snapPt(cutPts[0],evToUser(ev),ev);ln.setAttribute('x2',u[0]);ln.setAttribute('y2',u[1]);});
+  if(mode==='split'&&splitSel&&cutPts.length===1){
+    const ln=document.getElementById('cutprev');if(!ln)return;
+    const u=snapPt(cutPts[0],evToUser(ev),ev);ln.setAttribute('x2',u[0]);ln.setAttribute('y2',u[1]);return;}
+  if(mode==='scale'&&rulerPts.length===1){
+    const ln=document.getElementById('rulerprev');if(!ln)return;
+    const u=evToUser(ev);ln.setAttribute('x2',u[0]);ln.setAttribute('y2',u[1]);}});
 
 renderCtx();loadList('');
 </script></body></html>"""
@@ -889,6 +1153,8 @@ class H(BaseHTTPRequestHandler):
             qs = parse_qs(u.query)
             n = int(qs.get("n", ["250"])[0])
             q = (qs.get("q", [""])[0] or "").lower()
+            house_f = qs.get("house", [""])[0]
+            kind_f = qs.get("kind", [""])[0]
             done = set()
             if os.path.isdir(EDITS):
                 done = {f[:-5] for f in os.listdir(EDITS) if f.endswith(".json")}
@@ -904,9 +1170,36 @@ class H(BaseHTTPRequestHandler):
             total = len(ids)
             if q:
                 ids = [i for i in ids if q in i.lower()]
+            indexing = False
+            filtered = None
+            if house_f or kind_f:
+                # 사람보정(edits) 메타를 인덱스 위에 오버레이해 필터링
+                overlay = {}
+                for gid in done:
+                    try:
+                        overlay[gid] = (json.load(open(os.path.join(EDITS, gid + ".json"),
+                                                        encoding="utf-8")).get("meta") or {})
+                    except Exception:  # noqa: BLE001
+                        pass
+                idx = _META_IDX or {}
+                indexing = _META_IDX_STATE != "ready"
+
+                def _passes(gid):
+                    base = idx.get(gid, {})
+                    m = overlay.get(gid)
+                    house = (m or {}).get("house_type") or base.get("house") or gid.split("_")[0]
+                    if house_f and house != house_f:
+                        return False
+                    if kind_f and _kind_of(base.get("ent", 1), m) != kind_f:
+                        return False
+                    return True
+
+                ids = [i for i in ids if _passes(i)]
+                filtered = len(ids)
             ids.sort()
             items = [{"id": i, "corrected": i in done} for i in ids[:n]]
-            out = {"total": total, "corrected": len(done), "items": items}
+            out = {"total": total, "corrected": len(done), "items": items,
+                   "filtered": filtered, "indexing": indexing}
             return self._send(200, json.dumps(out, ensure_ascii=False))
         if p.startswith("/api/graph/"):
             gid = p[len("/api/graph/"):]
@@ -915,6 +1208,7 @@ class H(BaseHTTPRequestHandler):
                 return self._send(404, json.dumps({"error": "not found"}))
             g = json.load(open(gp, encoding="utf-8"))
             g = _enrich_doors(g)
+            _derive_unit_meta(g)   # 평면도 구분·세대수 기본값(현관 수) 채워 표시
             return self._send(200, json.dumps({"graph": g, "status": _status(g)}, ensure_ascii=False))
         if p.startswith("/api/png/"):
             gid = p[len("/api/png/"):]
@@ -948,6 +1242,44 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps({"graph": g, "status": _status(g)}, ensure_ascii=False))
             except Exception as e:  # noqa: BLE001
                 return self._send(200, json.dumps({"error": f"split: {e}"}, ensure_ascii=False))
+        if u.path == "/api/scale_auto":
+            try:
+                body = json.loads(raw)
+                sc = _scale_from_door(body.get("graph") or {})
+                return self._send(200, json.dumps({"scale": sc}, ensure_ascii=False))
+            except Exception as e:  # noqa: BLE001
+                return self._send(200, json.dumps({"error": f"scale_auto: {e}"}, ensure_ascii=False))
+        if u.path == "/api/scale_batch":
+            try:
+                body = json.loads(raw)
+                sig = _sig_of(body.get("gid") or "")
+                sc = body.get("scale")
+                if not sig or not sc:
+                    return self._send(200, json.dumps({"error": "sig/scale 없음"}, ensure_ascii=False))
+                marker = "_FP_%s_u" % sig
+                seen, count = set(), 0
+                for src in (EDITS, GRAPHS):                     # edits 우선(이미 보정된 건 그 위에)
+                    if not os.path.isdir(src):
+                        continue
+                    for fn in os.listdir(src):
+                        if not (fn.endswith(".json") and marker in fn):
+                            continue
+                        g2id = fn[:-5]
+                        if g2id in seen:
+                            continue
+                        seen.add(g2id)
+                        try:
+                            g2 = json.load(open(_graph_path(g2id), encoding="utf-8"))
+                            _apply_scale(g2, sc, "measured")
+                            g2["corrected"] = True
+                            json.dump(g2, open(os.path.join(EDITS, g2id + ".json"), "w", encoding="utf-8"),
+                                      ensure_ascii=False)
+                            count += 1
+                        except Exception:  # noqa: BLE001
+                            pass
+                return self._send(200, json.dumps({"count": count}, ensure_ascii=False))
+            except Exception as e:  # noqa: BLE001
+                return self._send(200, json.dumps({"error": f"scale_batch: {e}"}, ensure_ascii=False))
         if u.path.startswith("/api/graph/"):
             gid = u.path[len("/api/graph/"):].replace("/", "_")
             g = json.loads(raw)
@@ -956,6 +1288,7 @@ class H(BaseHTTPRequestHandler):
             _hc = (g.get("meta") or {}).get("house_type") or g.get("house")
             if _hc in HOUSING_NORM:
                 _apply_house(g, _hc)
+            _derive_unit_meta(g)   # 평면도 구분·세대수 기본값 확정 저장(필터 일관)
             with open(os.path.join(EDITS, gid + ".json"), "w", encoding="utf-8") as f:
                 json.dump(g, f, ensure_ascii=False)
             return self._send(200, json.dumps({"ok": True, "status": _status(g)}, ensure_ascii=False))
@@ -969,12 +1302,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8600)
     ap.add_argument("--build-png-index", action="store_true", help="PNG 인덱스만 빌드하고 종료")
+    ap.add_argument("--build-meta-index", action="store_true", help="필터 인덱스만 빌드하고 종료")
     a = ap.parse_args()
     if a.build_png_index:
         _build_png_index()
         print(f"[png-index] {_PNG_IDX_STATE} ({len(_PNG_IDX or {})} sigs) → {PNG_INDEX}")
         return
+    if a.build_meta_index:
+        _build_meta_index()
+        print(f"[meta-index] {_META_IDX_STATE} ({len(_META_IDX or {})} gids) → {META_INDEX}")
+        return
     threading.Thread(target=_build_png_index, daemon=True).start()   # 백그라운드 인덱스
+    threading.Thread(target=_build_meta_index, daemon=True).start()  # 필터 인덱스(주거형태·단위/층)
     print(f"정보 보정 에디터 → http://localhost:{a.port}")
     print(f"  원본={GRAPHS}\n  작업={EDITS}\n  PNG캐시={PNG_CACHE}")
     ThreadingHTTPServer(("127.0.0.1", a.port), H).serve_forever()
