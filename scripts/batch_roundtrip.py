@@ -42,6 +42,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", required=True, help="graphs 디렉토리")
     ap.add_argument("--grid", type=int, default=128)
+    ap.add_argument("--simplify-frac", type=float, default=0.012)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--glob", default="*.json")
     ap.add_argument("--apt-only", action="store_true", help="house=APT만(ADR-0011)")
@@ -74,7 +75,7 @@ def main():
             n_apt_skip += 1
             continue
         try:
-            m = wc.roundtrip_metrics(g, grid=args.grid)
+            m = wc.roundtrip_metrics(g, grid=args.grid, simplify_frac=args.simplify_frac)
         except Exception as e:  # noqa: BLE001
             n_err += 1
             if n_err <= 5:
@@ -101,7 +102,7 @@ def main():
 
     print("=" * 64)
     print(f"파일 {n_total} | g-0.4 검증 {n_ok} | 스키마skip {n_skip_schema} "
-          f"| APTskip {n_apt_skip} | 에러 {n_err}  (grid={args.grid})")
+          f"| APTskip {n_apt_skip} | 에러 {n_err}  (grid={args.grid} simplify={args.simplify_frac})")
     if not n_ok:
         return
     print("-" * 64)

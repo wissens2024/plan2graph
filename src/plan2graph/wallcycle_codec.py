@@ -95,7 +95,28 @@ def _poly_area(pts):
 # ─────────────────────────────────────────────────────────────────────────────
 # canonicalize: g-0.4 graph → Canon
 # ─────────────────────────────────────────────────────────────────────────────
-def canonicalize(g: dict, grid: int = 128) -> Canon:
+def _simplify_poly(poly, tol):
+    """양자화 전 직교 단순화 — jagged 노이즈(벽두께 미세 꼭짓점·짧은 변) 제거.
+    shapely simplify(preserve_topology)로 핵심 코너만 남긴다. 실패 시 원본 반환."""
+    if tol <= 0 or len(poly) < 4:
+        return poly
+    try:
+        from shapely.geometry import Polygon
+        p = Polygon(poly)
+        if not p.is_valid:
+            p = p.buffer(0)
+        if p.is_empty or p.geom_type != "Polygon":
+            return poly
+        p2 = p.simplify(tol, preserve_topology=True)
+        if p2.is_empty or p2.geom_type != "Polygon":
+            return poly
+        out = [list(c) for c in p2.exterior.coords]
+        return out if len(out) >= 4 else poly
+    except Exception:  # noqa: BLE001
+        return poly
+
+
+def canonicalize(g: dict, grid: int = 128, simplify_frac: float = 0.012) -> Canon:
     bbox = g.get("bbox_px") or _bbox_from_rooms(g)
     meta_in = g.get("meta") or {}
     meta = {
@@ -106,6 +127,8 @@ def canonicalize(g: dict, grid: int = 128) -> Canon:
         "label_schema": meta_in.get("label_schema", "korean_13cat"),
     }
     canon = Canon(grid=grid, bbox=list(bbox), meta=meta)
+    # 단순화 tol = 도면 규모 비례(작은 방은 덜, preserve_topology가 최소형 보장)
+    tol = simplify_frac * (max(1.0, bbox[2]) * max(1.0, bbox[3])) ** 0.5 if simplify_frac > 0 else 0.0
 
     # 1. 양자화 → 임시 corner pool(아직 병합 전)
     qpt_id: dict = {}    # (qx,qy) -> tmp id
@@ -116,9 +139,9 @@ def canonicalize(g: dict, grid: int = 128) -> Canon:
         return qpt_id[q]
 
     room_tmp: dict = {}    # rid -> (role, [tmp_id cycle])
-    room_poly: dict = {}   # rid -> 원본 polygon(snap 계산용)
+    room_poly: dict = {}   # rid -> 단순화 polygon(snap 계산용)
     for nid, r in (g.get("rooms") or {}).items():
-        poly = r.get("polygon") or []
+        poly = _simplify_poly(r.get("polygon") or [], tol)
         if len(poly) < 3:
             continue
         ids = _dedup_cycle([_qid(p) for p in poly])
@@ -480,9 +503,9 @@ def decode(tokens: list, vocab) -> Canon:
 # ─────────────────────────────────────────────────────────────────────────────
 # 라운드트립 검증
 # ─────────────────────────────────────────────────────────────────────────────
-def roundtrip_metrics(g: dict, grid: int = 128) -> dict:
+def roundtrip_metrics(g: dict, grid: int = 128, simplify_frac: float = 0.012) -> dict:
     """원본 g-0.4 ↔ canonical/토큰 라운드트립의 보존율 측정."""
-    canon = canonicalize(g, grid=grid)
+    canon = canonicalize(g, grid=grid, simplify_frac=simplify_frac)
     vb = _vocab(grid)
     toks = encode(canon, vb)
     canon2 = decode(toks, vb)
