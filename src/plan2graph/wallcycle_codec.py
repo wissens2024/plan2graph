@@ -36,6 +36,7 @@ ROLE_OTHER = ROLE2ID["기타"]
 COUNTRIES = ["KR", "CN", "EU"]
 HOUSING = ["apartment", "detached", "rowhouse"]
 SCHEMAS = ["korean_13cat", "rplan_6cat", "cubicasa_Ncat"]
+SCOPES = ["unit", "floor"]   # ADR-0016 생성 단위: 단위세대 / 층평면도
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -126,6 +127,9 @@ def canonicalize(g: dict, grid: int = 128, simplify_frac: float = 0.01,
                    or {"APT": "apartment", "DEH": "detached", "ROW": "rowhouse"}.get(
                        g.get("house") or meta_in.get("house_type"), "apartment"),
         "label_schema": meta_in.get("label_schema", "korean_13cat"),
+        # ADR-0016 생성 단위 scope/세대수(없으면 단위세대 기본)
+        "scope": meta_in.get("plan_scope", "unit"),
+        "units": int(meta_in.get("units", 1) or 1),
     }
     canon = Canon(grid=grid, bbox=list(bbox), meta=meta)
     # 단순화 tol = 도면 규모 비례(작은 방은 덜, preserve_topology가 최소형 보장)
@@ -426,15 +430,18 @@ class V:
     # 동적 구간: META(country|housing|schema), COORD(0..grid), ROLE, POS, ROOM(ordinal)
 
 
-def _vocab(grid: int, nbins: int = 16, maxrooms: int = 64):
+def _vocab(grid: int, nbins: int = 16, maxrooms: int = 64, max_units: int = 8):
     off = V._BASE
     meta_off = off;                 off += len(COUNTRIES) + len(HOUSING) + len(SCHEMAS)
+    scope_off = off;                off += len(SCOPES)        # ADR-0016 plan_scope
+    units_off = off;                off += (max_units + 1)    # ADR-0016 세대수(floor=1..n)
     coord_off = off;                off += (grid + 1)
     role_off = off;                 off += len(ROLES)
     pos_off = off;                  off += (nbins + 1)
     room_off = off;                 off += maxrooms          # open 토큰의 방 ordinal 참조
-    return {"meta": meta_off, "coord": coord_off, "role": role_off,
-            "pos": pos_off, "room": room_off, "maxrooms": maxrooms,
+    return {"meta": meta_off, "scope": scope_off, "units": units_off,
+            "coord": coord_off, "role": role_off,
+            "pos": pos_off, "room": room_off, "maxrooms": maxrooms, "max_units": max_units,
             "size": off, "grid": grid, "nbins": nbins}
 
 
@@ -445,6 +452,9 @@ def encode(canon: Canon, vocab=None) -> list:
     t.append(vb["meta"] + COUNTRIES.index(canon.meta["country"]) if canon.meta["country"] in COUNTRIES else vb["meta"])
     t.append(vb["meta"] + len(COUNTRIES) + (HOUSING.index(canon.meta["housing"]) if canon.meta["housing"] in HOUSING else 0))
     t.append(vb["meta"] + len(COUNTRIES) + len(HOUSING) + (SCHEMAS.index(canon.meta["label_schema"]) if canon.meta["label_schema"] in SCHEMAS else 0))
+    # SCOPE / UNITS (ADR-0016)
+    t.append(vb["scope"] + (SCOPES.index(canon.meta["scope"]) if canon.meta.get("scope") in SCOPES else 0))
+    t.append(vb["units"] + min(max(1, int(canon.meta.get("units", 1))), vb["max_units"]))
     # CORNERS
     t.append(V.SEC_CORNERS)
     for (qx, qy) in canon.corners:
@@ -491,9 +501,13 @@ def decode(tokens: list, vocab) -> Canon:
     c_tok = tokens[i] - vb["meta"]; i += 1
     h_tok = tokens[i] - vb["meta"] - len(COUNTRIES); i += 1
     s_tok = tokens[i] - vb["meta"] - len(COUNTRIES) - len(HOUSING); i += 1
+    scope_tok = tokens[i] - vb["scope"]; i += 1
+    units_tok = tokens[i] - vb["units"]; i += 1
     meta = {"country": COUNTRIES[c_tok] if 0 <= c_tok < len(COUNTRIES) else "KR",
             "housing": HOUSING[h_tok] if 0 <= h_tok < len(HOUSING) else "apartment",
-            "label_schema": SCHEMAS[s_tok] if 0 <= s_tok < len(SCHEMAS) else "korean_13cat"}
+            "label_schema": SCHEMAS[s_tok] if 0 <= s_tok < len(SCHEMAS) else "korean_13cat",
+            "scope": SCOPES[scope_tok] if 0 <= scope_tok < len(SCOPES) else "unit",
+            "units": units_tok}
     canon = Canon(grid=grid, bbox=[0, 0, grid, grid], meta=meta)
     assert tokens[i] == V.SEC_CORNERS; i += 1
     while tokens[i] != V.SEC_ROOMS:

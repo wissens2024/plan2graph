@@ -47,6 +47,9 @@ ADR-0012가 생성 타깃을 wall-cycle로 정했으나 *어떻게 직렬화하�
 | 토큰 길이 | mean 426, p90 588, max 1726 (max_len 2048 커버) |
 | 겹침 area frac | med 0.0006, **p90 0.11 / max 0.92(꼬리)** |
 
+## Amendment (2026-06-15, ADR-0016) — META에 scope/units 추가
+ADR-0016(생성 단위 2레벨)로 META 토큰에 `plan_scope`(unit|floor)·`units`(1..max_units=8) 추가. 토큰 문법 META = `[c h s scope units]`. **vocab_size 249→260**(grid128). 옛 meta(plan_scope 없음)는 기본 `unit/1`로 처리(하위호환). 검증: 토큰 무손실·방/인접/면적 보존 유지, floor/N 주입 라운드트립 OK.
+
 ## Considered Alternatives
 1. **벽을 1급 토큰으로 명시 생성** — 기각: room-cycle 공유엣지로 결정론 유도 가능(토큰↓), 겹침0은 corner 공유가 보장. 벽 명시는 중복.
 2. **gap-closing union(walls.interior 신뢰)** — 기각: 인접 +0.12 대가로 작은 방 27% 붕괴. open 명시 토큰이 무손실 대체.

@@ -21,6 +21,7 @@ schema g-0.3 — GPT 제안 반영(벽·문방향·창귀속·외곽접촉) + �
 from __future__ import annotations
 
 import math
+import re
 
 import networkx as nx
 
@@ -535,6 +536,13 @@ def build(state, dr) -> dict:
     enhance_roles_g(g)                      # 기타방 위상·기하 역할 보강(역할미상↓) — 검증 전
     g["validation"] = validate(g)
     v = g["validation"]
+    # ADR-0016 생성 단위 scope/세대수. geomgraph는 *쪼갠 단위세대*를 만든다 → scope=unit, units=1.
+    #   plan_id "..._u<idx>" 에서 unit_index·source_sheet 파싱. 현관 수=분리실패 신호(ADR-0011/0016 §5).
+    _m = re.search(r"_u(\d+)$", state.plan_id or "")
+    unit_index = int(_m.group(1)) if _m else 0
+    source_sheet_id = re.sub(r"_u\d+$", "", state.plan_id or "")
+    n_entrance = sum(1 for r in rooms.values()
+                     if (r.get("role") or r.get("base")) == "현관")
     g["meta"] = {
         "schema_version": SCHEMA_VERSION,
         "house_type": state.house,
@@ -543,6 +551,12 @@ def build(state, dr) -> dict:
         "dataset": "AIHUB_KR",
         "housing_type": HOUSING_TYPE.get(state.house, state.house),
         "label_schema": "korean_13cat",
+        # ADR-0016 생성 단위: 쪼갠 단위세대 = unit/1 (현관≥2면 분리실패 신호)
+        "plan_scope": "unit",
+        "units": 1,
+        "unit_index": unit_index,
+        "source_sheet_id": source_sheet_id,
+        "n_entrance": n_entrance,
         "scale_mm_per_px": g["scale_mm_per_px"],
         "status": "success" if v["passed"] else "quarantine",
         "reason": ",".join(v["reasons"]),

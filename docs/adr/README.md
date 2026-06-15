@@ -56,6 +56,7 @@
 | 0013 | 다국가 조건 메타(country/dataset/housing/label_schema) | ✅ Accepted |
 | 0014 | 목표 2단계 분리(Phase1 SCI / Phase2 상용) — novelty 정직화 | ✅ Accepted |
 | 0015 | **wall-cycle+opening 토큰 직렬화 코덱**(전수 40k 검증) | ✅ Accepted ★ |
+| 0016 | **생성 단위 2레벨**(단위세대/층) · scope·세대수 조건 | ✅ Accepted |
 
 ★ = 지금 가장 중요한 정본 (0006·0008·0009·0010·0012).
 
