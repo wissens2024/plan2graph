@@ -71,18 +71,21 @@ def _apply_house(g, code):
     return g
 
 
-# ── 평면도 구분 + 세대수 (단위/층) — 현관 수에서 기본값 도출, 사람이 보정 ──
-PLAN_KINDS = ["단위세대", "기준층", "기타"]
+# ── 생성 단위(평면도 구분) + 세대수 — ADR-0016 정합(canonical, codec 토큰). 현관 수에서 기본값 ──
+#    plan_scope=unit|floor (생성 조건 토큰), units(unit=항상1, floor=N), n_entrance(분리실패 신호).
+#    geomgraph/wallcycle_codec와 동일 필드를 써야 사람 보정이 모델 조건에 반영됨.
+SCOPES = [["unit", "단위세대"], ["floor", "층평면도"]]   # 코드값, 한글 라벨
+SCOPE_VALS = [s[0] for s in SCOPES]
 
 
 def _n_entrance(g):
-    """현관 역할 방 개수 = 세대수 추정 신호([[derive-dont-duplicate-known-info]])."""
+    """현관 역할 방 개수 = 세대수 추정 신호([[derive-dont-duplicate-known-info]], ADR-0016 §5)."""
     rooms = (g or {}).get("rooms") or {}
     return sum(1 for r in rooms.values() if r.get("role") == "현관")
 
 
-def _kind_default(n):
-    return "단위세대" if (n or 1) <= 1 else "기준층"
+def _scope_default(n):
+    return "unit" if (n or 1) <= 1 else "floor"
 
 
 def _meta_of(g):
@@ -93,25 +96,36 @@ def _meta_of(g):
 
 
 def _derive_unit_meta(g):
-    """meta.n_households(현관수 기본)·meta.plan_kind(세대수 기본) 없으면 채움(비파괴)."""
+    """meta.plan_scope·units·n_entrance 채움(비파괴). ADR-0016: unit이면 units=1 강제.
+    옛 에디터 필드(plan_kind/n_households)는 1회 마이그레이션."""
     if not g:
         return g
     meta = _meta_of(g)
-    if not isinstance(meta.get("n_households"), int):
-        meta["n_households"] = max(1, _n_entrance(g))
-    if meta.get("plan_kind") not in PLAN_KINDS:
-        meta["plan_kind"] = _kind_default(meta["n_households"])
+    ent = _n_entrance(g)
+    if not isinstance(meta.get("n_entrance"), int):
+        meta["n_entrance"] = ent
+    # 마이그레이션: 옛 plan_kind/n_households → plan_scope/units
+    if meta.get("plan_scope") not in SCOPE_VALS and meta.get("plan_kind"):
+        meta["plan_scope"] = "unit" if meta.pop("plan_kind") == "단위세대" else "floor"
+    if not isinstance(meta.get("units"), int) and isinstance(meta.get("n_households"), int):
+        meta["units"] = meta.pop("n_households")
+    if not isinstance(meta.get("units"), int):
+        meta["units"] = max(1, ent)
+    if meta.get("plan_scope") not in SCOPE_VALS:
+        meta["plan_scope"] = _scope_default(meta["units"])
+    if meta["plan_scope"] == "unit":      # ADR-0016 §2: 단위세대는 항상 1
+        meta["units"] = 1
     return g
 
 
-def _kind_of(ent, meta=None):
-    """필터용: 사람보정(plan_kind) 우선, 없으면 세대수/현관수로 도출."""
-    if meta and meta.get("plan_kind") in PLAN_KINDS:
-        return meta["plan_kind"]
-    n = (meta or {}).get("n_households")
+def _scope_of(ent, meta=None):
+    """필터용: 사람보정(plan_scope) 우선, 없으면 세대수/현관수로 도출."""
+    if meta and meta.get("plan_scope") in SCOPE_VALS:
+        return meta["plan_scope"]
+    n = (meta or {}).get("units")
     if not isinstance(n, int):
         n = max(1, ent)
-    return _kind_default(n)
+    return _scope_default(n)
 
 
 # ── 스케일(축척) — mm/px. 수동(치수선 2점+실측 mm) 우선, 문폭 900mm 자동 폴백 ──
@@ -390,9 +404,9 @@ def _html():
     pal = json.dumps(PALETTE, ensure_ascii=False)
     col = json.dumps(ROLE_COLOR, ensure_ascii=False)
     hk = json.dumps([[h, HOUSE_KO[h]] for h in HOUSES], ensure_ascii=False)
-    pk = json.dumps(PLAN_KINDS, ensure_ascii=False)
+    sc = json.dumps(SCOPES, ensure_ascii=False)
     return (_HTML.replace("__PAL__", pal).replace("__COL__", col)
-            .replace("__HOUSE__", hk).replace("__KINDS__", pk))
+            .replace("__HOUSE__", hk).replace("__SCOPES__", sc))
 
 
 _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
@@ -597,10 +611,10 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
      <select id="house"></select>
      <span class="hwarn" id="housewarn" title="파일명 접두와 거주형태가 다름">⚠</span>
    </div>
-   <div class="housebar" title="평면도 구분과 세대수 — 현관 수에서 기본값(수정 가능)">
+   <div class="housebar" title="평면도 구분(단위세대/층평면도)과 세대수 — 현관 수에서 기본값. ADR-0016 생성조건">
      <span class="hl">📐 평면도</span>
-     <select id="kind"></select>
-     <input id="nhh" type="number" min="1" max="99" title="세대수" style="width:48px">
+     <select id="scope"></select>
+     <input id="units" type="number" min="1" max="99" title="세대수(층평면도일 때 N, 단위세대=1)" style="width:46px">
      <span class="hl" style="flex-shrink:0">세대</span>
    </div>
    <div class="prog">
@@ -624,7 +638,7 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
    <div class="lbl">도면 찾기</div>
    <div class="filters">
      <select id="fHouse" title="주거형태로 거르기"><option value="">주거형태 전체</option></select>
-     <select id="fKind" title="단위/층으로 거르기"><option value="">단위/층 전체</option></select>
+     <select id="fScope" title="단위세대/층평면도로 거르기"><option value="">단위/층 전체</option></select>
    </div>
    <input id="search" placeholder="ID 일부로 검색 (예: cb4a)">
    <div id="listcount" class="fcount"></div>
@@ -658,7 +672,8 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 </div>
 <script>
 const NS='http://www.w3.org/2000/svg', svg=document.getElementById('svg');
-const PALETTE=__PAL__, ROLE_COLOR=__COL__, HOUSES=__HOUSE__, KINDS=__KINDS__;
+const PALETTE=__PAL__, ROLE_COLOR=__COL__, HOUSES=__HOUSE__, SCOPES=__SCOPES__;
+const SCOPE_KO=Object.fromEntries(SCOPES), SCOPE_VALS=SCOPES.map(s=>s[0]);
 const HOUSING_NORM={APT:'apartment',DEH:'detached',ROW:'rowhouse'};
 const MODES={role:'🎨 역할',adj:'🔗 인접',merge:'⛓ 합치기',del:'🗑 삭제',split:'✂ 나누기',scale:'📏 스케일'};
 let G=null,GID=null,dirty=false,mode='role',sel=null,adjA=null,mergeSel=[],vb=null;
@@ -692,9 +707,9 @@ function showStatusLocal(){/* 로컬 변경 후엔 게이트 재판정은 저장
 
 // ── 목록/검색 ───────────────────────────────────────────────────────────────
 async function loadList(q){
-  const fh=document.getElementById('fHouse').value, fk=document.getElementById('fKind').value;
+  const fh=document.getElementById('fHouse').value, fk=document.getElementById('fScope').value;
   let url='api/graphs?n=250'+(q?'&q='+encodeURIComponent(q):'')
-    +(fh?'&house='+encodeURIComponent(fh):'')+(fk?'&kind='+encodeURIComponent(fk):'');
+    +(fh?'&house='+encodeURIComponent(fh):'')+(fk?'&scope='+encodeURIComponent(fk):'');
   const r=await(await fetch(url)).json();
   LIST=r.items;
   document.getElementById('pdone').textContent=r.corrected;
@@ -739,22 +754,26 @@ function setHouse(code){                     // g.house · meta.house_type · me
   toast('거주형태 → '+code+(code===(GID||'').split('_')[0]?'':' (파일명 접두와 다름 — 메타만 보정)'));
 }
 
-// ── 평면도 구분 + 세대수 (현관 수 기본, 사람 보정) ──────────────────────────────
+// ── 생성 단위(평면도 구분)+세대수 — ADR-0016 plan_scope/units, 현관 수 기본 ───────
 function nEntrance(){return Object.values((G&&G.rooms)||{}).filter(r=>r.role==='현관').length;}
-function curHH(){const m=(G&&G.meta)||{};
-  return Number.isInteger(m.n_households)?m.n_households:Math.max(1,nEntrance());}
-function curKind(){const m=(G&&G.meta)||{};
-  return KINDS.includes(m.plan_kind)?m.plan_kind:(curHH()<=1?'단위세대':'기준층');}
+function curUnits(){const m=(G&&G.meta)||{};
+  return Number.isInteger(m.units)?m.units:Math.max(1,nEntrance());}
+function curScope(){const m=(G&&G.meta)||{};
+  return SCOPE_VALS.includes(m.plan_scope)?m.plan_scope:(curUnits()<=1?'unit':'floor');}
 function syncUnit(){
-  document.getElementById('kind').value=curKind();
-  document.getElementById('nhh').value=curHH();
+  const sc=curScope();
+  document.getElementById('scope').value=sc;
+  const u=document.getElementById('units');
+  u.value=sc==='unit'?1:curUnits();u.disabled=(sc==='unit');   // 단위세대=항상 1
 }
-function setKind(k){if(!G||!KINDS.includes(k)||curKind()===k)return;
-  pushUndo();G.meta=G.meta||{};G.meta.plan_kind=k;setDirty(true);syncUnit();toast('평면도 → '+k);}
-function setHH(n){n=Math.max(1,Math.min(99,parseInt(n,10)||1));if(!G||curHH()===n)return;
-  pushUndo();G.meta=G.meta||{};G.meta.n_households=n;
-  // 세대수와 구분 자동 정합(사람이 구분을 따로 안 정했으면)
-  if(!KINDS.includes(G.meta.plan_kind))G.meta.plan_kind=(n<=1?'단위세대':'기준층');
+function setScope(s){if(!G||!SCOPE_VALS.includes(s)||curScope()===s)return;
+  pushUndo();G.meta=G.meta||{};G.meta.plan_scope=s;
+  G.meta.units=(s==='unit')?1:Math.max(1,curUnits());          // unit→1, floor→현재값
+  setDirty(true);syncUnit();toast('평면도 → '+SCOPE_KO[s]);}
+function setUnits(n){n=Math.max(1,Math.min(99,parseInt(n,10)||1));if(!G||curUnits()===n)return;
+  pushUndo();G.meta=G.meta||{};G.meta.units=n;
+  if(n>1)G.meta.plan_scope='floor';                            // 2세대+ = 층평면도
+  else if(!SCOPE_VALS.includes(G.meta.plan_scope))G.meta.plan_scope='unit';
   setDirty(true);syncUnit();toast('세대수 → '+n);}
 
 function showStatus(st){
@@ -1087,14 +1106,14 @@ document.getElementById('undo').onclick=undo;
   hsel.onchange=()=>setHouse(hsel.value);})();
 // 평면도 구분/세대수 + 도면찾기 필터 채우기
 (function(){
-  const ksel=document.getElementById('kind');
-  ksel.innerHTML=KINDS.map(k=>'<option value="'+k+'">'+k+'</option>').join('');
-  ksel.onchange=()=>setKind(ksel.value);
-  document.getElementById('nhh').onchange=(e)=>setHH(e.target.value);
+  const scOpt=SCOPES.map(s=>'<option value="'+s[0]+'">'+s[1]+'</option>').join('');
+  const ssel=document.getElementById('scope');
+  ssel.innerHTML=scOpt;ssel.onchange=()=>setScope(ssel.value);
+  document.getElementById('units').onchange=(e)=>setUnits(e.target.value);
   const fh=document.getElementById('fHouse');
   fh.innerHTML='<option value="">주거형태 전체</option>'+HOUSES.map(h=>'<option value="'+h[0]+'">'+h[1]+'</option>').join('');
-  const fk=document.getElementById('fKind');
-  fk.innerHTML='<option value="">단위/층 전체</option>'+KINDS.map(k=>'<option value="'+k+'">'+k+'</option>').join('');
+  const fk=document.getElementById('fScope');
+  fk.innerHTML='<option value="">단위/층 전체</option>'+scOpt;
   fh.onchange=fk.onchange=()=>loadList(document.getElementById('search').value.trim());
 })();
 
@@ -1154,7 +1173,7 @@ class H(BaseHTTPRequestHandler):
             n = int(qs.get("n", ["250"])[0])
             q = (qs.get("q", [""])[0] or "").lower()
             house_f = qs.get("house", [""])[0]
-            kind_f = qs.get("kind", [""])[0]
+            scope_f = qs.get("scope", [""])[0]
             done = set()
             if os.path.isdir(EDITS):
                 done = {f[:-5] for f in os.listdir(EDITS) if f.endswith(".json")}
@@ -1172,7 +1191,7 @@ class H(BaseHTTPRequestHandler):
                 ids = [i for i in ids if q in i.lower()]
             indexing = False
             filtered = None
-            if house_f or kind_f:
+            if house_f or scope_f:
                 # 사람보정(edits) 메타를 인덱스 위에 오버레이해 필터링
                 overlay = {}
                 for gid in done:
@@ -1190,7 +1209,7 @@ class H(BaseHTTPRequestHandler):
                     house = (m or {}).get("house_type") or base.get("house") or gid.split("_")[0]
                     if house_f and house != house_f:
                         return False
-                    if kind_f and _kind_of(base.get("ent", 1), m) != kind_f:
+                    if scope_f and _scope_of(base.get("ent", 1), m) != scope_f:
                         return False
                     return True
 

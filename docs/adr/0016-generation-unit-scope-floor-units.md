@@ -63,7 +63,7 @@ Deciders: wissens2024, Claude
 ## Consequences
 - Positive: 단위세대(기본)·층(조합) 2레벨이 자연어 입력과 정합. scope·units·country가 일관 조건. 데이터 품질 신호(현관2=분리실패) 명확. RPLAN/CubiCasa(unit_native)와 AI-Hub(floor→unit) 통일 표현.
 - Negative: 층 그래프 빌드 추가 작업(현재 unit만). party wall은 층 컨텍스트(분할 전) 필요해 파이프라인 수정. 코덱 META 확장(vocab 재계산).
-- Follow-up: ① geomgraph meta에 plan_scope/units 채움(unit=unit/1) ② 코덱 META 토큰 확장 ③ floor 그래프 빌더(원본 sheet 통째) ④ party wall 태깅(floor 빌드 시) ⑤ unit인데 현관≥2 = 재분리 큐.
+- Follow-up: ① geomgraph meta에 plan_scope/units 채움(unit=unit/1) ② 코덱 META 토큰 확장 ③ floor 그래프 빌더(원본 sheet 통째) ④ party wall 태깅(floor 빌드 시) ⑤ unit인데 현관≥2 = 재분리 큐 ⑥ **보정 에디터(edit_server) 통일**: 사람이 고친 평면도구분·세대수가 모델 조건에 반영되도록 `plan_scope`(unit/floor)·`units`·`n_entrance` **동일 필드**로 쓴다(에디터가 만든 plan_kind/n_households 한글 3값은 폐기, 1회 마이그레이션). 도면찾기 필터·세대수 자동(현관수)·unit→units=1 강제 동일 규칙. "기타"는 plan_scope 값 아님 → 제외(disposition).
 
 ## Assumptions
 - `[검증]` 단위세대가 자연어 입력 주류이자 더 단순 → Phase1 우선.
