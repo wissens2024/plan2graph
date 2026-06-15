@@ -99,6 +99,7 @@ def main():
     ap.add_argument("--n-head", type=int, default=8)
     ap.add_argument("--max-len", type=int, default=1152)
     ap.add_argument("--diag-every", type=int, default=25)
+    ap.add_argument("--ckpt-every", type=int, default=10, help="N epoch마다 체크포인트 저장")
     ap.add_argument("--constrained", action="store_true",
                     help="생성 시 constrained decoding(ADR-0012 §3) 적용")
     ap.add_argument("--out", default="")
@@ -137,10 +138,11 @@ def main():
         if ep % args.diag_every == 0 or ep == args.epochs:
             d = diagnose(model, vocab, dev, mask_fn=mask_fn)
             print(f"ep{ep:4d} loss {tot/len(ds):.4f} | valid {d['valid_rate']} "
-                  f"uniq {d['uniq_rate']} rooms~{d['mean_rooms']}(max{d['max_rooms']})")
-    if args.out:
-        torch.save({"model": model.state_dict(), "args": vars(args)}, args.out)
-        print(f"[saved] {args.out}")
+                  f"uniq {d['uniq_rate']} rooms~{d['mean_rooms']}(max{d['max_rooms']})",
+                  flush=True)
+        if args.out and (ep % args.ckpt_every == 0 or ep == args.epochs):
+            torch.save({"model": model.state_dict(), "args": vars(args), "epoch": ep}, args.out)
+            print(f"  [ckpt] ep{ep} → {args.out}", flush=True)
 
 
 if __name__ == "__main__":
