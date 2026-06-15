@@ -47,11 +47,11 @@ def opening_stats(seqs, vocab, label):
                 if rid in win_rooms:
                     hab_win += 1
     n = max(1, len(seqs))
-    print(f"[{label}] N={len(seqs)}")
+    print(f"[{label}] N={len(seqs)}", flush=True)
     print(f"  OPENINGS 도달    : {reached_open}/{len(seqs)} ({100*reached_open/n:.0f}%)")
     print(f"  도면당 평균       : door {nd/n:.1f} · window {nw/n:.1f} · open {no/n:.1f}")
     print(f"  거주방 창보유율   : {hab_win}/{hab_total} "
-          f"({100*hab_win/max(1,hab_total):.1f}%)")
+          f"({100*hab_win/max(1,hab_total):.1f}%)", flush=True)
 
 
 def main():
@@ -84,12 +84,15 @@ def main():
     pre = [bos, vocab["meta"] + 0, vocab["meta"] + len(wc.COUNTRIES) + 0,
            vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 0,
            vocab["scope"] + 0, vocab["units"] + 1]
-    prefix = torch.tensor([pre] * args.n, device=dev)
-    out = model.generate(prefix, max_new=a["max_len"] - len(pre), eos=eos,
-                         temperature=1.0, top_k=40, mask_fn=mask_fn)
     gen = []
-    for row in out.tolist():
-        gen.append(row[:row.index(eos) + 1] if eos in row else row)
+    ch = 8                                    # 학습과 GPU 공유 → 작은 배치
+    for i in range(0, args.n, ch):
+        k = min(ch, args.n - i)
+        prefix = torch.tensor([pre] * k, device=dev)
+        out = model.generate(prefix, max_new=a["max_len"] - len(pre), eos=eos,
+                             temperature=1.0, top_k=40, mask_fn=mask_fn)
+        for row in out.tolist():
+            gen.append(row[:row.index(eos) + 1] if eos in row else row)
     print(f"(ckpt epoch {ck.get('epoch')})")
     opening_stats(gen, vocab, "GEN(생성)")
 
