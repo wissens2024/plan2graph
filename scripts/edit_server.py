@@ -211,7 +211,7 @@ def _build_meta_index():
         with os.scandir(GRAPHS) as it:
             for e in it:
                 nm = e.name
-                if not (nm.startswith("APT_") and nm.endswith(".json")):
+                if not (nm.startswith(("APT_", "DEH_", "ROW_")) and nm.endswith(".json")):
                     continue
                 gid = nm[:-5]
                 try:
@@ -726,7 +726,7 @@ function renderList(){
   LIST.forEach((o,i)=>{const d=document.createElement('div');
     d.className='opt'+(o.corrected?' done':'')+(o.id===GID?' on':'');
     d.innerHTML='<span class="ck">'+(o.corrected?'✔':'·')+'</span>'
-      +'<span class="ix">'+(i+1)+'.</span>'+o.id.replace('APT_FP_','');
+      +'<span class="ix">'+(i+1)+'.</span>'+o.id.replace(/^(APT|DEH|ROW)_FP_/,'');
     d.title='#'+(i+1)+'  '+o.id;d.onclick=()=>{vb=null;loadGraph(o.id);};box.appendChild(d);});
 }
 async function loadGraph(id){
@@ -1182,7 +1182,7 @@ class H(BaseHTTPRequestHandler):
                 with os.scandir(GRAPHS) as it:
                     for e in it:
                         nm = e.name
-                        if nm.startswith("APT_") and nm.endswith(".json"):
+                        if nm.startswith(("APT_", "DEH_", "ROW_")) and nm.endswith(".json"):
                             ids.append(nm[:-5])
             except FileNotFoundError:
                 pass
