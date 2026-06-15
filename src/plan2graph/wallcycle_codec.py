@@ -117,8 +117,27 @@ def _simplify_poly(poly, tol):
         return poly
 
 
+def _rectilinear_poly(poly):
+    """변을 가로/세로로 스냅(직교 정규화) — 그래프부터 직선화. 미세 비스듬·노이즈 제거.
+    수평 변(|dx|≥|dy|)→끝점 y를 시작 y로, 수직 변→끝점 x를 시작 x로."""
+    if len(poly) < 4:
+        return poly
+    pts = [list(p) for p in poly]
+    closed = pts[0] == pts[-1]
+    if closed:
+        pts = pts[:-1]
+    n = len(pts)
+    for i in range(n):
+        a, b = pts[i], pts[(i + 1) % n]
+        if abs(b[0] - a[0]) >= abs(b[1] - a[1]):
+            pts[(i + 1) % n][1] = a[1]
+        else:
+            pts[(i + 1) % n][0] = a[0]
+    return pts + [pts[0]] if closed else pts
+
+
 def canonicalize(g: dict, grid: int = 128, simplify_frac: float = 0.01,
-                 use_wall_snap: bool = False) -> Canon:
+                 use_wall_snap: bool = False, rectilinear: bool = True) -> Canon:
     bbox = g.get("bbox_px") or _bbox_from_rooms(g)
     meta_in = g.get("meta") or {}
     meta = {
@@ -147,6 +166,8 @@ def canonicalize(g: dict, grid: int = 128, simplify_frac: float = 0.01,
     room_poly: dict = {}   # rid -> 단순화 polygon(snap 계산용)
     for nid, r in (g.get("rooms") or {}).items():
         poly = _simplify_poly(r.get("polygon") or [], tol)
+        if rectilinear:                                # 그래프부터 직선화(직교 정규화)
+            poly = _rectilinear_poly(poly)
         if len(poly) < 3:
             continue
         ids = _dedup_cycle([_qid(p) for p in poly])

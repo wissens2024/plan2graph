@@ -102,6 +102,7 @@ def main():
     ap.add_argument("--ckpt-every", type=int, default=10, help="N epoch마다 체크포인트 저장")
     ap.add_argument("--constrained", action="store_true",
                     help="생성 시 constrained decoding(ADR-0012 §3) 적용")
+    ap.add_argument("--orthogonal", action="store_true", help="직각 강제(대각선 차단)")
     ap.add_argument("--out", default="")
     args = ap.parse_args()
 
@@ -118,7 +119,7 @@ def main():
     nparam = sum(p.numel() for p in model.parameters())
     print(f"[model] {nparam/1e6:.1f}M params, d={args.d_model} L={args.n_layer}")
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
-    mask_fn = make_constraint_mask(vocab) if args.constrained else None
+    mask_fn = make_constraint_mask(vocab, orthogonal=args.orthogonal) if args.constrained else None
     if mask_fn:
         print("[constrained] decoding 마스크 ON (ADR-0012 §3)")
 
