@@ -142,26 +142,33 @@ def make_constraint_mask(vocab: dict):
             if nref >= 3:
                 a.add(V.ROOM_END)                                     # cycle≥3 충족 시 닫기
             return a
-        # ── OPENINGS phase ──
+        # ── OPENINGS phase ── door=c c pos r r · window=c c pos · open=r r
         oi = seq.index(V.SEC_OPEN)
         nrooms = seq[ri:oi].count(V.ROOM_END)
         tail = seq[oi + 1:]
         st = "head"
         for t in tail:
             if st == "head":
-                st = "c1" if t in (V.DOOR, V.WINDOW) else ("r1" if t == V.OPEN else "head")
-            elif st == "c1": st = "c2"
-            elif st == "c2": st = "pos"
-            elif st == "pos": st = "head"
-            elif st == "r1": st = "r2"
-            elif st == "r2": st = "head"
+                if t == V.DOOR:   st = "dc1"
+                elif t == V.WINDOW: st = "wc1"
+                elif t == V.OPEN: st = "or1"
+            elif st == "dc1": st = "dc2"
+            elif st == "dc2": st = "dpos"
+            elif st == "dpos": st = "dr1"
+            elif st == "dr1": st = "dr2"
+            elif st == "dr2": st = "head"
+            elif st == "wc1": st = "wc2"
+            elif st == "wc2": st = "wpos"
+            elif st == "wpos": st = "head"
+            elif st == "or1": st = "or2"
+            elif st == "or2": st = "head"
         if st == "head":
             return {V.DOOR, V.WINDOW, V.OPEN, V.EOS}
-        if st in ("c1", "c2"):
+        if st in ("dc1", "dc2", "wc1", "wc2"):
             return set(range(coord, coord + ncorners))                # corner 참조
-        if st == "pos":
+        if st in ("dpos", "wpos"):
             return set(range(pos, pos + nbins + 1))
-        return set(range(room, room + max(1, nrooms)))                # room ordinal 참조
+        return set(range(room, room + max(1, nrooms)))                # room ordinal(dr/or)
 
     def mask_fn(x, logits):
         for b in range(x.size(0)):

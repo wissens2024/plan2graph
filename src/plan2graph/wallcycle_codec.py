@@ -386,7 +386,7 @@ def canon_to_graph(canon: Canon) -> dict:
         ek_rooms = sorted(edge_rooms.get(ek, set()))
         if op["kind"] == "door":
             did = f"d{dn}"; dn += 1
-            connects = ek_rooms[:2] or list(op.get("rooms") or [])
+            connects = list(op.get("rooms") or [])[:2] or ek_rooms[:2]   # 명시 방쌍 우선
             doors.append({"id": did, "connects": connects, "via": "door",
                           "position": px, "on_wall": wid})
             if wid:
@@ -488,10 +488,17 @@ def encode(canon: Canon, vocab=None) -> list:
             t.append(vb["room"] + room_ord[a])
             t.append(vb["room"] + room_ord[b])
             continue
-        t.append(V.DOOR if op["kind"] == "door" else V.WINDOW)
+        is_door = op["kind"] == "door"
+        t.append(V.DOOR if is_door else V.WINDOW)
         t.append(_corner_ref(op["edge"][0], vb))
         t.append(_corner_ref(op["edge"][1], vb))
         t.append(vb["pos"] + op["pos"])
+        if is_door:                                    # 문=두 방 잇는 구조 → 방쌍 명시(open과 동일)
+            rms = [r for r in (op.get("rooms") or []) if r in room_ord][:2]
+            while len(rms) < 2:
+                rms.append(rms[-1] if rms else next(iter(room_ord), 0))
+            t.append(vb["room"] + room_ord[rms[0]])
+            t.append(vb["room"] + room_ord[rms[1]])
     t.append(V.EOS)
     return t
 
@@ -543,7 +550,12 @@ def decode(tokens: list, vocab) -> Canon:
         kind = "door" if tokens[i] == V.DOOR else "window"; i += 1
         ca = tokens[i] - vb["coord"]; cb = tokens[i + 1] - vb["coord"]; i += 2
         pos = tokens[i] - vb["pos"]; i += 1
-        canon.openings.append({"kind": kind, "edge": [ca, cb], "rooms": [], "pos": pos})
+        rooms = []
+        if kind == "door":
+            oa = tokens[i] - vb["room"]; ob = tokens[i + 1] - vb["room"]; i += 2
+            rooms = [canon.rooms[oa]["id"] if 0 <= oa < len(canon.rooms) else oa,
+                     canon.rooms[ob]["id"] if 0 <= ob < len(canon.rooms) else ob]
+        canon.openings.append({"kind": kind, "edge": [ca, cb], "rooms": rooms, "pos": pos})
     return canon
 
 
@@ -565,6 +577,9 @@ def roundtrip_metrics(g: dict, grid: int = 128, simplify_frac: float = 0.01,
         for o in c.openings:
             if o["kind"] == "open":
                 out.append(("open", tuple(sorted(ro.get(r, -1) for r in o["rooms"]))))
+            elif o["kind"] == "door":
+                out.append(("door", tuple(o["edge"]), o["pos"],
+                            tuple(sorted(ro.get(r, -1) for r in o["rooms"]))))
             else:
                 out.append((o["kind"], tuple(o["edge"]), o["pos"]))
         return out
