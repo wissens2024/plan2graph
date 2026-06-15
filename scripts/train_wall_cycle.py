@@ -24,7 +24,8 @@ import torch  # noqa: E402
 from torch.utils.data import DataLoader, Dataset  # noqa: E402
 
 from plan2graph import wallcycle_codec as wc  # noqa: E402
-from plan2graph.generators.wall_cycle import WallCycleLM, causal_lm_loss  # noqa: E402
+from plan2graph.generators.wall_cycle import (  # noqa: E402
+    WallCycleLM, causal_lm_loss, make_constraint_mask)
 
 
 class TokDS(Dataset):
@@ -50,8 +51,8 @@ def collate(batch, pad):
     return x
 
 
-def diagnose(model, vocab, device, n=64, meta_prefix=None):
-    """META prefix로 생성 → 디코드 → 유효율/다양성/방수."""
+def diagnose(model, vocab, device, n=64, meta_prefix=None, mask_fn=None):
+    """META prefix로 생성 → 디코드 → 유효율/다양성/방수. mask_fn=constrained decoding."""
     model.eval()
     bos, eos = wc.V.BOS, wc.V.EOS
     pre = meta_prefix or [bos,
@@ -62,7 +63,7 @@ def diagnose(model, vocab, device, n=64, meta_prefix=None):
                           vocab["units"] + 1]                      # 1세대
     prefix = torch.tensor([pre] * n, device=device)
     out = model.generate(prefix, max_new=model.max_len - len(pre), eos=eos,
-                         temperature=1.0, top_k=40)
+                         temperature=1.0, top_k=40, mask_fn=mask_fn)
     seqs, valid, rooms = [], 0, []
     for row in out.tolist():
         if eos in row:
@@ -98,6 +99,8 @@ def main():
     ap.add_argument("--n-head", type=int, default=8)
     ap.add_argument("--max-len", type=int, default=1152)
     ap.add_argument("--diag-every", type=int, default=25)
+    ap.add_argument("--constrained", action="store_true",
+                    help="생성 시 constrained decoding(ADR-0012 §3) 적용")
     ap.add_argument("--out", default="")
     args = ap.parse_args()
 
@@ -114,6 +117,9 @@ def main():
     nparam = sum(p.numel() for p in model.parameters())
     print(f"[model] {nparam/1e6:.1f}M params, d={args.d_model} L={args.n_layer}")
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
+    mask_fn = make_constraint_mask(vocab) if args.constrained else None
+    if mask_fn:
+        print("[constrained] decoding 마스크 ON (ADR-0012 §3)")
 
     for ep in range(1, args.epochs + 1):
         model.train()
@@ -129,7 +135,7 @@ def main():
             opt.step()
             tot += loss.item() * x.size(0)
         if ep % args.diag_every == 0 or ep == args.epochs:
-            d = diagnose(model, vocab, dev)
+            d = diagnose(model, vocab, dev, mask_fn=mask_fn)
             print(f"ep{ep:4d} loss {tot/len(ds):.4f} | valid {d['valid_rate']} "
                   f"uniq {d['uniq_rate']} rooms~{d['mean_rooms']}(max{d['max_rooms']})")
     if args.out:
