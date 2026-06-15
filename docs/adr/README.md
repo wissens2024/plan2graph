@@ -12,6 +12,11 @@
 **이미지 + AutoCAD DXF**로 출력한다.
 👉 박스+색칠이 아니라 *그려서 쓰는 도면*이 목표다.
 
+> **목표 2단계 분리 (ADR-0014):**
+> - **Phase 1 (지금 · SCI 논문)** = DiffPlanner/GSDiff/FMLM급 **벡터 레이아웃**(벽·방·문) + 한국형 + **다국가 도메인 조건**(CN/KR/EU, ADR-0013) + **국가별 규제-인식 생성**(법규엔진 — 우리 신규성). *완성형 상용 도면 아님.*
+> - **Phase 2 (나중 · 상용)** = 가구·치수·완성형 as-built, **하이브리드(생성+파라메트릭 CAD 솔버)**, 알바 데이터 보정 후. ([[commercial-is-solver-not-generative]])
+> - **Phase 1 먼저 채운다.** Phase 1 전제 = 한국 기하 품질이 DiffPlanner급 도달(40k/wall-cycle 진행 중).
+
 ## 2. 현재 확정 파이프라인 (처음→끝, 평이하게)
 ```
 데이터 (AI-Hub 한국 + RPLAN/CubiCasa 글로벌)
