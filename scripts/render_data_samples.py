@@ -24,6 +24,24 @@ def _n_entrance(g):
                if (r.get("role") or r.get("base")) == "현관")
 
 
+def _rectilinear(poly):
+    """폴리곤 변을 가로/세로로 스냅(직교 정규화). 수평 변→y통일, 수직 변→x통일."""
+    if len(poly) < 4:
+        return poly
+    pts = [list(p) for p in poly]
+    closed = pts[0] == pts[-1]
+    if closed:
+        pts = pts[:-1]
+    n = len(pts)
+    for i in range(n):
+        a, b = pts[i], pts[(i + 1) % n]
+        if abs(b[0] - a[0]) >= abs(b[1] - a[1]):     # 수평 변 → 끝점 y를 시작 y로
+            pts[(i + 1) % n][1] = a[1]
+        else:                                        # 수직 변 → 끝점 x를 시작 x로
+            pts[(i + 1) % n][0] = a[0]
+    return pts + [pts[0]] if closed else pts
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", required=True)
@@ -36,6 +54,8 @@ def main():
                     help="토큰화→복원 경로(canonicalize→canon_to_graph) 거쳐 렌더 — 토큰화가 직각 깨는지 확인")
     ap.add_argument("--fixtures", action="store_true",
                     help="Tier B 가구(역할추론) 배치 — RPLAN 없는 완성 정보 데모")
+    ap.add_argument("--rectilinear", action="store_true",
+                    help="그래프 폴리곤 직교 정규화(변을 가로/세로로 스냅) — 그래프부터 직선화")
     args = ap.parse_args()
 
     files = sorted(glob.glob(os.path.join(args.dir, "APT_*.json")))
@@ -61,6 +81,9 @@ def main():
     os.makedirs(args.out, exist_ok=True)
     for i, (f, g) in enumerate(picks):
         try:
+            if args.rectilinear:                        # 그래프부터 직선화(직교 정규화)
+                for r in (g.get("rooms") or {}).values():
+                    r["polygon"] = _rectilinear(r.get("polygon") or [])
             if args.via_codec:
                 from plan2graph import wallcycle_codec as wc
                 g = wc.canon_to_graph(wc.canonicalize(g))
