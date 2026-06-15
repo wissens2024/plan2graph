@@ -117,7 +117,7 @@ def _simplify_poly(poly, tol):
 
 
 def canonicalize(g: dict, grid: int = 128, simplify_frac: float = 0.0,
-                 use_wall_snap: bool = True) -> Canon:
+                 use_wall_snap: bool = False) -> Canon:
     bbox = g.get("bbox_px") or _bbox_from_rooms(g)
     meta_in = g.get("meta") or {}
     meta = {
@@ -239,6 +239,15 @@ def canonicalize(g: dict, grid: int = 128, simplify_frac: float = 0.0,
             "kind": "window", "edge": list(ek), "rooms": [rid] if rid in room_cycle else [],
             "pos": _edge_pos(ek, w.get("position"), canon.corners, bbox, grid),
         })
+
+    # open 경계(문 없는 공유, ADR-0010 boundary=open) = 방쌍 명시 토큰.
+    # corner 공유에 의존 않으므로 union 없이도 인접 보존(방 붕괴 회피).
+    for e in (g.get("edges") or []):
+        if e.get("via") != "open":
+            continue
+        a, b = _int(e.get("from")), _int(e.get("to"))
+        if a in room_cycle and b in room_cycle and a != b:
+            canon.openings.append({"kind": "open", "edge": None, "rooms": [a, b], "pos": 0})
     return canon
 
 
@@ -358,6 +367,11 @@ def canon_to_graph(canon: Canon) -> dict:
     doors, windows, edges = [], [], []
     dn = wn = 0
     for op in canon.openings:
+        if op["kind"] == "open":
+            rms = op["rooms"]
+            if len(rms) == 2:
+                edges.append({"from": rms[0], "to": rms[1], "via": "open", "door_id": None})
+            continue
         ek = _edge_key(op["edge"][0], op["edge"][1])
         wid = wall_of_edge.get(ek)
         a, b = cpx[ek[0]], cpx[ek[1]]
@@ -383,16 +397,6 @@ def canon_to_graph(canon: Canon) -> dict:
                     if w["id"] == wid:
                         w["openings"].append(win)
 
-    # open 인접(문 없는 공유벽) = via open 엣지 보강
-    door_pairs = {frozenset(e["from"], ) if False else frozenset((e["from"], e["to"]))
-                  for e in edges}
-    for ek, rs in edge_rooms.items():
-        if len(rs) == 2:
-            pair = frozenset(rs)
-            if pair not in door_pairs:
-                a, b = sorted(rs)
-                edges.append({"from": a, "to": b, "via": "open", "door_id": None})
-
     return {
         "schema_version": "g-0.4",
         "bbox_px": bbox,
@@ -417,18 +421,21 @@ class V:
     ROOM_END = 5
     DOOR = 6
     WINDOW = 7
-    _BASE = 8
-    # 동적 구간: META(country|housing|schema), COORD(0..grid), ROLE, POS
+    OPEN = 8       # ADR-0010 boundary=open: 문 없는 공유 경계(방쌍 명시, 벽 안 그림)
+    _BASE = 9
+    # 동적 구간: META(country|housing|schema), COORD(0..grid), ROLE, POS, ROOM(ordinal)
 
 
-def _vocab(grid: int, nbins: int = 16):
+def _vocab(grid: int, nbins: int = 16, maxrooms: int = 64):
     off = V._BASE
     meta_off = off;                 off += len(COUNTRIES) + len(HOUSING) + len(SCHEMAS)
     coord_off = off;                off += (grid + 1)
     role_off = off;                 off += len(ROLES)
     pos_off = off;                  off += (nbins + 1)
+    room_off = off;                 off += maxrooms          # open 토큰의 방 ordinal 참조
     return {"meta": meta_off, "coord": coord_off, "role": role_off,
-            "pos": pos_off, "size": off, "grid": grid, "nbins": nbins}
+            "pos": pos_off, "room": room_off, "maxrooms": maxrooms,
+            "size": off, "grid": grid, "nbins": nbins}
 
 
 def encode(canon: Canon, vocab=None) -> list:
@@ -451,8 +458,17 @@ def encode(canon: Canon, vocab=None) -> list:
             t.append(vb["coord"] + c) if False else t.append(_corner_ref(c, vb))
         t.append(V.ROOM_END)
     # OPENINGS
+    room_ord = {rm["id"]: i for i, rm in enumerate(canon.rooms)}
     t.append(V.SEC_OPEN)
     for op in canon.openings:
+        if op["kind"] == "open":
+            a, b = op["rooms"][0], op["rooms"][1]
+            if a not in room_ord or b not in room_ord:
+                continue
+            t.append(V.OPEN)
+            t.append(vb["room"] + room_ord[a])
+            t.append(vb["room"] + room_ord[b])
+            continue
         t.append(V.DOOR if op["kind"] == "door" else V.WINDOW)
         t.append(_corner_ref(op["edge"][0], vb))
         t.append(_corner_ref(op["edge"][1], vb))
@@ -494,6 +510,13 @@ def decode(tokens: list, vocab) -> Canon:
         canon.rooms.append({"id": rid, "role_id": role_id, "cycle": cyc}); rid += 1
     assert tokens[i] == V.SEC_OPEN; i += 1
     while tokens[i] != V.EOS:
+        if tokens[i] == V.OPEN:
+            i += 1
+            oa = tokens[i] - vb["room"]; ob = tokens[i + 1] - vb["room"]; i += 2
+            rid_a = canon.rooms[oa]["id"] if 0 <= oa < len(canon.rooms) else oa
+            rid_b = canon.rooms[ob]["id"] if 0 <= ob < len(canon.rooms) else ob
+            canon.openings.append({"kind": "open", "edge": None, "rooms": [rid_a, rid_b], "pos": 0})
+            continue
         kind = "door" if tokens[i] == V.DOOR else "window"; i += 1
         ca = tokens[i] - vb["coord"]; cb = tokens[i + 1] - vb["coord"]; i += 2
         pos = tokens[i] - vb["pos"]; i += 1
@@ -513,12 +536,20 @@ def roundtrip_metrics(g: dict, grid: int = 128, simplify_frac: float = 0.0,
     canon2 = decode(toks, vb)
 
     # 토큰 라운드트립(canonical 동등): corner/room cycle/opening 일치
+    def _op_sig(c):
+        ro = {rm["id"]: i for i, rm in enumerate(c.rooms)}
+        out = []
+        for o in c.openings:
+            if o["kind"] == "open":
+                out.append(("open", tuple(sorted(ro.get(r, -1) for r in o["rooms"]))))
+            else:
+                out.append((o["kind"], tuple(o["edge"]), o["pos"]))
+        return out
     tok_ok = (
         [tuple(c) for c in canon.corners] == [tuple(c) for c in canon2.corners]
         and [(r["role_id"], r["cycle"]) for r in canon.rooms]
             == [(r["role_id"], r["cycle"]) for r in canon2.rooms]
-        and [(o["kind"], o["edge"], o["pos"]) for o in canon.openings]
-            == [(o["kind"], o["edge"], o["pos"]) for o in canon2.openings]
+        and _op_sig(canon) == _op_sig(canon2)
     )
 
     # 원본 대비 보존(양자화 손실 허용)
