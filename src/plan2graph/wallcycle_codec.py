@@ -381,21 +381,30 @@ def canon_to_graph(canon: Canon) -> dict:
         a, b = cpx[ek[0]], cpx[ek[1]]
         t = op["pos"] / 16.0
         px = [round(a[0] + (b[0] - a[0]) * t, 1), round(a[1] + (b[1] - a[1]) * t, 1)]
+        # door/window의 방 귀속 = edge가 속한 room-cycle로 유도(decode 경로에서 op.rooms는 빔).
+        #   door=공유벽(2방 connects), window=외벽(1방 belongs_to). corner-pair가 방을 결정.
+        ek_rooms = sorted(edge_rooms.get(ek, set()))
         if op["kind"] == "door":
             did = f"d{dn}"; dn += 1
-            doors.append({"id": did, "connects": op["rooms"], "via": "door",
+            connects = ek_rooms[:2] or list(op.get("rooms") or [])
+            doors.append({"id": did, "connects": connects, "via": "door",
                           "position": px, "on_wall": wid})
             if wid:
                 for w in walls:
                     if w["id"] == wid:
                         w["openings"].append(did)
-            if len(op["rooms"]) == 2:
-                edges.append({"from": op["rooms"][0], "to": op["rooms"][1],
+            for rid in connects:
+                if str(rid) in rooms:
+                    rooms[str(rid)]["door_ids"].append(did)
+            if len(connects) == 2:
+                edges.append({"from": connects[0], "to": connects[1],
                               "via": "door", "door_id": did})
         else:
             win = f"win{wn}"; wn += 1
-            rid = op["rooms"][0] if op["rooms"] else None
+            rid = ek_rooms[0] if ek_rooms else (op["rooms"][0] if op.get("rooms") else None)
             windows.append({"id": win, "belongs_to": rid, "position": px, "on_wall": wid})
+            if rid is not None and str(rid) in rooms:
+                rooms[str(rid)]["window_ids"].append(win)
             if wid:
                 for w in walls:
                     if w["id"] == wid:
