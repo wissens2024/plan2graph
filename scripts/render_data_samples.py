@@ -67,7 +67,11 @@ def main():
             geom = cadrender.from_geomgraph(g)
             if args.fixtures:                          # Tier B 가구 배치(neuro-symbolic 완성층)
                 from plan2graph import semantic_fill
-                sc = semantic_fill.infer_scale(g) or 5.0
+                try:
+                    sc = semantic_fill.infer_scale(g)["scale_mm_per_px"]
+                except Exception:                      # 여닫이문 없으면 도면폭 12m 가정
+                    bb = g.get("bbox_px") or [0, 0, 400, 400]
+                    sc = 12000.0 / max(bb[2], 1.0)
                 for rg in geom.rooms:
                     rd = (g.get("rooms") or {}).get(str(rg.id)) or {}
                     more = semantic_fill.place_fixtures_for_room(rd, g, sc)
