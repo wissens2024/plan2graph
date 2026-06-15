@@ -53,6 +53,9 @@
 | 0010 | **표현 g-0.4 · 완성 7레이어 · 가구 2계층** | ✅ Accepted (0012로 일부 refine) ★ |
 | 0011 | 데이터 구분자 = APT 정형 단일세대만 | ✅ Accepted |
 | 0012 | **생성 타깃 wall-cycle+opening · 평가 · 학습순서** | ✅ Accepted ★ |
+| 0013 | 다국가 조건 메타(country/dataset/housing/label_schema) | ✅ Accepted |
+| 0014 | 목표 2단계 분리(Phase1 SCI / Phase2 상용) — novelty 정직화 | ✅ Accepted |
+| 0015 | **wall-cycle+opening 토큰 직렬화 코덱**(전수 40k 검증) | ✅ Accepted ★ |
 
 ★ = 지금 가장 중요한 정본 (0006·0008·0009·0010·0012).
 
