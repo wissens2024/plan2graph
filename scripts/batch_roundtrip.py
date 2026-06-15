@@ -42,7 +42,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", required=True, help="graphs 디렉토리")
     ap.add_argument("--grid", type=int, default=128)
-    ap.add_argument("--simplify-frac", type=float, default=0.012)
+    ap.add_argument("--simplify-frac", type=float, default=0.0)
+    ap.add_argument("--no-wall-snap", action="store_true", help="gap-closing union 끄기(진단용)")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--glob", default="*.json")
     ap.add_argument("--apt-only", action="store_true", help="house=APT만(ADR-0011)")
@@ -75,7 +76,8 @@ def main():
             n_apt_skip += 1
             continue
         try:
-            m = wc.roundtrip_metrics(g, grid=args.grid, simplify_frac=args.simplify_frac)
+            m = wc.roundtrip_metrics(g, grid=args.grid, simplify_frac=args.simplify_frac,
+                                     use_wall_snap=not args.no_wall_snap)
         except Exception as e:  # noqa: BLE001
             n_err += 1
             if n_err <= 5:

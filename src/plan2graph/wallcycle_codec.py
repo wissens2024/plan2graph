@@ -116,7 +116,8 @@ def _simplify_poly(poly, tol):
         return poly
 
 
-def canonicalize(g: dict, grid: int = 128, simplify_frac: float = 0.012) -> Canon:
+def canonicalize(g: dict, grid: int = 128, simplify_frac: float = 0.0,
+                 use_wall_snap: bool = True) -> Canon:
     bbox = g.get("bbox_px") or _bbox_from_rooms(g)
     meta_in = g.get("meta") or {}
     meta = {
@@ -176,7 +177,7 @@ def canonicalize(g: dict, grid: int = 128, simplify_frac: float = 0.012) -> Cano
 
     # 3. 원본 interior 벽(공유 방쌍, _derive_walls가 buffer로 계산) 신뢰 →
     #    벽 양끝에서 두 방 경계 꼭짓점을 같은 junction으로 병합(gap-closing).
-    for w in (g.get("walls") or []):
+    for w in ((g.get("walls") or []) if use_wall_snap else []):
         if w.get("type") != "interior":
             continue
         rms = [r for r in (w.get("rooms") or []) if r in room_poly]
@@ -503,9 +504,10 @@ def decode(tokens: list, vocab) -> Canon:
 # ─────────────────────────────────────────────────────────────────────────────
 # 라운드트립 검증
 # ─────────────────────────────────────────────────────────────────────────────
-def roundtrip_metrics(g: dict, grid: int = 128, simplify_frac: float = 0.012) -> dict:
+def roundtrip_metrics(g: dict, grid: int = 128, simplify_frac: float = 0.0,
+                      use_wall_snap: bool = True) -> dict:
     """원본 g-0.4 ↔ canonical/토큰 라운드트립의 보존율 측정."""
-    canon = canonicalize(g, grid=grid, simplify_frac=simplify_frac)
+    canon = canonicalize(g, grid=grid, simplify_frac=simplify_frac, use_wall_snap=use_wall_snap)
     vb = _vocab(grid)
     toks = encode(canon, vb)
     canon2 = decode(toks, vb)
