@@ -52,6 +52,24 @@ PALETTE = ["거실", "안방", "침실", "주방", "화장실", "욕실", "현�
            "드레스룸", "알파룸", "다목적공간", "복도", "전실", "실외기실", "파우더룸", "기타"]
 PALETTE = [r for r in PALETTE if r in ROLES] or PALETTE
 
+# ── 거주형태(주거 형태) — 파일명 접두는 원본 라벨일 뿐, 실물과 다를 수 있어 메타를 사람이 보정 ──
+#    house_type 코드 → 한글 라벨 / 정규화 housing_type (geomgraph.HOUSING_TYPE 미러, ADR-0013 조건메타).
+HOUSES = ["APT", "DEH", "ROW"]
+HOUSE_KO = {"APT": "APT(아파트)", "DEH": "DEH(단독주택)", "ROW": "ROW(연립주택)"}
+HOUSING_NORM = {"APT": "apartment", "DEH": "detached", "ROW": "rowhouse"}
+
+
+def _apply_house(g, code):
+    """house_type 코드(APT/DEH/ROW)를 그래프 3곳에 일관 적용: g.house · meta.house_type · meta.housing_type."""
+    if not g or code not in HOUSING_NORM:
+        return g
+    g["house"] = code
+    meta = g.get("meta")
+    if isinstance(meta, dict):
+        meta["house_type"] = code
+        meta["housing_type"] = HOUSING_NORM[code]
+    return g
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 원본 PNG 인덱스 (sig → (zip, entry)) — 1회 빌드 후 디스크 캐시. 백그라운드 로드.
@@ -257,7 +275,9 @@ def _merge_nodes(g, ids):
 def _html():
     pal = json.dumps(PALETTE, ensure_ascii=False)
     col = json.dumps(ROLE_COLOR, ensure_ascii=False)
-    return _HTML.replace("__PAL__", pal).replace("__COL__", col)
+    hk = json.dumps([[h, HOUSE_KO[h]] for h in HOUSES], ensure_ascii=False)
+    return (_HTML.replace("__PAL__", pal).replace("__COL__", col)
+            .replace("__HOUSE__", hk))
 
 
 _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
@@ -293,6 +313,17 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
  .icobtn:hover{background:#2c3340;border-color:var(--accent)}
  .icobtn:active{transform:scale(.94)}
 
+ /* 거주형태 보정 바 */
+ .housebar{display:flex;align-items:center;gap:7px;margin:0 0 10px;background:var(--panel2);
+   border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+ .housebar .hl{font-size:11.5px;font-weight:700;color:var(--muted);flex-shrink:0}
+ .housebar select{flex:1;background:#222733;color:var(--txt);border:1px solid var(--line2);
+   border-radius:6px;padding:5px 7px;font-size:12px;font-weight:600;outline:none;cursor:pointer}
+ .housebar select:focus{border-color:var(--accent)}
+ .housebar .hwarn{display:none;color:var(--sel);font-size:14px;flex-shrink:0}
+ .housebar.mismatch .hwarn{display:inline}
+ .housebar.mismatch select{border-color:var(--sel)}
+
  /* 진행도 */
  .prog{margin:4px 0 12px}
  .prog .row{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-bottom:5px}
@@ -312,6 +343,7 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
  #list .opt:hover{background:#222733}
  #list .opt.on{background:#1d3a5c;color:#fff}
  #list .opt .ck{flex-shrink:0;width:14px;text-align:center;font-size:11px}
+ #list .opt .ix{flex-shrink:0;color:var(--muted);font-variant-numeric:tabular-nums;min-width:30px;text-align:right}
  #list .opt.done .ck{color:var(--ok-fg)}
  .nav{display:flex;gap:8px;margin-top:8px}
  .nav button{flex:1;padding:8px;border-radius:8px;border:1px solid var(--line2);background:var(--panel2);
@@ -427,8 +459,13 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
      <code id="pid" title="현재 도면 ID — 클릭하면 전체 선택">—</code>
      <button class="icobtn" id="copyId" title="ID 복사">📋</button>
    </div>
+   <div class="housebar" title="파일명 접두는 원본 라벨 — 실물과 다르면 여기서 바로잡으세요">
+     <span class="hl">🏠 거주형태</span>
+     <select id="house"></select>
+     <span class="hwarn" id="housewarn" title="파일명 접두와 거주형태가 다름">⚠</span>
+   </div>
    <div class="prog">
-     <div class="row"><span>보정 진행</span><span><b id="pdone">0</b> / <span id="ptot">0</span></span></div>
+     <div class="row"><span>보정 완료 (전체 중)</span><span><b id="pdone">0</b> / <span id="ptot">0</span></span></div>
      <div class="bar"><i id="pbar"></i></div>
    </div>
 
@@ -475,13 +512,19 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 </div>
 <script>
 const NS='http://www.w3.org/2000/svg', svg=document.getElementById('svg');
-const PALETTE=__PAL__, ROLE_COLOR=__COL__;
+const PALETTE=__PAL__, ROLE_COLOR=__COL__, HOUSES=__HOUSE__;
+const HOUSING_NORM={APT:'apartment',DEH:'detached',ROW:'rowhouse'};
 const MODES={role:'🎨 역할',adj:'🔗 인접',merge:'⛓ 합치기',del:'🗑 삭제',split:'✂ 나누기'};
 let G=null,GID=null,dirty=false,mode='role',sel=null,adjA=null,mergeSel=[],vb=null;
-let splitSel=null,cutPts=[],splitRoles=null;
+let splitSel=null,cutPts=[],splitRoles=null,snapOrtho=true;
 let LIST=[],undoStack=[];
 function evToUser(ev){const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;
   const u=pt.matrixTransform(svg.getScreenCTM().inverse());return [u.x,u.y];}
+// 컷 직각 스냅: 시작점 p0 기준, 우세축으로 끝점을 수평/수직 정렬(박스형). Shift=자유각.
+function snapPt(p0,p1,ev){
+  if(!snapOrtho||(ev&&ev.shiftKey))return p1;
+  const dx=p1[0]-p0[0],dy=p1[1]-p0[1];
+  return Math.abs(dx)>=Math.abs(dy)?[p1[0],p0[1]]:[p0[0],p1[1]];}
 function defaultRoles(role){role=role||'';
   if(role.indexOf('거실')>=0)return['거실','복도'];
   if(role.indexOf('드레스')>=0)return['드레스룸','파우더룸'];
@@ -512,10 +555,11 @@ async function loadList(q){
 }
 function renderList(){
   const box=document.getElementById('list');box.innerHTML='';
-  LIST.forEach(o=>{const d=document.createElement('div');
+  LIST.forEach((o,i)=>{const d=document.createElement('div');
     d.className='opt'+(o.corrected?' done':'')+(o.id===GID?' on':'');
-    d.innerHTML='<span class="ck">'+(o.corrected?'✔':'·')+'</span>'+o.id.replace('APT_FP_','');
-    d.title=o.id;d.onclick=()=>{vb=null;loadGraph(o.id);};box.appendChild(d);});
+    d.innerHTML='<span class="ck">'+(o.corrected?'✔':'·')+'</span>'
+      +'<span class="ix">'+(i+1)+'.</span>'+o.id.replace('APT_FP_','');
+    d.title='#'+(i+1)+'  '+o.id;d.onclick=()=>{vb=null;loadGraph(o.id);};box.appendChild(d);});
 }
 async function loadGraph(id){
   const r=await(await fetch('api/graph/'+id)).json();
@@ -523,7 +567,23 @@ async function loadGraph(id){
   G=r.graph;GID=id;sel=null;adjA=null;mergeSel=[];undoStack=[];
   document.getElementById('undo').disabled=true;setDirty(false);
   document.getElementById('pid').textContent=id;
-  showStatus(r.status);renderList();render();
+  syncHouse();showStatus(r.status);renderList();render();
+}
+
+// ── 거주형태 보정 ────────────────────────────────────────────────────────────
+function curHouse(){const m=(G&&G.meta)||{};return m.house_type||(G&&G.house)||'';}
+function syncHouse(){                       // 로드/변경 후 select·경고 동기화
+  const hsel=document.getElementById('house');const cur=curHouse();
+  hsel.value=HOUSES.some(h=>h[0]===cur)?cur:'';
+  const prefix=(GID||'').split('_')[0];     // 파일명 접두(원본 라벨)
+  document.querySelector('.housebar').classList.toggle('mismatch',!!cur&&!!prefix&&cur!==prefix);
+}
+function setHouse(code){                     // g.house · meta.house_type · meta.housing_type 일관 적용
+  if(!G||curHouse()===code)return;
+  pushUndo();G.house=code;G.meta=G.meta||{};
+  G.meta.house_type=code;G.meta.housing_type=HOUSING_NORM[code]||code;
+  setDirty(true);syncHouse();
+  toast('거주형태 → '+code+(code===(GID||'').split('_')[0]?'':' (파일명 접두와 다름 — 메타만 보정)'));
 }
 function showStatus(st){
   const e=document.getElementById('stat');
@@ -608,7 +668,8 @@ function onRoom(id,ev){
   if(mode==='split'){
     if(!splitSel){splitSel=id;cutPts=[];splitRoles=null;render();renderCtx();
       toast('컷 시작점→끝점을 클릭(방을 가로지르게)');}
-    else if(cutPts.length<2&&ev){cutPts.push(evToUser(ev));
+    else if(cutPts.length<2&&ev){const u=evToUser(ev);
+      cutPts.push(cutPts.length===1?snapPt(cutPts[0],u,ev):u);
       if(cutPts.length===2)splitRoles=defaultRoles(G.rooms[splitSel].role);
       render();renderCtx();}
     return;
@@ -703,7 +764,8 @@ function renderCtx(){
       +'문·엣지는 컷 후 기하로 자동 재분배됩니다.</div>';}
     else if(cutPts.length<2){h+='<div class="help">선택: <b style="color:var(--split)">'
       +(G.rooms[splitSel]?.role||splitSel)+'</b><br>방을 가로지르도록 <b>'+cutPts.length+'/2</b> 점 클릭.<br>'
-      +'(선분은 자동 연장 — 양 끝이 경계 근처면 OK)</div>'
+      +'(선분은 자동 연장 — 양 끝이 경계 근처면 OK)<br>'
+      +'직각 스냅(박스형) <b style="color:var(--split)">'+(snapOrtho?'켜짐':'꺼짐')+'</b> — <kbd>O</kbd> 토글 · <kbd>Shift</kbd> 누르면 자유각</div>'
       +'<button class="bigbtn ghost" id="sclr">선택 취소 (Esc)</button>';}
     else{const roles=splitRoles||defaultRoles(G.rooms[splitSel].role);
       const opt=(sel)=>PALETTE.map(r=>'<option value="'+r+'"'+(r===sel?' selected':'')+'>'+r+'</option>').join('');
@@ -731,7 +793,7 @@ document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>setMode(b.data
 
 // ── 키보드 ──────────────────────────────────────────────────────────────────
 document.addEventListener('keydown',ev=>{
-  const tag=ev.target.tagName;if(tag==='INPUT'||tag==='TEXTAREA')return;
+  const tag=ev.target.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;
   if((ev.ctrlKey||ev.metaKey)&&ev.key.toLowerCase()==='z'){ev.preventDefault();undo();return;}
   if((ev.ctrlKey||ev.metaKey)&&ev.key.toLowerCase()==='s'){ev.preventDefault();save();return;}
   if(ev.ctrlKey||ev.metaKey||ev.altKey)return;
@@ -741,7 +803,8 @@ document.addEventListener('keydown',ev=>{
   if(k==='s'){setMode('split');return;}
   if(mode==='adj'||k==='a'){if(k==='a'&&mode!=='adj'){setMode('adj');return;}}
   if(mode==='merge'){if(ev.key==='Enter'){doMerge();return;}if(ev.key==='Escape'){mergeSel=[];render();renderCtx();return;}}
-  if(mode==='split'){if(ev.key==='Enter'){doSplit();return;}if(ev.key==='Escape'){resetSplit();return;}}
+  if(mode==='split'){if(ev.key==='Enter'){doSplit();return;}if(ev.key==='Escape'){resetSplit();return;}
+    if(k==='o'){snapOrtho=!snapOrtho;renderCtx();toast('직각 스냅 '+(snapOrtho?'켜짐':'꺼짐'));return;}}
   if(mode==='role'){
     if(k==='e'){if(sel){pushUndo();G.rooms[sel].role='현관';setDirty(true);render();toast('현관 지정');}return;}
     let i=-1;if(ev.key>='1'&&ev.key<='9')i=+ev.key-1;else if(ev.key==='0')i=9;
@@ -770,6 +833,11 @@ async function save(){if(!G)return;
 document.getElementById('save').onclick=save;
 document.getElementById('undo').onclick=undo;
 
+// 거주형태 select 채우기 + 변경 핸들러
+(function(){const hsel=document.getElementById('house');
+  hsel.innerHTML=HOUSES.map(h=>'<option value="'+h[0]+'">'+h[1]+'</option>').join('');
+  hsel.onchange=()=>setHouse(hsel.value);})();
+
 // ── 팬/줌 ──────────────────────────────────────────────────────────────────
 function fit(){vb=bbox();svg.setAttribute('viewBox',vb.join(' '));}
 document.getElementById('fit').onclick=fit;
@@ -789,13 +857,14 @@ svg.addEventListener('wheel',ev=>{ev.preventDefault();if(!vb)return;const f=ev.d
 svg.addEventListener('click',ev=>{
   if(mode!=='split'||!splitSel||cutPts.length>=2||justPanned)return;
   if(ev.target.tagName==='polygon')return;
-  cutPts.push(evToUser(ev));
+  const u=evToUser(ev);
+  cutPts.push(cutPts.length===1?snapPt(cutPts[0],u,ev):u);
   if(cutPts.length===2)splitRoles=defaultRoles(G.rooms[splitSel].role);
   render();renderCtx();});
 svg.addEventListener('mousemove',ev=>{
   if(mode!=='split'||!splitSel||cutPts.length!==1)return;
   const ln=document.getElementById('cutprev');if(!ln)return;
-  const u=evToUser(ev);ln.setAttribute('x2',u[0]);ln.setAttribute('y2',u[1]);});
+  const u=snapPt(cutPts[0],evToUser(ev),ev);ln.setAttribute('x2',u[0]);ln.setAttribute('y2',u[1]);});
 
 renderCtx();loadList('');
 </script></body></html>"""
@@ -883,6 +952,10 @@ class H(BaseHTTPRequestHandler):
             gid = u.path[len("/api/graph/"):].replace("/", "_")
             g = json.loads(raw)
             g["corrected"] = True
+            # 거주형태 3곳 일관성 보장(프런트가 house_type만 바꿔도 housing_type/house 동기화)
+            _hc = (g.get("meta") or {}).get("house_type") or g.get("house")
+            if _hc in HOUSING_NORM:
+                _apply_house(g, _hc)
             with open(os.path.join(EDITS, gid + ".json"), "w", encoding="utf-8") as f:
                 json.dump(g, f, ensure_ascii=False)
             return self._send(200, json.dumps({"ok": True, "status": _status(g)}, ensure_ascii=False))

@@ -60,6 +60,11 @@ raw 박스로 2단계를 풀면 3단계로 못 넘어간다(박스엔 벽·접�
   *생성 가능한 문법(corner/wall/room/door/window 태그 시퀀스)* 으로도 직렬화. ② **constrained decoding**
   = ADR-0012 §3 불변조건을 *생성 시점에 강제*(벽 안 닫힘·문 벽이탈을 디코딩에서 마스킹).
 - **안 가져올 것**: 모델 통째 교체(ONE-엔진 유지). FML 어휘를 그대로 쓰지 말고 **g-0.4 스키마를 토큰화**.
+- **⚠️ 귀속 주의 — "토큰화"는 FMLM 고유기술이 아니다.** "구조화 객체를 DSL/마크업 토큰 시퀀스로
+  직렬화 + autoregressive 생성 + constrained decoding"은 **분야 표준 패러다임**이다:
+  PolyGen(2020, 메시)·DeepSVG(2020)·SketchGraphs(2020)·DeepCAD(2021, CAD 명령 시퀀스)·Vitruvion·LayoutTransformer 계열.
+  **FMLM 고유 기여 = ① FML 어휘(평면도 마크업) ② unified conditioning(한 모델·한 문법이 여러 task 능가).**
+  → **우리 g-0.4 토큰화는 우리 소유**(우리 스키마·어휘·불변조건 마스크). 인용은 **원조 패러다임(PolyGen/DeepCAD) + FMLM(평면도 적용)** 둘 다. FMLM만 걸면 우리 novelty가 과소평가됨.
 - **추천도: 매우 높음.** 2·3단계 통합(따름정리)의 직접 근거. 표현을 "벽 그래프 하나"로 굳히지 말고
   **g-0.4 DSL**로 잡으면 wall·room·door·window·dimension·fixture·layer를 한 문법에 확장 가능.
 - ⚠️ arxiv ID(2604.04859 등)·공개코드 라이선스 **미검증** — 인용 전 확인.
