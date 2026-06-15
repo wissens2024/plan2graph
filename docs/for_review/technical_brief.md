@@ -14,6 +14,7 @@
   - GSDiff: 정렬 손실 + 랜덤 자기지도(코너/벽 연결 정합) (코드 보유)
   - HouseDiffusion: 이산+연속 디노이즈(직각·평행·코너공유)
   - FMLM: 유효성 제약(constrained decoding, 벽 안닫힘/겹침 차단)
+  - (확장 부품: TLC-Plan 2-level codebook=전역/지역 분리, FloorplanSBS patch=겹침차단, RLVR=법규 검증가능보상, ResPlan/FloorPlanCAD 데이터 — 전부 `docs/LITERATURE.md` 정리)
 - **우리 novelty(=논문/제품 가치) = ① 법규-인식 생성 ② 완전 출력(문·창·기구·치수) ③ 한국 소버린 도메인.**
 - **표현**: 코너(벽 교차점) + 벽(코너 엣지) + 방 폴리곤(벽 사이클) + 방 종류. 문·창·기구·치수는 *완성층*(neuro-symbolic, 생성 후)에서 채움.
 - **학습**: 사전학습(글로벌 RPLAN, 선택 +CubiCasa) → 파인튜닝(한국 AI-Hub). "사전학습이 도움되나"는 가정 않고 콤보 매트릭스로 *측정*.

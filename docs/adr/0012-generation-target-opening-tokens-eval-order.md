@@ -30,7 +30,7 @@ Deciders: wissens2024, Claude (+ 외부검토 GPT)
    - Tier4 노이즈형(Parsed 원본, 흡수/오라벨, repair 검증)
    - 판독: T1 붕괴=모델/표현 문제 · T1 OK·T3 실패=한국 위상/데이터 · T4 실패=parser noise robustness.
 7. **법규 = 처음부터 loss에 넣지 않음. verifier → repair → reranking 순서.**
-8. **CE2EPlan/TLC-Plan/FMLM/RLVR = 방향전환 근거 아님. 부품/비교군으로만.**
+8. **CE2EPlan/TLC-Plan/FMLM/RLVR = 방향전환 근거 아님. 부품/비교군으로만.** (논문별 차용 알고리즘·이유·데이터셋 = [`docs/LITERATURE.md`](../LITERATURE.md) 정리.)
 
 ## Considered Alternatives
 1. **GSDiff를 별도 엔진으로 교체(ADR-0006 supersede)** — 기각: 엔진 개수 문제가 아니라 *표현/타깃* 문제. ONE 엔진 유지가 범위폭발(LLM+diffusion+GSDiff+FMLM+RLVR+repair+CAD compiler) 방지(GPT 동의).
