@@ -639,9 +639,9 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
      <select id="fScope" title="단위세대/층평면도로 거르기"><option value="">단위/층 전체</option></select>
    </div>
    <input id="search" placeholder="ID 일부로 검색 (예: cb4a)">
+   <div class="nav"><button id="prev">◀ 이전</button><button id="next">다음 ▶</button></div>
    <div id="listcount" class="fcount"></div>
    <div id="list"></div>
-   <div class="nav"><button id="prev">◀ 이전</button><button id="next">다음 ▶</button></div>
 
    <details class="legend"><summary>범례 · 조작</summary>
    <div class="help">
