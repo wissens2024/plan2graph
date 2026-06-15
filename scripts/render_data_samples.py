@@ -32,6 +32,10 @@ def main():
     ap.add_argument("--max-rooms", type=int, default=25)
     ap.add_argument("--autocorrect", action="store_true",
                     help="자기교정 적용(기본=원본 그대로)")
+    ap.add_argument("--via-codec", action="store_true",
+                    help="토큰화→복원 경로(canonicalize→canon_to_graph) 거쳐 렌더 — 토큰화가 직각 깨는지 확인")
+    ap.add_argument("--fixtures", action="store_true",
+                    help="Tier B 가구(역할추론) 배치 — RPLAN 없는 완성 정보 데모")
     args = ap.parse_args()
 
     files = sorted(glob.glob(os.path.join(args.dir, "APT_*.json")))
@@ -57,7 +61,17 @@ def main():
     os.makedirs(args.out, exist_ok=True)
     for i, (f, g) in enumerate(picks):
         try:
+            if args.via_codec:
+                from plan2graph import wallcycle_codec as wc
+                g = wc.canon_to_graph(wc.canonicalize(g))
             geom = cadrender.from_geomgraph(g)
+            if args.fixtures:                          # Tier B 가구 배치(neuro-symbolic 완성층)
+                from plan2graph import semantic_fill
+                sc = semantic_fill.infer_scale(g) or 5.0
+                for rg in geom.rooms:
+                    rd = (g.get("rooms") or {}).get(str(rg.id)) or {}
+                    more = semantic_fill.place_fixtures_for_room(rd, g, sc)
+                    rg.fixtures = list(getattr(rg, "fixtures", None) or []) + more
             if args.autocorrect:
                 geom = cadrender.autocorrect(geom)
             png = cadrender.render_png(geom)
