@@ -29,6 +29,7 @@ def main():
     ap.add_argument("--out", default="/tmp/v2_samples")
     ap.add_argument("--max-new", type=int, default=650)
     ap.add_argument("--constrained", action="store_true")
+    ap.add_argument("--orthogonal", action="store_true", help="직각 강제(대각선 차단)")
     args = ap.parse_args()
 
     dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -40,7 +41,7 @@ def main():
     model.load_state_dict(ck["model"]); model.eval()
     print(f"[ckpt] {args.ckpt} (epoch {ck.get('epoch')}) on {dev}", flush=True)
 
-    mask_fn = make_constraint_mask(vocab) if args.constrained else None
+    mask_fn = make_constraint_mask(vocab, orthogonal=args.orthogonal) if args.constrained else None
     bos, eos = wc.V.BOS, wc.V.EOS
     pre = [bos, vocab["meta"] + 0, vocab["meta"] + len(wc.COUNTRIES) + 0,
            vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 0,

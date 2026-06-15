@@ -84,9 +84,10 @@ def causal_lm_loss(logits: torch.Tensor, tokens: torch.Tensor, ignore_index: int
         ignore_index=ignore_index)
 
 
-def make_constraint_mask(vocab: dict):
+def make_constraint_mask(vocab: dict, orthogonal: bool = False):
     """ADR-0012 §3 constrained decoding — 문법 구조 + corner/room 참조 유효성을 생성 시점 강제.
     무효 토큰을 -inf로 마스킹(닫힘·문법순서·참조범위·cycle≥3). 생성 전용(학습 무관, 파이썬 루프).
+    orthogonal=True: room cycle 변을 직각 강제(다음 corner는 이전과 x또는y 동일) → 대각선 차단.
     반환: mask_fn(x, logits) → 마스킹된 logits."""
     from plan2graph import wallcycle_codec as wc
     V = wc.V
@@ -95,6 +96,19 @@ def make_constraint_mask(vocab: dict):
     meta, scope, units = vocab["meta"], vocab["scope"], vocab["units"]
     coord, role, pos, room = vocab["coord"], vocab["role"], vocab["pos"], vocab["room"]
     g, nbins, mu = vocab["grid"], vocab["nbins"], vocab["max_units"]
+
+    def _corners(seq):                              # CORNERS 섹션 → [(qx,qy), ...]
+        out = []
+        if V.SEC_CORNERS not in seq:
+            return out
+        i = seq.index(V.SEC_CORNERS) + 1
+        while i + 1 < len(seq):
+            ta, tb = seq[i], seq[i + 1]
+            if coord <= ta <= coord + g and coord <= tb <= coord + g:
+                out.append((ta - coord, tb - coord)); i += 2
+            else:
+                break
+        return out
 
     def allowed(seq):
         L = len(seq)
@@ -139,6 +153,20 @@ def make_constraint_mask(vocab: dict):
                     a.add(V.SEC_OPEN)                                  # 전환(≥1 방 후)
                 return a
             a = set(range(coord, coord + ncorners))                   # corner 참조(유효 범위)
+            if orthogonal:                                            # 직각 강제: 이전 corner와 x또는y 동일
+                lr = None
+                for t in reversed(tail):
+                    if t == V.ROOM_END or role <= t < role + nrole:
+                        break
+                    if coord <= t <= coord + g:
+                        lr = t - coord; break
+                cs = _corners(seq)
+                if lr is not None and lr < len(cs):
+                    lx, ly = cs[lr]
+                    orth = {coord + ci for ci in range(min(ncorners, len(cs)))
+                            if (cs[ci][0] == lx or cs[ci][1] == ly) and ci != lr}
+                    if orth:
+                        a = orth
             if nref >= 3:
                 a.add(V.ROOM_END)                                     # cycle≥3 충족 시 닫기
             return a
