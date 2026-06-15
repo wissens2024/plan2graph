@@ -116,7 +116,7 @@ def _simplify_poly(poly, tol):
         return poly
 
 
-def canonicalize(g: dict, grid: int = 128, simplify_frac: float = 0.0,
+def canonicalize(g: dict, grid: int = 128, simplify_frac: float = 0.01,
                  use_wall_snap: bool = False) -> Canon:
     bbox = g.get("bbox_px") or _bbox_from_rooms(g)
     meta_in = g.get("meta") or {}
@@ -527,8 +527,8 @@ def decode(tokens: list, vocab) -> Canon:
 # ─────────────────────────────────────────────────────────────────────────────
 # 라운드트립 검증
 # ─────────────────────────────────────────────────────────────────────────────
-def roundtrip_metrics(g: dict, grid: int = 128, simplify_frac: float = 0.0,
-                      use_wall_snap: bool = True) -> dict:
+def roundtrip_metrics(g: dict, grid: int = 128, simplify_frac: float = 0.01,
+                      use_wall_snap: bool = False) -> dict:
     """원본 g-0.4 ↔ canonical/토큰 라운드트립의 보존율 측정."""
     canon = canonicalize(g, grid=grid, simplify_frac=simplify_frac, use_wall_snap=use_wall_snap)
     vb = _vocab(grid)

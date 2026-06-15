@@ -42,7 +42,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", required=True, help="graphs 디렉토리")
     ap.add_argument("--grid", type=int, default=128)
-    ap.add_argument("--simplify-frac", type=float, default=0.0)
+    ap.add_argument("--simplify-frac", type=float, default=0.01)
     ap.add_argument("--wall-snap", action="store_true",
                     help="gap-closing union 켜기(폐기됨 — open토큰이 대체, 진단용만)")
     ap.add_argument("--limit", type=int, default=0)
