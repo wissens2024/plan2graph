@@ -498,9 +498,7 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
  .seg button[data-m=adj].on{background:var(--adj);border-color:var(--adj);color:#fff}
  .seg button[data-m=merge].on{background:var(--merge);border-color:var(--merge)}
  .seg button[data-m=del].on{background:var(--del);border-color:var(--del);color:#fff}
- .seg button[data-m=split]{grid-column:1/-1}
  .seg button[data-m=split].on{background:var(--split);border-color:var(--split);color:#0b0d12}
- .seg button[data-m=scale]{grid-column:1/-1}
  .seg button[data-m=scale].on{background:var(--scale);border-color:var(--scale);color:#0b0d12}
 
  /* 도면찾기 필터 */
