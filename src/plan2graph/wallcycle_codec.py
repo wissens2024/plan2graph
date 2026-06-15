@@ -608,6 +608,23 @@ def roundtrip_metrics(g: dict, grid: int = 128, simplify_frac: float = 0.01,
     # 겹침(양자화 폴리곤 pairwise) — shapely 있으면 정밀, 없으면 스킵
     overlap = _overlap_area(canon)
 
+    # ★ 디코드 경로 검증(belongs_to/connects 끊김 버그 감시) — 실제 생성이 거치는 경로.
+    #   기존 g2=canon_to_graph(canon)는 원본 canon이라 decode 버그를 못 잡음(맹점).
+    g2d = canon_to_graph(canon2)
+    nd2, nw2 = g2d["n_doors"], g2d["n_windows"]
+    dconn = sum(1 for d in g2d["doors"] if len(d.get("connects") or []) == 2)
+    wbel = sum(1 for w in g2d["windows"] if w.get("belongs_to") is not None)
+    HABROLE = {"거실", "침실", "안방"}
+    wrooms = set(w.get("belongs_to") for w in g2d["windows"])
+    ht = hw = 0
+    for nid, r in g2d["rooms"].items():
+        if r.get("role") in HABROLE:
+            ht += 1
+            if _int(nid) in wrooms:
+                hw += 1
+    # 디코드 경로 인접(door+open edges 채워지는지) — door connects 끊기면 0
+    pdec = _pairs(g2d["edges"])
+
     return {
         "grid": grid,
         "n_corners": len(canon.corners),
@@ -623,6 +640,11 @@ def roundtrip_metrics(g: dict, grid: int = 128, simplify_frac: float = 0.01,
         "adj_pairs_in": len(pin), "adj_pairs_out": len(pout),
         "overlap_area_frac": overlap,
         "vocab_size": vb["size"],
+        # 디코드 경로 방귀속(생성이 실제 거치는 경로)
+        "door_connect_rate": round(dconn / nd2, 3) if nd2 else None,
+        "window_belong_rate": round(wbel / nw2, 3) if nw2 else None,
+        "hab_window_rate": round(hw / ht, 3) if ht else None,
+        "dec_adj_pairs": len(pdec),
     }
 
 

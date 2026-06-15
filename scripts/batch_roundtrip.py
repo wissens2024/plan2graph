@@ -62,6 +62,7 @@ def main():
     jac, area_dev, overlap, tokens, ncorners = [], [], [], [], []
     tok_ok = 0
     room_keep = door_keep = win_keep = 0
+    dconn, wbel, habwin = [], [], []   # 디코드 경로 방귀속
     worst = []   # (jaccard, plan_id)
 
     for f in files:
@@ -102,6 +103,12 @@ def main():
             overlap.append(m["overlap_area_frac"])
         tokens.append(m["n_tokens"])
         ncorners.append(m["n_corners"])
+        if m.get("door_connect_rate") is not None:
+            dconn.append(m["door_connect_rate"])
+        if m.get("window_belong_rate") is not None:
+            wbel.append(m["window_belong_rate"])
+        if m.get("hab_window_rate") is not None:
+            habwin.append(m["hab_window_rate"])
 
     print("=" * 64)
     print(f"파일 {n_total} | g-0.4 검증 {n_ok} | 스키마skip {n_skip_schema} "
@@ -124,6 +131,14 @@ def main():
           f"med {statistics.median(tokens):.0f}  p90 {_q(tokens,0.9)}  max {max(tokens)}")
     print(f"corner 수        : mean {statistics.mean(ncorners):.0f}  "
           f"med {statistics.median(ncorners):.0f}  max {max(ncorners)}")
+    print("-" * 64)
+    print("★ 디코드 경로(실제 생성 경로) 방귀속:")
+    if dconn:
+        print(f"  door connects(2방) : mean {statistics.mean(dconn):.3f}")
+    if wbel:
+        print(f"  window belongs_to  : mean {statistics.mean(wbel):.3f}")
+    if habwin:
+        print(f"  거주방 창보유율     : mean {statistics.mean(habwin):.3f}  med {statistics.median(habwin):.3f}")
     print("-" * 64)
     worst.sort()
     print("최저 인접 보존 10:")
