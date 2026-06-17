@@ -503,6 +503,7 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
  .seg button[data-m=del].on{background:var(--del);border-color:var(--del);color:#fff}
  .seg button[data-m=split].on{background:var(--split);border-color:var(--split);color:#0b0d12}
  .seg button[data-m=scale].on{background:var(--scale);border-color:var(--scale);color:#0b0d12}
+ .seg button[data-m=add].on{background:var(--accent2);border-color:var(--accent2);color:#0b0d12}
 
  /* 도면찾기 필터 */
  .filters{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:7px}
@@ -586,6 +587,8 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
  .rbadge circle{fill:var(--merge);stroke:#0b0d12;stroke-width:2}
  .rbadge text{fill:#0b0d12;font-size:15px;font-weight:800;text-anchor:middle;dominant-baseline:central}
  .edge{pointer-events:none}
+ /* 오버레이 끄기(H) — 주석을 숨겨 원본 도면만 본다. svg 요소에 .noov 토글(재렌더에도 유지) */
+ svg.noov .room,svg.noov .rlabel,svg.noov .edge,svg.noov .rbadge{display:none}
 
  #toast{position:absolute;top:16px;left:50%;transform:translateX(-50%) translateY(-8px);
    background:#0b0d12;color:#fff;padding:9px 16px;border-radius:9px;font-size:13px;font-weight:600;
@@ -597,6 +600,7 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
  #hud button{background:var(--panel);border:1px solid var(--line2);color:var(--txt);border-radius:8px;
    padding:7px 11px;cursor:pointer;font-size:12px;font-weight:600}
  #hud button:hover{border-color:var(--accent)}
+ #hud button.off{background:var(--accent2);color:#0b0d12;border-color:var(--accent2)}
  .modetag{position:absolute;top:14px;left:14px;padding:6px 12px;border-radius:99px;font-size:12px;
    font-weight:800;background:var(--panel);border:1px solid var(--line2)}
 </style></head><body>
@@ -632,6 +636,7 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
      <button data-m="merge">⛓ 합치기 <span class="k">M</span></button>
      <button data-m="del">🗑 삭제 <span class="k">D</span></button>
      <button data-m="split">✂ 나누기 <span class="k">S</span></button>
+     <button data-m="add">➕ 신규 <span class="k">N</span></button>
      <button data-m="scale">📏 스케일 <span class="k">L</span></button>
    </div>
    <div id="ctx"></div>
@@ -654,9 +659,9 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
      <span style="color:var(--del)">●</span> 삭제 ·
      <span style="color:var(--split)">●</span> 나누기 ·
      <span style="color:var(--scale)">●</span> 스케일<br>
-     <kbd>휠</kbd> 확대 · <kbd>드래그</kbd> 이동 · <kbd>F</kbd> 맞춤<br>
-     <kbd>R</kbd><kbd>A</kbd><kbd>M</kbd><kbd>D</kbd><kbd>S</kbd><kbd>L</kbd> 모드 · <kbd>Ctrl+Z</kbd> 되돌리기 · <kbd>Ctrl+S</kbd> 저장<br>
-     <b>배경 = 원본 도면</b> — 문·치수·여닫이는 PNG에서 직접 확인.
+     <kbd>휠</kbd> 확대 · <kbd>드래그</kbd> 이동 · <kbd>F</kbd> 맞춤 · <kbd>H</kbd> 오버레이 끄기(원본만)<br>
+     <kbd>R</kbd><kbd>A</kbd><kbd>M</kbd><kbd>D</kbd><kbd>S</kbd><kbd>N</kbd><kbd>L</kbd> 모드 · <kbd>Ctrl+Z</kbd> 되돌리기 · <kbd>Ctrl+S</kbd> 저장<br>
+     <b>배경 = 원본 도면</b> — 라벨에 가려 안 보이면 <kbd>H</kbd>로 주석을 끄세요.
    </div></details>
  </div>
  <div class="savebar">
@@ -669,17 +674,19 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
   <div class="modetag" id="modetag">🎨 역할</div>
   <div id="toast"></div>
   <div id="pngwarn">⚠ 원본 PNG 없음(인덱싱중일 수 있음) — 해석만 표시</div>
-  <div id="hud"><button id="fit">맞춤 (F)</button></div>
+  <div id="hud"><button id="ovtog" title="주석 겹쳐보기 끄기/켜기 — 원본 도면만 보기 (H)">👁 오버레이</button><button id="fit">맞춤 (F)</button></div>
 </div>
 <script>
 const NS='http://www.w3.org/2000/svg', svg=document.getElementById('svg');
 const PALETTE=__PAL__, ROLE_COLOR=__COL__, HOUSES=__HOUSE__, SCOPES=__SCOPES__;
 const SCOPE_KO=Object.fromEntries(SCOPES), SCOPE_VALS=SCOPES.map(s=>s[0]);
 const HOUSING_NORM={APT:'apartment',DEH:'detached',ROW:'rowhouse'};
-const MODES={role:'🎨 역할',adj:'🔗 인접',merge:'⛓ 합치기',del:'🗑 삭제',split:'✂ 나누기',scale:'📏 스케일'};
+const MODES={role:'🎨 역할',adj:'🔗 인접',merge:'⛓ 합치기',del:'🗑 삭제',split:'✂ 나누기',add:'➕ 신규',scale:'📏 스케일'};
 let G=null,GID=null,dirty=false,mode='role',sel=null,adjA=null,mergeSel=[],vb=null;
 let splitSel=null,cutPts=[],splitRoles=null,snapOrtho=true;
 let rulerPts=[];                              // 스케일 측정 2점
+let addPts=[],addRole='실외기실';            // 신규 노드: 사각형 대각 2점 + 기본 역할
+let overlayOn=true;                           // 주석 겹쳐보기(H로 토글)
 let LIST=[],undoStack=[];
 function evToUser(ev){const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;
   const u=pt.matrixTransform(svg.getScreenCTM().inverse());return [u.x,u.y];}
@@ -705,6 +712,10 @@ function undo(){if(!undoStack.length)return;G=JSON.parse(undoStack.pop());
   document.getElementById('undo').disabled=!undoStack.length;sel=null;adjA=null;mergeSel=[];
   setDirty(true);render();showStatusLocal();toast('되돌림');}
 function showStatusLocal(){/* 로컬 변경 후엔 게이트 재판정은 저장 시 — 표시는 유지 */}
+// 오버레이(주석) 끄기/켜기 — 라벨·채움이 원본을 가릴 때 원본만 본다. svg에 .noov 토글(재렌더 유지).
+function toggleOverlay(){overlayOn=!overlayOn;svg.classList.toggle('noov',!overlayOn);
+  const b=document.getElementById('ovtog');if(b)b.classList.toggle('off',!overlayOn);
+  toast('주석 겹쳐보기 '+(overlayOn?'켜짐':'꺼짐 — 원본만'));}
 
 // ── 목록/검색 ───────────────────────────────────────────────────────────────
 async function loadList(q){
@@ -828,6 +839,7 @@ function render(){
   }
   if(mode==='split')drawCut();
   if(mode==='scale')drawRuler();
+  if(mode==='add')drawAddRect();
   document.getElementById('modetag').textContent=MODES[mode];
 }
 // 스케일 측정 오버레이(2점 + 미리보기 선). pointer-events:none.
@@ -874,6 +886,7 @@ function drawCut(){
 // ── 방 클릭 디스패치 ─────────────────────────────────────────────────────────
 function onRoom(id,ev){
   if(mode==='scale'){if(ev)addRulerPt(ev);return;}   // 스케일=좌표만(방 무관)
+  if(mode==='add'){if(ev)addPoint(ev);return;}        // 신규=좌표만(기존 방 위에서도 점 찍기)
   if(!G.rooms[id])return;
   if(mode==='split'){
     if(!splitSel){splitSel=id;cutPts=[];splitRoles=null;render();renderCtx();
@@ -935,6 +948,36 @@ async function doSplit(){
   toast('나눔: '+roles[0]+' / '+roles[1]);
 }
 function resetSplit(){splitSel=null;cutPts=[];splitRoles=null;render();renderCtx();}
+
+// ── 신규 노드(검출 누락 방 직접 추가) ────────────────────────────────────────
+//   대각 모서리 2점 → 사각형 방 생성. 분할(기존 방 자르기)과 달리 *없던 노드*를 만든다.
+//   실외기실·다용도실 등 작은 방이 V2V/OBJ에서 누락된 경우를 사람이 보충.
+function newRoomId(){let mx=-1;for(const k in (G.rooms||{})){const n=parseInt(k,10);
+  if(!isNaN(n)&&n>mx)mx=n;}return String(mx+1);}
+function addPoint(ev){if(!G)return;addPts.push(evToUser(ev));
+  if(addPts.length>=2)commitAdd();else{render();renderCtx();}}
+function commitAdd(){
+  const[a,b]=addPts;const x0=Math.min(a[0],b[0]),y0=Math.min(a[1],b[1]),
+    x1=Math.max(a[0],b[0]),y1=Math.max(a[1],b[1]),w=x1-x0,h=y1-y0;
+  if(w<3||h<3){addPts=[];toast('너무 작습니다 — 다시 그리세요');render();renderCtx();return;}
+  const r1=v=>Math.round(v*10)/10;
+  pushUndo();const id=newRoomId();
+  G.rooms=G.rooms||{};
+  G.rooms[id]={role:addRole,
+    polygon:[[r1(x0),r1(y0)],[r1(x1),r1(y0)],[r1(x1),r1(y1)],[r1(x0),r1(y1)],[r1(x0),r1(y0)]],
+    centroid:[r1((x0+x1)/2),r1((y0+y1)/2)],
+    area_px:r1(w*h),bbox_px:[r1(x0),r1(y0),r1(w),r1(h)],perimeter_px:r1(2*(w+h)),
+    fixtures:[],door_ids:[],window_ids:[],wall_ids:[],n_windows:0,has_window:false};
+  addPts=[];setDirty(true);
+  setMode('role');sel=id;render();renderCtx();      // 새 방 선택 → 역할 미세조정·인접 연결 유도
+  toast('신규 노드 추가: '+addRole+' — 인접(A)으로 연결하세요');
+}
+function drawAddRect(){
+  if(!addPts.length)return;const g=el('g',{class:'cut'},svg);
+  if(addPts.length===1){const p=addPts[0];
+    el('rect',{class:'prev',id:'addprev',x:p[0],y:p[1],width:0,height:0,fill:'none'},g);}
+  addPts.forEach(p=>el('circle',{class:'pt',cx:p[0],cy:p[1],r:6},g));
+}
 
 // ── 스케일(축척) 보정 ────────────────────────────────────────────────────────
 function addRulerPt(ev){if(rulerPts.length>=2)rulerPts=[];
@@ -1027,6 +1070,19 @@ function renderCtx(){
     if(sR)sR.onchange=()=>{splitRoles=[sL.value,sR.value];render();renderCtx();};
     const sgo=document.getElementById('sgo');if(sgo)sgo.onclick=doSplit;
     const scl=document.getElementById('sclr');if(scl)scl.onclick=resetSplit;
+  }else if(mode==='add'){
+    const opt=PALETTE.map(r=>'<option value="'+r+'"'+(r===addRole?' selected':'')+'>'+r+'</option>').join('');
+    let h='<div class="ctitle">신규 노드 — 검출 누락된 방 직접 추가</div>'
+      +'<div style="display:flex;gap:6px;align-items:center;margin:6px 0">'
+      +'<span class="cut-sw" style="display:inline-block;width:13px;height:13px;border-radius:3px;background:'+colorOf(addRole)+'"></span>'
+      +'<b style="width:30px">역할</b><select id="aR" style="flex:1">'+opt+'</select></div>'
+      +'<div class="help">방이 빠진 자리에 <b>사각형</b>을 그리세요: 대각 모서리 <b>'+addPts.length+'/2</b>점 클릭.<br>'
+      +'추가 후 <b>인접(A)</b> 모드로 현관·복도 등과 연결하세요.<br>'
+      +'실외기실·다용도실 등 작은 방에 적합. <span style="color:var(--muted)">신발장 같은 가구는 노드가 아니라 별도 가구 레이어 대상</span></div>';
+    if(addPts.length)h+='<button class="bigbtn ghost" id="aclr">다시 (Esc)</button>';
+    c.innerHTML=h;
+    const aR=document.getElementById('aR');if(aR)aR.onchange=()=>{addRole=aR.value;renderCtx();};
+    const ac=document.getElementById('aclr');if(ac)ac.onclick=()=>{addPts=[];render();renderCtx();};
   }else if(mode==='scale'){
     const s=curScale(),src=(G.meta&&G.meta.scale_source)||(s?'default':null);
     const a=totalAreaM2(s);
@@ -1053,7 +1109,7 @@ function renderCtx(){
     const rba=document.getElementById('rbatch');if(rba)rba.onclick=batchScale;
   }
 }
-function setMode(m){mode=m;sel=null;adjA=null;mergeSel=[];splitSel=null;cutPts=[];splitRoles=null;rulerPts=[];
+function setMode(m){mode=m;sel=null;adjA=null;mergeSel=[];splitSel=null;cutPts=[];splitRoles=null;rulerPts=[];addPts=[];
   document.querySelectorAll('.seg button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
   renderCtx();render();}
 document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>setMode(b.dataset.m));
@@ -1066,6 +1122,8 @@ document.addEventListener('keydown',ev=>{
   if(ev.ctrlKey||ev.metaKey||ev.altKey)return;
   const k=ev.key.toLowerCase();
   if(k==='f'){fit();return;}
+  if(k==='h'){toggleOverlay();return;}
+  if(k==='n'){setMode('add');return;}
   if(k==='r'){setMode('role');return;} if(k==='m'){setMode('merge');return;} if(k==='d'){setMode('del');return;}
   if(k==='s'){setMode('split');return;} if(k==='l'){setMode('scale');return;}
   if(mode==='adj'||k==='a'){if(k==='a'&&mode!=='adj'){setMode('adj');return;}}
@@ -1073,6 +1131,7 @@ document.addEventListener('keydown',ev=>{
   if(mode==='split'){if(ev.key==='Enter'){doSplit();return;}if(ev.key==='Escape'){resetSplit();return;}
     if(k==='o'){snapOrtho=!snapOrtho;renderCtx();toast('직각 스냅 '+(snapOrtho?'켜짐':'꺼짐'));return;}}
   if(mode==='scale'){if(ev.key==='Escape'){resetRuler();return;}}
+  if(mode==='add'){if(ev.key==='Escape'){addPts=[];render();renderCtx();return;}}
   if(mode==='role'){
     if(k==='e'){if(sel){pushUndo();G.rooms[sel].role='현관';setDirty(true);render();toast('현관 지정');}return;}
     let i=-1;if(ev.key>='1'&&ev.key<='9')i=+ev.key-1;else if(ev.key==='0')i=9;
@@ -1121,6 +1180,7 @@ document.getElementById('undo').onclick=undo;
 // ── 팬/줌 ──────────────────────────────────────────────────────────────────
 function fit(){vb=bbox();svg.setAttribute('viewBox',vb.join(' '));}
 document.getElementById('fit').onclick=fit;
+document.getElementById('ovtog').onclick=toggleOverlay;
 let down=null,justPanned=false;
 svg.addEventListener('mousedown',ev=>{if(!vb)return;down=[ev.clientX,ev.clientY,vb.slice()];justPanned=false;});
 window.addEventListener('mousemove',ev=>{if(!down)return;const dx=ev.clientX-down[0],dy=ev.clientY-down[1];
@@ -1137,6 +1197,7 @@ svg.addEventListener('wheel',ev=>{ev.preventDefault();if(!vb)return;const f=ev.d
 svg.addEventListener('click',ev=>{
   if(justPanned||ev.target.tagName==='polygon')return;
   if(mode==='scale'){addRulerPt(ev);return;}
+  if(mode==='add'){addPoint(ev);return;}
   if(mode!=='split'||!splitSel||cutPts.length>=2)return;
   const u=evToUser(ev);
   cutPts.push(cutPts.length===1?snapPt(cutPts[0],u,ev):u);
@@ -1148,7 +1209,12 @@ svg.addEventListener('mousemove',ev=>{
     const u=snapPt(cutPts[0],evToUser(ev),ev);ln.setAttribute('x2',u[0]);ln.setAttribute('y2',u[1]);return;}
   if(mode==='scale'&&rulerPts.length===1){
     const ln=document.getElementById('rulerprev');if(!ln)return;
-    const u=evToUser(ev);ln.setAttribute('x2',u[0]);ln.setAttribute('y2',u[1]);}});
+    const u=evToUser(ev);ln.setAttribute('x2',u[0]);ln.setAttribute('y2',u[1]);return;}
+  if(mode==='add'&&addPts.length===1){
+    const r=document.getElementById('addprev');if(!r)return;
+    const u=evToUser(ev),p=addPts[0];
+    r.setAttribute('x',Math.min(p[0],u[0]));r.setAttribute('y',Math.min(p[1],u[1]));
+    r.setAttribute('width',Math.abs(u[0]-p[0]));r.setAttribute('height',Math.abs(u[1]-p[1]));}});
 
 renderCtx();loadList('');
 </script></body></html>"""
