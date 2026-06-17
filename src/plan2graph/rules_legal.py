@@ -61,6 +61,11 @@ RULES: list[Rule] = [
          "주거기본법/최저주거기준 고시", "최저주거기준", None,
          f"세대 거주실 면적 합 ≥ {config.LEGAL_MIN_DWELLING_M2}㎡(1인 참고값).",
          "needs_expert", True),
+    Rule("L6_refuge_area", "발코니 대피공간 최소 면적", "강행",
+         "건축법 시행령", "제46조제4항·제5항", "273503",
+         f"대피공간 세대별 ≥ {config.LEGAL_REFUGE_MIN_M2}㎡(인접세대 공동설치 3㎡). "
+         "설치 의무(4층 이상·직통계단 2 미만)는 층/계단 데이터 확보 후 확장.",
+         "estimate_scale", True),
 ]
 
 # 채광·환기 대상 공간(거실·침실 등 거주실)
@@ -137,6 +142,32 @@ def check_dwelling_area(G: nx.Graph, scale) -> list[dict]:
     return []
 
 
+def check_refuge_area(G: nx.Graph, scale) -> list[dict]:
+    """L6: 발코니 대피공간 최소 면적(건축법 시행령 §46④⑤, scale 필요).
+
+    그래프에 존재하는 대피공간 노드의 면적이 세대별 하한(기본 2㎡) 미만이면 위반.
+    설치 의무 자체(4층 이상·직통계단 2 미만 조건)는 층수·계단 데이터가 없어 미검사 —
+    노드가 있을 때 '면적 적정성'만 검사한다([[handoff-v3-rectilinear-train]] 규제레이어).
+    """
+    min_m2 = getattr(config, "LEGAL_REFUGE_MIN_M2", None)
+    if scale is None or not min_m2:
+        return []
+    v = []
+    for n, d in G.nodes(data=True):
+        if d.get("type") != "대피공간":
+            continue
+        a_px = d.get("area_px")
+        if a_px is None:
+            continue
+        m2 = a_px * (scale ** 2) / 1e6
+        if m2 < min_m2:
+            v.append({"rule": "L6_refuge_area", "node": n,
+                      "area_m2": round(m2, 1), "min_m2": min_m2,
+                      "law": "건축법 시행령 제46조제4항·제5항",
+                      "msg": f"대피공간 {m2:.1f}㎡ < 세대별 최소 {min_m2}㎡"})
+    return v
+
+
 def check_legal(G: nx.Graph) -> dict:
     """법규 검사. 창 기반은 scale 불요, 면적 의존 규칙은 scale 확보분에만."""
     scale = G.graph.get("scale")
@@ -144,12 +175,15 @@ def check_legal(G: nx.Graph) -> dict:
     violations += check_daylight(G)             # L1 채광(창 보유+면적비)
     violations += check_bedroom_area(G, scale)  # L4 침실 최소면적
     violations += check_dwelling_area(G, scale)  # L5 세대 최소면적
+    violations += check_refuge_area(G, scale)   # L6 대피공간 최소면적
     applied = ["L1_daylight_window"]
     skipped = []
     if scale is not None:
-        applied += ["L1_daylight_ratio", "L4_bedroom_min_area", "L5_dwelling_min_area"]
+        applied += ["L1_daylight_ratio", "L4_bedroom_min_area",
+                    "L5_dwelling_min_area", "L6_refuge_area"]
     else:
-        skipped += ["L1_daylight_ratio", "L4_bedroom_min_area", "L5_dwelling_min_area"]
+        skipped += ["L1_daylight_ratio", "L4_bedroom_min_area",
+                    "L5_dwelling_min_area", "L6_refuge_area"]
         skipped = [s + "(scale 미확보)" for s in skipped]
     return {
         "passed": len(violations) == 0,

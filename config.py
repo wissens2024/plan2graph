@@ -216,6 +216,7 @@ LEGAL_DAYLIGHT_RATIO = _envf("LEGAL_DAYLIGHT_RATIO", 0.10)   # 채광창/바닥 
 WINDOW_EST_HEIGHT_M = _envf("WINDOW_EST_HEIGHT_M", 1.2)      # 창 높이 추정(m)
 LEGAL_BEDROOM_MIN_M2 = _envf("LEGAL_BEDROOM_MIN_M2", 7.0)    # 침실 최소면적(㎡) 참고값
 LEGAL_MIN_DWELLING_M2 = _envf("LEGAL_MIN_DWELLING_M2", 14.0)  # 세대 최소면적(㎡)
+LEGAL_REFUGE_MIN_M2 = _envf("LEGAL_REFUGE_MIN_M2", 2.0)      # 대피공간 세대별 최소면적(㎡, 공동설치 3.0)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 데이터셋 채택 기준 — '완벽한 세대'만 채택, 나머지는 격리(quarantine)해 후일 검토

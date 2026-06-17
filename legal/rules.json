@@ -76,6 +76,18 @@
       "status": "needs_expert",
       "needs_scale": true,
       "law_source_xml": null
+    },
+    {
+      "id": "L6_refuge_area",
+      "name": "발코니 대피공간 최소 면적",
+      "category": "강행",
+      "law": "건축법 시행령",
+      "article": "제46조제4항·제5항",
+      "mst": "273503",
+      "basis": "대피공간 세대별 ≥ 2.0㎡(인접세대 공동설치 3㎡). 설치 의무(4층 이상·직통계단 2 미만)는 층/계단 데이터 확보 후 확장.",
+      "status": "estimate_scale",
+      "needs_scale": true,
+      "law_source_xml": "data/interim/law_cache/law_273503.xml"
     }
   ]
 }
