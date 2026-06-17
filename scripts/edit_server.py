@@ -685,7 +685,7 @@ const MODES={role:'🎨 역할',adj:'🔗 인접',merge:'⛓ 합치기',del:'�
 let G=null,GID=null,dirty=false,mode='role',sel=null,adjA=null,mergeSel=[],vb=null;
 let splitSel=null,cutPts=[],splitRoles=null,snapOrtho=true;
 let rulerPts=[];                              // 스케일 측정 2점
-let addPts=[],addRole='실외기실';            // 신규 노드: 사각형 대각 2점 + 기본 역할
+let addPts=[],addRole='실외기실',addSnap=true;  // 신규 노드: 사각형 대각 2점 + 기본 역할 + 코너 스냅
 let overlayOn=true;                           // 주석 겹쳐보기(H로 토글)
 let LIST=[],undoStack=[];
 function evToUser(ev){const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;
@@ -954,7 +954,22 @@ function resetSplit(){splitSel=null;cutPts=[];splitRoles=null;render();renderCtx
 //   실외기실·다용도실 등 작은 방이 V2V/OBJ에서 누락된 경우를 사람이 보충.
 function newRoomId(){let mx=-1;for(const k in (G.rooms||{})){const n=parseInt(k,10);
   if(!isNaN(n)&&n>mx)mx=n;}return String(mx+1);}
-function addPoint(ev){if(!G)return;addPts.push(evToUser(ev));
+// 코너 스냅: 클릭점의 x·y를 각각 인접 방 폴리곤 꼭짓점 좌표 중 화면 14px 이내 가장 가까운 값에
+// 독립 정렬 → 새 사각형이 이웃 벽선에 딱 붙어 흰 빈공간을 메운다. Shift=스냅 무시(자유), O=토글.
+function snapAdd(p,ev){
+  if(!addSnap||(ev&&ev.shiftKey))return p;
+  const sc=(vb&&svg.clientWidth)?vb[2]/svg.clientWidth:1, T=14*sc;
+  let bx=p[0],by=p[1],dbx=T,dby=T;
+  for(const r of Object.values((G&&G.rooms)||{})){
+    const pg=r.polygon;if(!pg)continue;
+    for(const v of pg){
+      const ddx=Math.abs(v[0]-p[0]);if(ddx<dbx){dbx=ddx;bx=v[0];}
+      const ddy=Math.abs(v[1]-p[1]);if(ddy<dby){dby=ddy;by=v[1];}
+    }
+  }
+  return [bx,by];
+}
+function addPoint(ev){if(!G)return;addPts.push(snapAdd(evToUser(ev),ev));
   if(addPts.length>=2)commitAdd();else{render();renderCtx();}}
 function commitAdd(){
   const[a,b]=addPts;const x0=Math.min(a[0],b[0]),y0=Math.min(a[1],b[1]),
@@ -1077,6 +1092,7 @@ function renderCtx(){
       +'<span class="cut-sw" style="display:inline-block;width:13px;height:13px;border-radius:3px;background:'+colorOf(addRole)+'"></span>'
       +'<b style="width:30px">역할</b><select id="aR" style="flex:1">'+opt+'</select></div>'
       +'<div class="help">방이 빠진 자리에 <b>사각형</b>을 그리세요: 대각 모서리 <b>'+addPts.length+'/2</b>점 클릭.<br>'
+      +'코너 스냅(이웃 벽선에 자동 정렬) <b style="color:var(--accent2)">'+(addSnap?'켜짐':'꺼짐')+'</b> — <kbd>O</kbd> 토글 · <kbd>Shift</kbd> 누르면 자유.<br>'
       +'추가 후 <b>인접(A)</b> 모드로 현관·복도 등과 연결하세요.<br>'
       +'실외기실·다용도실 등 작은 방에 적합. <span style="color:var(--muted)">신발장 같은 가구는 노드가 아니라 별도 가구 레이어 대상</span></div>';
     if(addPts.length)h+='<button class="bigbtn ghost" id="aclr">다시 (Esc)</button>';
@@ -1131,7 +1147,8 @@ document.addEventListener('keydown',ev=>{
   if(mode==='split'){if(ev.key==='Enter'){doSplit();return;}if(ev.key==='Escape'){resetSplit();return;}
     if(k==='o'){snapOrtho=!snapOrtho;renderCtx();toast('직각 스냅 '+(snapOrtho?'켜짐':'꺼짐'));return;}}
   if(mode==='scale'){if(ev.key==='Escape'){resetRuler();return;}}
-  if(mode==='add'){if(ev.key==='Escape'){addPts=[];render();renderCtx();return;}}
+  if(mode==='add'){if(ev.key==='Escape'){addPts=[];render();renderCtx();return;}
+    if(k==='o'){addSnap=!addSnap;renderCtx();toast('코너 스냅 '+(addSnap?'켜짐':'꺼짐'));return;}}
   if(mode==='role'){
     if(k==='e'){if(sel){pushUndo();G.rooms[sel].role='현관';setDirty(true);render();toast('현관 지정');}return;}
     let i=-1;if(ev.key>='1'&&ev.key<='9')i=+ev.key-1;else if(ev.key==='0')i=9;
@@ -1212,7 +1229,7 @@ svg.addEventListener('mousemove',ev=>{
     const u=evToUser(ev);ln.setAttribute('x2',u[0]);ln.setAttribute('y2',u[1]);return;}
   if(mode==='add'&&addPts.length===1){
     const r=document.getElementById('addprev');if(!r)return;
-    const u=evToUser(ev),p=addPts[0];
+    const u=snapAdd(evToUser(ev),ev),p=addPts[0];
     r.setAttribute('x',Math.min(p[0],u[0]));r.setAttribute('y',Math.min(p[1],u[1]));
     r.setAttribute('width',Math.abs(u[0]-p[0]));r.setAttribute('height',Math.abs(u[1]-p[1]));}});
 
