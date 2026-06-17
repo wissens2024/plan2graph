@@ -47,10 +47,13 @@ PNG_INDEX = os.path.join(_BASE, "_png_index.json")
 for d in (EDITS, PNG_CACHE):
     os.makedirs(d, exist_ok=True)
 
-# ── 역할 팔레트(키보드 단축키 1..0,a..) — 자주 쓰는 순. topoedit.ROLES에서 추림 ──
+# ── 역할 팔레트(키보드 단축키 1..0,a..) — 자주 쓰는 순. ──
+#    앞부분=자주 쓰는 순 고정, 그 뒤에 ROLES의 누락분을 자동 append(canonical 어휘
+#    확장 시 에디터 팔레트가 자동 동기화 — 대피공간/테라스 등 신규 역할 드리프트 방지,
+#    [[editor-conforms-to-representation-schema]]).
 PALETTE = ["거실", "안방", "침실", "주방", "화장실", "욕실", "현관", "발코니",
            "드레스룸", "알파룸", "다목적공간", "복도", "전실", "실외기실", "파우더룸", "기타"]
-PALETTE = [r for r in PALETTE if r in ROLES] or PALETTE
+PALETTE = ([r for r in PALETTE if r in ROLES] + [r for r in ROLES if r not in PALETTE]) or PALETTE
 
 # ── 거주형태(주거 형태) — 파일명 접두는 원본 라벨일 뿐, 실물과 다를 수 있어 메타를 사람이 보정 ──
 #    house_type 코드 → 한글 라벨 / 정규화 housing_type (geomgraph.HOUSING_TYPE 미러, ADR-0013 조건메타).
