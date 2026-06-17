@@ -54,7 +54,11 @@ def main():
     ap.add_argument("--constrained", action="store_true")
     ap.add_argument("--out", default="/tmp/wc_samples")
     ap.add_argument("--render", type=int, default=4, help="통과 샘플 렌더 장수")
+    ap.add_argument("--country", type=int, default=0,
+                    help="0=KR 1=CN 2=EU. ★법규(채광/환기창·면적)는 한국 건축법규라 KR(0)에만 적용. "
+                         "RPLAN 등 비-KR은 창·척도가 없어 법규 N/A(구조/기하만 평가). 설계=ADR-0019 규제레이어 국가별.")
     args = ap.parse_args()
+    apply_legal = (args.country == 0)   # 법규=한국 스코프(RPLAN 예외)
 
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     vocab = json.load(open(args.vocab, encoding="utf-8"))
@@ -68,7 +72,7 @@ def main():
 
     mask_fn = make_constraint_mask(vocab) if args.constrained else None
     bos, eos = wc.V.BOS, wc.V.EOS
-    pre = [bos, vocab["meta"] + 0, vocab["meta"] + len(wc.COUNTRIES) + 0,
+    pre = [bos, vocab["meta"] + args.country, vocab["meta"] + len(wc.COUNTRIES) + 0,
            vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 0,
            vocab["scope"] + 0, vocab["units"] + 1]
     prefix = torch.tensor([pre] * args.n, device=dev)
@@ -92,11 +96,15 @@ def main():
             and all(d.get("on_wall") for d in g["doors"])
         if valid:
             n_valid += 1
-        # ② 법규
-        legal = rules_legal.check_legal(to_nx_legal(g))
-        if legal["passed"]:
-            n_legal += 1
-        legal_viol += legal["n_violations"]
+        # ② 법규 — ★한국(KR)에만 적용. 비-KR(RPLAN 등)은 창·척도 부재로 N/A → 게이트 통과 취급.
+        if apply_legal:
+            legal = rules_legal.check_legal(to_nx_legal(g))
+            legal_pass = legal["passed"]
+            if legal_pass:
+                n_legal += 1
+            legal_viol += legal["n_violations"]
+        else:
+            legal_pass = True   # 법규 N/A(예외) — 구조/기하만 평가
         # ① 기하 + 교정
         geo_ok = False
         try:
@@ -108,8 +116,8 @@ def main():
             geo_v = ["render_err"]
         if geo_ok:
             n_geoclean += 1
-        # rerank: 전부 통과 → 렌더
-        if valid and legal["passed"] and geo_ok:
+        # rerank: 전부 통과 → 렌더 (법규는 KR만; 비-KR은 legal_pass=True)
+        if valid and legal_pass and geo_ok:
             n_full += 1
             if rendered < args.render:
                 try:
@@ -120,10 +128,14 @@ def main():
                     pass
 
     N = args.n
+    cc = ["KR", "CN", "EU"][args.country] if 0 <= args.country < 3 else str(args.country)
     print("=" * 56)
-    print(f"생성 {N} (constrained={args.constrained})")
+    print(f"생성 {N} (constrained={args.constrained}, country={cc})")
     print(f"  valid(구조)      : {n_valid}/{N} ({100*n_valid/N:.1f}%)")
-    print(f"  법규 통과         : {n_legal}/{N} ({100*n_legal/N:.1f}%)  위반합 {legal_viol}")
+    if apply_legal:
+        print(f"  법규 통과         : {n_legal}/{N} ({100*n_legal/N:.1f}%)  위반합 {legal_viol}")
+    else:
+        print(f"  법규              : N/A (비-KR country={cc} — 창·척도 부재, 구조/기하만 평가)")
     print(f"  기하 clean(교정후) : {n_geoclean}/{N} ({100*n_geoclean/N:.1f}%)")
     print(f"  ★ 전부 통과(rerank): {n_full}/{N} ({100*n_full/N:.1f}%)")
     print(f"  렌더 저장         : {rendered}장 → {args.out}/pass_*.png")

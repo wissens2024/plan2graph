@@ -29,6 +29,9 @@ ROLES = [
     "거실", "안방", "침실", "주방", "화장실", "욕실", "발코니", "드레스룸",
     "전실", "복도", "실외기실", "다목적공간", "현관", "전용욕실", "전용화장실",
     "파우더룸", "알파룸", "엘리베이터홀", "계단실", "구조물", "기타",
+    # ── 신규(2026-06-16, OCR 실측 어휘) — 끝에만 append(위치=토큰id, 재정렬 금지) ──
+    #   대피공간=법규 의무 피난공간 / 테라스 / 팬트리=주방수납 / 세탁실. 기존 ckpt는 vocab.json(구) 사용.
+    "대피공간", "테라스", "팬트리", "세탁실",
 ]
 ROLE2ID = {r: i for i, r in enumerate(ROLES)}
 ROLE_OTHER = ROLE2ID["기타"]
@@ -134,6 +137,53 @@ def _rectilinear_poly(poly):
         else:
             pts[(i + 1) % n][0] = a[0]
     return pts + [pts[0]] if closed else pts
+
+
+def _pick_rect_corner(pts, i, c1, c2):
+    """L-코너 두 후보(c1=수평→수직, c2=수직→수평) 중 자기교차 안 생기는 쪽.
+    둘 다/둘 다 아니면 c1."""
+    try:
+        from shapely.geometry import Polygon
+        for c in (c1, c2):
+            trial = pts[:i + 1] + [c] + pts[i + 1:]
+            if len(trial) >= 3 and Polygon(trial).is_valid:
+                return c
+    except Exception:  # noqa: BLE001
+        pass
+    return c1
+
+
+def rectify_diagonals(poly, tol=0.5):
+    """대각선 변(dx≠0 ∧ dy≠0)을 **L-코너 삽입**으로 직각화 — 변을 *옮기지 않고 꺾어* 보존.
+
+    조사(survey_shapes, 2026-06-18): 생성 방의 대각선은 *항상 정확히 1개*(닫는 변),
+    홀수 코너 ⟺ 대각선. ∴ 대각선 a→b를 점 (b.x,a.y) 또는 (a.x,b.y) 삽입으로
+    H+V 두 직각변으로 분해하면 직각화 + 면적 거의 보존. 삼각형(3코너)도 4코너로 펴짐.
+    `_rectilinear_poly`(그리디 변별 스냅, 삼각형 못 펴고 변 이동)의 *정확한 교체본*.
+    """
+    pts = [[float(p[0]), float(p[1])] for p in poly]
+    closed = len(pts) > 1 and pts[0] == pts[-1]
+    if closed:
+        pts = pts[:-1]
+    if len(pts) < 3:
+        return poly
+    guard = 0
+    while guard < 8 * len(pts) + 64:
+        guard += 1
+        n = len(pts)
+        found = -1
+        for i in range(n):
+            a, b = pts[i], pts[(i + 1) % n]
+            if abs(b[0] - a[0]) > tol and abs(b[1] - a[1]) > tol:   # 대각선 변
+                found = i
+                break
+        if found < 0:
+            break
+        a, b = pts[found], pts[(found + 1) % n]
+        cand = _pick_rect_corner(pts, found, [b[0], a[1]], [a[0], b[1]])
+        pts.insert(found + 1, cand)
+    out = pts + [pts[0]] if closed else pts
+    return [list(p) for p in out]
 
 
 def canonicalize(g: dict, grid: int = 128, simplify_frac: float = 0.01,

@@ -86,7 +86,7 @@ def causal_lm_loss(logits: torch.Tensor, tokens: torch.Tensor, ignore_index: int
 
 def make_constraint_mask(vocab: dict, orthogonal: bool = False):
     """ADR-0012 §3 constrained decoding — 문법 구조 + corner/room 참조 유효성을 생성 시점 강제.
-    무효 토큰을 -inf로 마스킹(닫힘·문법순서·참조범위·cycle≥3). 생성 전용(학습 무관, 파이썬 루프).
+    무효 토큰을 -inf로 마스킹(닫힘·문법순서·참조범위·cycle≥4=삼각형 차단). 생성 전용(학습 무관).
     orthogonal=True: room cycle 변을 직각 강제(다음 corner는 이전과 x또는y 동일) → 대각선 차단.
     반환: mask_fn(x, logits) → 마스킹된 logits."""
     from plan2graph import wallcycle_codec as wc
@@ -167,8 +167,24 @@ def make_constraint_mask(vocab: dict, orthogonal: bool = False):
                             if (cs[ci][0] == lx or cs[ci][1] == ly) and ci != lr}
                     if orth:
                         a = orth
-            if nref >= 3:
-                a.add(V.ROOM_END)                                     # cycle≥3 충족 시 닫기
+            # 닫기 = 최소 4코너(삼각형 방 차단) + 직각이면 닫는 변도 축정렬(닫힘 대각선 차단).
+            if nref >= 4:
+                close_ok = True
+                if orthogonal and nref < 8:                            # nref≥8=런어웨이 방지로 닫기 허용
+                    cs = _corners(seq)
+                    cur = []                                          # 현재 cycle corner 참조(마지막 role 이후)
+                    for t in reversed(tail):
+                        if role <= t < role + nrole:
+                            break
+                        if coord <= t < coord + len(cs):
+                            cur.append(t - coord)
+                    if len(cur) >= 2 and cur[0] < len(cs) and cur[-1] < len(cs):
+                        lx2, ly2 = cs[cur[0]]                          # 마지막 ref(닫는 변 끝)
+                        fx, fy = cs[cur[-1]]                           # 첫 ref(cycle 시작)
+                        if not (fx == lx2 or fy == ly2):
+                            close_ok = False                          # 닫는 변 대각선 → 더 진행
+                if close_ok:
+                    a.add(V.ROOM_END)
             return a
         # ── OPENINGS phase ── door=c c pos r r · window=c c pos · open=r r
         oi = seq.index(V.SEC_OPEN)

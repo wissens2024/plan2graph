@@ -99,6 +99,20 @@ data/
 
 ---
 
+## 5-A. 개구부(문/창) 토큰 커버리지 — 코퍼스별 [2026-06-18]
+
+생성 토큰셋(`data/staging/tokens_*/train.jsonl`)의 opening 토큰 실측(특수 id `OPEN=5·DOOR=6·WINDOW=7`, `wallcycle_codec.py`):
+
+| 코퍼스 | plans | DOOR | WINDOW | OPEN |
+|---|---|---|---|---|
+| **RPLAN** (`tokens_rplan`) | 72,555 | **0% (0개)** | **0% (0개)** | 100% (6.78/plan) |
+| **한국 Parsed** (`tokens_parsed_apt`) | 26,646 | **95% (~9.4/plan)** | **95% (~10.8/plan)** | 100% |
+
+- **RPLAN엔 문/창 주석이 없음** — 방-방 경계를 전부 `open`(벽없는 공유)으로만 인코딩. ∴ RPLAN 학습 생성기(KorPlan-AR-R 등)는 **구조적으로 문/창을 못 만든다**(데이터 한계, 모델 결함 아님 — `EXPERIMENTS.md` §KorPlan-AR).
+- **한국 Parsed엔 문 95%·창 95%** → 개구부(완성 도면 요소)는 **한국 데이터/한국 파인튜닝 단계의 자원**. 다국가 합동학습 시 도메인별 라벨 격차로 기록([[multidomain-conditioning-metadata]]).
+
+---
+
 ## 6. 스키마 (라인별 — 휘발성 상세는 코드)
 
 - **T-라인**: `layout.nodes`(type / source-target). 구현 `schema.py`.
