@@ -534,17 +534,19 @@ ep200 가중치에서 옵티마이저 복원(seamless)으로 연장 학습. **�
 ## 6. lr/pretrain ablation + 벽두께-인식 생성 성능 (실측) [2026-06-20]
 **① 학습 valid (신뢰 — held-out)**: Korean-alone **0.47** / finetune-1e-4 **0.69** / finetune-5e-5 0.66 → **RPLAN pretrain이 valid 향상.** lr 1e-4 vs 5e-5 미미.
 
-**② 생성 기하 (n=40, 벽두께-인식 2%)**:
-| | 한국-단독 | finetune-1e-4 |
-|---|---|---|
-| 단일(strict) | 2% | 0% |
-| **단일(벽 2%)** | **78%** | **70%** |
-| selfint=0 | 12% | 10% |
-| overlap<0.25 | 82% | 82% |
-| **clean(벽인식)** | **12%** | **10%** |
-- **생성 한국 = 벽2%서 70~78% 단일** → 엔진이 응집된 벽-분리 아파트 생성(strict 0%는 §5 지표 탓).
-- ⚠️ **n=40서 pretrain vs 단독의 *기하* 차이는 노이즈**(78 vs 70 등 구분 불가). pretrain의 신뢰 이득은 **valid(①)**. 큰 n 재측정 필요. (앞서 "pretrain selfint 5×"는 단발 노이즈, 철회.)
-- ★**진짜 병목 = selfint(방 폴리곤 자기교차) ~10~12%** → clean 제한. 연결성·개구부 아님.
+**② 생성 기하 (★n=200, 벽두께-인식 2% — 확정)**:
+| | RPLAN-ep50 | 한국-단독 | finetune(pretrain) |
+|---|---|---|---|
+| decoded | 200/200 | 199/200 | 200/200 |
+| 단일(strict) | 86% | 4% | 2% |
+| **단일(벽2%)** | 90% | 71% | **78%** |
+| selfint=0 | 45% | 10% | 12% |
+| overlap<0.25 | 90% | 83% | **91%** |
+| **clean(strict)** | **40%** | 0% | 0% |
+| **clean(벽인식)** | 42% | 9% | **12%** |
+- **RPLAN = SOTA급**(clean strict **40%**, 단일 86~90%). 생성 한국 = 벽2%서 **71~78% 단일** → 엔진이 응집된 벽-분리 아파트 생성(strict 0%는 §5 지표 탓).
+- **pretrain 효과 (n=200, 한국-단독→finetune)**: overlap 83→91%·단일벽 71→78%·clean 9→12%, valid 0.47→0.69 — **작지만 일관된 향상**(overlap/단일벽은 SE 밖, clean +3pp는 SE 근방). lr 1e-4 vs 5e-5 미미.
+- ★**진짜 병목 = selfint(방 폴리곤 자기교차) ~10~12%**(pretrain 불변) → clean 제한. 연결성·개구부 아님.
 
 ## 7. 현재버전 Python 개선 (재학습 0) — ★수리 실패, rejection이 답 [2026-06-20]
 - **selfint Python 수리 = 효과 없음 (정직한 음의 결과, 실측)**:
@@ -555,5 +557,5 @@ ep200 가중치에서 옵티마이저 복원(seamless)으로 연장 학습. **�
   | `make_valid`만 | +2pp | +0pp | n=80 |
   | `make_valid`+직각 | +1pp | +0pp | n=80 |
   → **단순 Python 수리(buffer0/make_valid/직교) 모두 clean 못 올림.** 이유: ① selfint0는 *플랜의 ~14방 전부* 깨끗해야 True(한 방만 교차해도 실패) ② `_self_intersects`(변-교차)가 shapely make_valid보다 엄격 → 수리해도 통과 못 함. **∴ 수리는 selfint 레버 아님.**
-- ★**rejection sampling = 진짜 레버**: clean(벽인식) ~10~20% = **5~10회에 1개** → "잘 나올 때까지 그려 달라"(독립·고분산 생성이라 매우 효과적, AR 생성 쌈). + **법규 게이트**(verify→repair→rerank) 결합 = **규제-인식 rejection**(신규성, §KorPlan-Diff 규제레이어). ★평가를 *단발*이 아니라 ***루프 후*** 품질로 = SCI 신규성 프레임.
-- ⚠️ n=40~80서 baseline clean 9%↔20% 출렁 = 노이즈 큼. **논문 최종 수치는 n≥200~500 재측정 필수.**
+- ★**rejection sampling = 진짜 레버**: clean(벽인식) **9~12% (n=200)** = **약 8~11회에 1개** → "잘 나올 때까지 그려 달라"(독립·고분산 생성이라 매우 효과적, AR 생성 쌈). + **법규 게이트**(verify→repair→rerank) 결합 = **규제-인식 rejection**(신규성, §KorPlan-Diff 규제레이어). ★평가를 *단발*이 아니라 ***루프 후*** 품질로 = SCI 신규성 프레임.
+- ✅ **n=200 확정** (decoded ~100%, RPLAN clean 40%, 한국 clean벽 9~12%). 앞선 n=40~80 출렁(9↔20%)은 노이즈였고 n=200서 안정.
