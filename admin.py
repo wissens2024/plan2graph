@@ -1208,14 +1208,17 @@ if which.startswith("📗"):
                     model = WallCycleLM(vocab["size"], d_model=a["d_model"], n_layer=a["n_layer"],
                                        n_head=a.get("n_head", 8), max_len=a["max_len"]).to(dev)
 
-                    # ⚠️ checkpoint 아키텍처 호환성 처리: 표준 TransformerEncoder vs 커스텀 블록
+                    # ⚠️ checkpoint 로드 시도
                     try:
                         model.load_state_dict(ckpt["model"])
                     except RuntimeError as e:
-                        st.warning(f"⚠️ 체크포인트 로드 실패 (아키텍처 불일치): {str(e)[:100]}...")
-                        st.info("새로운 아키텍처로 모델을 초기화합니다. (무작위 가중치)")
-                        # checkpoint 무시하고 새 모델 사용
-                        pass
+                        st.error("❌ 체크포인트 로드 실패")
+                        st.error(f"아키텍처 불일치: 현재 코드와 checkpoint 파일의 모델 구조가 다릅니다.")
+                        st.info("📋 해결책:")
+                        st.info("1. checkpoint 파일을 현재 코드로 재학습하거나")
+                        st.info("2. 이전 버전의 WallCycleLM 코드로 되돌려야 합니다.")
+                        st.info(f"\n기술 상세: {str(e)[:200]}")
+                        st.stop()
 
                     model.eval()
 
