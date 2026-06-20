@@ -557,5 +557,12 @@ ep200 가중치에서 옵티마이저 복원(seamless)으로 연장 학습. **�
   | `make_valid`만 | +2pp | +0pp | n=80 |
   | `make_valid`+직각 | +1pp | +0pp | n=80 |
   → **단순 Python 수리(buffer0/make_valid/직교) 모두 clean 못 올림.** 이유: ① selfint0는 *플랜의 ~14방 전부* 깨끗해야 True(한 방만 교차해도 실패) ② `_self_intersects`(변-교차)가 shapely make_valid보다 엄격 → 수리해도 통과 못 함. **∴ 수리는 selfint 레버 아님.**
-- ★**rejection sampling = 진짜 레버**: clean(벽인식) **9~12% (n=200)** = **약 8~11회에 1개** → "잘 나올 때까지 그려 달라"(독립·고분산 생성이라 매우 효과적, AR 생성 쌈). + **법규 게이트**(verify→repair→rerank) 결합 = **규제-인식 rejection**(신규성, §KorPlan-Diff 규제레이어). ★평가를 *단발*이 아니라 ***루프 후*** 품질로 = SCI 신규성 프레임.
-- ✅ **n=200 확정** (decoded ~100%, RPLAN clean 40%, 한국 clean벽 9~12%). 앞선 n=40~80 출렁(9↔20%)은 노이즈였고 n=200서 안정.
+- ★**rejection sampling = 진짜 레버**: clean(벽인식) **9~14% (n=200)** = **약 7~11회에 1개** → "잘 나올 때까지 그려 달라"(독립·고분산 생성이라 매우 효과적, AR 생성 쌈). ★평가를 *단발*이 아니라 ***루프 후*** 품질로 = SCI 신규성 프레임.
+- ★**법규 게이트 결합 = 규제-인식 rejection (신규성, 실측 n=200, finetune·KR)**:
+  | 게이트 | 통과율 | rejection |
+  |---|---|---|
+  | clean(벽) | 14% | — |
+  | **법규(채광/환기)** | **44%** (창보유 98%) | — |
+  | **clean + 법규 (combined)** | **6%** | **~17회에 1개** |
+  → 창은 98% 그리나 **법규 통과 44%** = 창이 *적절한 방(거실·침실)*에 미배치. **verify→repair가 여기 효과**(phase1: 채광 50→98%, [[phase1-legal-compliance-metric-works]]) → 법규↑면 combined가 clean(14%)-한계로 → ~7회. **"법규 통과할 때까지 그려 달라" = 규제-인식 생성.**
+- ✅ **n=200 확정** (decoded ~100%, RPLAN clean 40%, 한국 clean벽 9~14%, 법규 44%, combined 6%). 앞선 n=40~80 출렁은 노이즈, n=200서 안정.

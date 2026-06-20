@@ -49,11 +49,16 @@
 - **L2 진단-피드백 보정**: 한 도면의 **구체적 문제 진단**(겹친 방 X·끊긴 방 Y·법규 위반 Z) → (a) 기하 수리(스냅/재배치) 또는 (b) 그 부분만 타깃 재생성. = ADR-0012/0019 **verify→repair→rerank** 루프.
 - 논문 가치: "단발 생성 품질"이 아니라 **"보정 루프 후 품질"**로 평가 = 우리 신규성(규제·검증을 생성기에 결합).
 
-### 2-C. 규제/법규 DB 연결 (= §2-B의 게이트에 법규 포함)
+### 2-C. 규제/법규 DB 연결 — ★실측 (n=200, finetune·KR)
+| 게이트 | 통과율 | rejection |
+|---|---|---|
+| clean(벽) | 14% | — |
+| **법규(채광/환기)** | **44%** (창보유 98%) | — |
+| **clean + 법규** | **6%** | **~17회에 1개** |
 - 생성 도면 → geomgraph → `rules_legal.check_legal`(채광/환기 창·면적·대피, KR 스코프) → 위반 시 repair 또는 reject → rerank.
-- **한국은 개구부 96% 보유 → 법규 적용 가능**(RPLAN은 N/A). 이게 신규성의 무대.
-- 기존 자산: `regulation.py`(verify→repair→rerank)·`rules_legal.py`·법령DB(`legal/`, 175조문, [[legal_db_handoff]]). Phase1서 채광 준수율 repair로 raw 50→98% 실측됨.
-- → **규제-인식 rejection sampling**: "법규 통과할 때까지 그려 달라" = 사용자 아이디어 + 규제 = 핵심 기여.
+- ★**창은 98% 그리나 법규 통과는 44%** = 창이 *적절한 방(거실·침실)*에 미배치 → **verify→repair가 핵심**(Phase1 채광 raw 50→98% 실측 [[phase1-legal-compliance-metric-works]]). 법규 repair 적용 시 combined가 clean(14%) 한계로 → ~7회.
+- 자산: `regulation.py`·`rules_legal.py`·법령DB(`legal/`, 175조문, [[legal_db_handoff]]). 한국 개구부 보유라 법규 적용 가능(RPLAN N/A).
+- → **규제-인식 rejection sampling**: "법규 통과할 때까지 그려 달라" = 사용자 아이디어 + 규제 = 핵심 기여(평가를 루프-후 품질로).
 
 ---
 
