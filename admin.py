@@ -1152,18 +1152,53 @@ if which.startswith("📗"):
             st.warning(f"⚠️ 모델 '{_msel}' 준비 중입니다. {_mrow['status']}")
             st.stop()
 
-        # 생성 조건 입력
-        st.markdown("**생성 조건** (아파트 도면 파라미터)")
+        # 생성 조건 입력 — 자연어 프롬프트 + 수치
+        st.markdown("**생성 조건** (자연어 또는 수치 입력)")
+
+        # 자연어 프롬프트 입력
+        _prompt = st.text_area(
+            "자연어 프롬프트 (선택)",
+            placeholder="예: 4인 가족, 룸 3개, 화장실 2개, 드레스룸과 파우더룸이 있는 아파트 도면을 그려줘",
+            height=80,
+            help="자연어로 입력하면 자동으로 파싱됩니다. 또는 아래 수치로 직접 입력해도 됩니다.")
+
+        # 프롬프트 파싱 (간단한 정규식)
+        _bedrooms_default = 3
+        _bathrooms_default = 2
+        _dressingroom_default = True
+        _powderroom_default = True
+
+        if _prompt.strip():
+            import re
+            # 침실/룸/방 개수
+            bed_match = re.search(r'(?:침실|룸|방)\s*(\d+)', _prompt)
+            if bed_match:
+                _bedrooms_default = int(bed_match.group(1))
+
+            # 욕실/화장실 개수
+            bath_match = re.search(r'(?:욕실|화장실|화장실|반욕실)\s*(\d+)', _prompt)
+            if bath_match:
+                _bathrooms_default = int(bath_match.group(1))
+
+            # 드레스룸 여부
+            _dressingroom_default = bool(re.search(r'드레스룸|드레싱룸|walk.?in', _prompt))
+
+            # 파우더룸 여부
+            _powderroom_default = bool(re.search(r'파우더룸|분장실', _prompt))
+
+        st.divider()
+        st.markdown("**또는 수치로 직접 입력:**")
+
         _c1, _c2, _c3 = st.columns(3)
         _housing = _c1.radio("주거형태", ["APT(아파트)"], help="현재는 한국 APT만 지원")
-        _bedrooms = _c2.slider("침실 수", 1, 5, 3, help="침실 개수(안방 포함)")
-        _bathrooms = _c3.slider("욕실 수", 1, 3, 2, help="욕실/화장실 개수")
+        _bedrooms = _c2.slider("침실 수", 1, 5, _bedrooms_default, help="침실 개수(안방 포함)")
+        _bathrooms = _c3.slider("욕실 수", 1, 3, _bathrooms_default, help="욕실/화장실 개수")
 
         _d1, _d2 = st.columns(2)
-        _has_dressingroom = _d1.checkbox("드레스룸 추가", value=True)
-        _has_powderroom = _d2.checkbox("파우더룸 추가", value=True)
+        _has_dressingroom = _d1.checkbox("드레스룸 추가", value=_dressingroom_default)
+        _has_powderroom = _d2.checkbox("파우더룸 추가", value=_powderroom_default)
 
-        st.caption(f"생성: {_bedrooms}침실 {_bathrooms}욕실 APT" +
+        st.caption(f"**생성 예정:** {_bedrooms}침실 {_bathrooms}욕실 APT" +
                   (" + 드레스룸" if _has_dressingroom else "") +
                   (" + 파우더룸" if _has_powderroom else ""))
 
