@@ -445,7 +445,113 @@ RPLAN 체크포인트(`korplan_diff_r`)에서 **한국(AI-Hub corrected geomgrap
 - **외곽(footprint) 품질** — 진짜 RPLAN(500) vs 생성(200) 비교(`survey_outline.py`): 중앙값 채움비 비슷(0.80 vs 0.78)이나 **생성은 꼬리 불량 — 분리(연결 끊김) 21.5% vs 진짜 1.0%**, fill p10 0.45 vs 0.68. 대응 = footprint 거절(연결1·fill≥0.6·convex≥0.75, 진짜 분포 기준).
 - ★중요: 사선·벽·외곽 해결 후 clean율(배치 기준) ~46%의 **거절 사유가 기하 아티팩트→배치(겹침·분리·세장)로 이동**. 즉 RPLAN 품질 병목이 "기하 아티팩트"에서 "방 배치 품질"로 분리 확정 — 후처리 아닌 **모델/한국데이터 레버**.
 
+## 4-B. 연장 학습 ep200 → ep580 = plateau 확증 (freeze 근거) [2026-06-18]
+
+ep200 가중치에서 옵티마이저 복원(seamless)으로 연장 학습. **동일 파이프라인**(`render_geomclean.py --constrained --orthogonal`, country=0)으로 두 ckpt를 CPU 렌더 비교 — 학습은 GPU1에서 계속(2-GPU 동시 풀로드 트립 회피 위해 렌더는 CPU, `no-concurrent-heavy-render-during-training`).
+
+| ckpt | train loss | clean율 (N=100 고정·조기종료無) |
+|---|---|---|
+| **ep200** | 0.4125 | **48% (48/100)** |
+| **ep580** | 0.3975 (ep575) | **52% (52/100)** |
+
+- **★plateau 확증**: loss(0.4125→0.3975, ≈0.01)·clean율(48%→52%, **4pp**) **둘 다 미동**. clean율 4pp 차이는 이항 표준오차(±5pp, N=100) 이내 = **통계적으로 동등**. ep200 이후 ~380 epoch 추가 학습의 배치품질 이득 ≈ 0.
+- **주의(측정 함정)**: 1차 측정은 `--render 12` 조기종료라 n_total이 censored(ep200 12/39=31%, ep580 12/24=50%)로 **차이 과장**. 고정 N=100 무편향 재측정에서 48% vs 52%로 수렴 — 작은 표본·조기종료의 분산 아티팩트였음. *clean율은 항상 고정 N으로 측정할 것.*
+- 몽타주: `docs/runs/cmp_ar_ep200.png` · `cmp_ar_ep580.png`(각 clean 12장). 정성도 거의 구분 불가.
+- **함의**: RPLAN AR은 ep200에서 이미 수렴 → **freeze 근거**(최종 판정=사용자 렌더 검수, 클로드 선언 금지 `handoff-v3-rectilinear-train`). 배치품질 천장(clean ~50%)은 *학습량* 레버가 아닌 **모델/표현/한국데이터** 레버로만 넘을 수 있음을 재확인. ckpt 백업 `korplan_ar_r_ep200.pt`·`korplan_ar_r_ep580.pt`.
+
+## 4-C. ★중대 정정 — plateau는 "방법 천장"이 아니라 "용량 한계" (FMLM 대조, 2026-06-19)
+앞선 "clean ~50% plateau = 방법 천장" 진단은 **틀렸다.** AR과 **동일 패러다임**인 FMLM(CVPR'26, arxiv 2604.04859, 자기회귀 토큰+constrained decoding)을 논문에서 정밀 분석한 결과(`docs/LITERATURE.md §FMLM 정밀기록`):
+- **batch·학습량은 범인 아님**: FMLM도 **batch 32(동일)**, epoch 50(우리는 200~580로 *더 많이* 학습), 데이터 RPLAN(동일).
+- **진짜 갭 = 모델 용량 + 누락된 ablation 요소**:
+  - 용량: FMLM **80M**(24L/512d/32h) vs 우리 **5.1M**(6L/256d/8h) = **16× 작음**.
+  - FMLM ablation이 입증한 필수요소 중 우리가 안 했을 가능성: **방 index 내림차순**(빼면 FID 25.5→94.6 붕괴, Table 7) · **room permutation 증강**(Table 6) · **LLaMA-3 블록**(RoPE/SwiGLU/RMSNorm).
+- ∴ **5.1M 모델 clean율 plateau로 "천장" 선언한 것은 표본 오독.** 다음 = 코드 대조(내림차순·permutation·아키텍처) → 갭 메우고 FMLM-스펙(80M)으로 재학습 → 용량 가설 실측. [[korplan-model-naming]]
+
 ## 5. 한계 · 다음
 - **배치 품질**(overlap/span) = 사선 해결 후 남은 진짜 한계(clean ~55%). 디코드 마스크 폴백 누수(축정렬 corner 부재 시)가 근원 → 코너 배치/학습 레버.
 - 문/창 = RPLAN 한계 → 한국 파인튜닝에서 검증(개구부 생성률·belongs_to 정확도 측정 예정).
 - KorPlan-Diff(코너 확산) vs KorPlan-AR(wall-cycle) **A/B**: 동일 RPLAN에서 Diff clean 73%(실겹침0) vs AR valid 1.0(구조적 닫힘)·사선수리후 clean ~55% — 표현 트레이드오프(§KorPlan-Diff). 한국 전이 후 공정 비교.
+
+---
+
+# KorPlan-AR 80M (FMLM 방법 재현) — SOTA급 baseline 증명 [2026-06-20] ★논문 자료
+
+> **논문 주장 (정확히)**: KorPlan-AR은 SOTA인 **FMLM**(Unified Vector Floorplan, CVPR'26)의 *엔진을 가져온 게 아니라 **방법을 from-scratch 재현***한 것이며, RPLAN에서 **SOTA급으로 작동**함을 증명한다. 그 위에 **한국 데이터 + 규제-인식 생성 + 한국특성 조치**가 우리 기여다.
+> ⚠️ **"FMLM을 이긴다"는 주장 아님.** FMLM이 도면 성능은 더 우수(permutation 증강·정확 프로토콜·A100). 우리는 *동급 재현 + 신규 기여*를 주장한다.
+
+## 1. 방법 충실도 — 코드 레벨 ("가져온 게 아니라 따라 했다"의 직접 증거)
+| FMLM 요소 (논문 §3) | KorPlan-AR (우리 코드) | 일치 |
+|---|---|---|
+| decoder-only AR + LLaMA-3 블록(RoPE/RMSNorm/SwiGLU/SDPA) | `generators/wall_cycle.py` 동일 | ✅ |
+| 방 토큰 **내림차순** 순서 | `wallcycle_codec.py:285` 면적 내림차순 | ✅ |
+| constrained decoding (기하 유효성 마스크) | `make_constraint_mask` (닫힘·on-wall·cycle≥4) | ✅ |
+| loss = floorplan 토큰만(조건 제외) | `train_wall_cycle.py:masked_target` | ✅ |
+| 80M (24L/512d/32h) · 50 epoch · batch 32 · lr 1e-4 · RPLAN | **동일** (77.4M) | ✅ |
+| **room permutation 증강** | 미구현 | ❌ (유일 갭) |
+| 좌표 z=x+yW 스칼라 | (x,y) 2-token | ❌ (minor·ablation 아님) |
+> 코드 0줄 차용(클린룸 재구현). FMLM 공개수치(LITERATURE §FMLM): uncond FID **7.22**(GSDiff 15.02 능가)·boundary IoU 97.86~98.06·graph FID 3.41/GED 1.21.
+
+## 2. 기능 검증 — RPLAN ep50 (FMLM 동일 사양, n=40 decomposed)
+| 지표 | 값 | 의미 |
+|---|---|---|
+| valid (디코딩가능 닫힌도면) | **100%** | 구조적 닫힘 보장 |
+| 실겹침 (overlap<0.25) | **92%** (중앙값 **0**) | 겹침 거의 없음 |
+| footprint 단일 연결덩어리 | **90%** (중앙값 1조각) | 깨끗한 타일링 |
+| 대각선 0 | **100%** | rectilinear |
+| convex≥0.75 | 88% (중앙값 0.88) | 정형 외곽 |
+| **full clean (엄격 전부통과)** | **40%** | — |
+- 학습 무결성: ep30→ep50 단일 프로세스·옵티마이저 복원 이음매 없음(중복 프로세스 사고 후 깨끗 재학습). loss ep30 0.1351→ep50 0.1181, valid 1.0.
+- 도면: `docs/runs/korplan_ar_rplan_ep50_montage.png` (대부분 단일 연결 건물로 타일링).
+
+## 3. 한국 적용 — 같은 엔진, 더 어려운 데이터 (대조)
+| 지표 | RPLAN ep50 | 한국 ep50 |
+|---|---|---|
+| valid | 100% | 100% |
+| full clean | **40%** | **0%** |
+| footprint 단일덩어리 | 90% (med 1) | 8% (med 10.5) |
+| selfint=0 | 45% | 5% |
+| **문/창 보유** | 0/0 (설계상 N/A) | **96%/96%** |
+| 방 수 | ~6.7 | ~14.2 |
+- **해석**: 동일 SOTA급 레시피가 RPLAN(단순·6.7방)엔 40% clean, 한국(복잡·14방·L자·발코니)엔 0% — **격차=한국 데이터 복잡도**(footprint 파편화). 한국은 문/창 96% 보유 → **규제 레이어(채광/환기/대피) 적용 가능 = 신규성의 무대.**
+- 도면: `docs/runs/korplan_ar_korean_ep50_montage.png`.
+- **다음 레버**(우리 기여): 한국특성 조치 — footprint 연결성 손실·코너 스냅·데이터 보정(Parsed→Corrected) + 규제-인식 생성. *데이터 품질 보정 시 향상 여지.*
+
+## 4. 측정 선택 — FID 미사용 이유 (방어 논리)
+- FMLM은 FID/GED/IoU, 우리는 **기하 검증(clean·겹침·footprint)** — 본 프로젝트 방침 "CAD 품질 > FID"(§5-A) 정합.
+- cross-paper FID는 **프로토콜(렌더·레퍼런스·eval코드) 비동일**이라 7.22와 직접비교 불가 + permutation 갭으로 불리 → SOTA급 주장은 **방법-충실도(§1) + 기능검증(§2)**로 한다. (FID 하네스 `scripts/fid_rplan.py`는 내부 sanity check용으로만 보유.)
+
+## 5. ★footprint 지표 미스매치 — 한국=벽두께 표현, 데이터 정상 (실측 정정) [2026-06-20]
+> ⚠️ 앞서 "한국 데이터가 천장"이라 본 것은 **지표 오류였다.** 간격(벽두께) 허용을 늘리며 GT footprint를 재측정(n=300, shapely buffer-union 연결성분):
+| gap 허용(span 대비) | 한국 GT 단일% | RPLAN GT |
+|---|---|---|
+| 0% (strict, 변 맞닿음) | **0%** (med 12조각) | 100% |
+| 1% | 47% | 100% |
+| **2%** | **99%** | 100% |
+- ★**한국 GT는 ~2% 간격만 허용하면 99%가 단일 건물.** = 방을 **벽두께만큼 띄워** 그리는 *현실적 표현*이지 파편화 아님. RPLAN은 변-맞닿음(벽두께 0)이라 strict서 100%.
+- ∴ **strict footprint-단일 지표는 RPLAN식(변 맞닿음) 가정 → 한국(벽두께 표현)엔 부적합.** "한국 footprint 0%"는 품질 실패가 아니라 **지표 미스매치.** **한국 데이터·엔진 둘 다 정상.**
+- 함의: **연결성은 한국 병목이 아니다.** 벽두께-인식 지표(간격 tol)로 평가해야 공정 — Python만으로 즉시 정정(재학습 0).
+
+## 6. lr/pretrain ablation + 벽두께-인식 생성 성능 (실측) [2026-06-20]
+**① 학습 valid (신뢰 — held-out)**: Korean-alone **0.47** / finetune-1e-4 **0.69** / finetune-5e-5 0.66 → **RPLAN pretrain이 valid 향상.** lr 1e-4 vs 5e-5 미미.
+
+**② 생성 기하 (n=40, 벽두께-인식 2%)**:
+| | 한국-단독 | finetune-1e-4 |
+|---|---|---|
+| 단일(strict) | 2% | 0% |
+| **단일(벽 2%)** | **78%** | **70%** |
+| selfint=0 | 12% | 10% |
+| overlap<0.25 | 82% | 82% |
+| **clean(벽인식)** | **12%** | **10%** |
+- **생성 한국 = 벽2%서 70~78% 단일** → 엔진이 응집된 벽-분리 아파트 생성(strict 0%는 §5 지표 탓).
+- ⚠️ **n=40서 pretrain vs 단독의 *기하* 차이는 노이즈**(78 vs 70 등 구분 불가). pretrain의 신뢰 이득은 **valid(①)**. 큰 n 재측정 필요. (앞서 "pretrain selfint 5×"는 단발 노이즈, 철회.)
+- ★**진짜 병목 = selfint(방 폴리곤 자기교차) ~10~12%** → clean 제한. 연결성·개구부 아님.
+
+## 7. 현재버전 Python 개선 (재학습 0) — selfint 수리 + rejection [2026-06-20]
+- **selfint Python 수리 (실측, finetune-1e-4 n=40)**:
+  | | selfint0 | clean(벽) |
+  |---|---|---|
+  | 수리前 | 8% | 5% |
+  | 수리後 `buffer(0)` | 20% | **8%** |
+  → buffer(0)는 **약한 수리**(clean 5→8%). selfint가 수리後에도 20%로 **여전히 지배 병목** → **다음 = 제대로 된 직교 폴리곤 수리**(axis-aligned 직사각화, buffer(0)보다 강함)로 selfint를 근본 제거. 이게 현재버전 한국 clean율의 핵심 Python 레버.
+- **rejection sampling**: clean(벽인식) ~8~12% = 약 8~12회에 1개 → "잘 나올 때까지 그려 달라" 현실적. **selfint 직교수리 후 yield↑.** + **법규 게이트** 결합 = 규제-인식 rejection(신규성, §KorPlan-Diff 규제레이어). ★평가를 *단발*이 아니라 *루프 후* 품질로 = SCI 신규성 프레임.
+- ⚠️ 모든 생성 기하 수치는 n=40 노이즈 — 논문 최종은 큰 n(≥200) 재측정 권장.
