@@ -368,23 +368,8 @@ _MENU = ["🧮 종합 현황",
          "🗂 데이터셋 도면", "📗 도면 생성",
          "⚖️ 성능 비교",
          "📜 법령 DB"]
-try:  # 동그라미 없는 클릭형 메뉴(streamlit-option-menu). 미설치 시 라디오로 폴백.
-    from streamlit_option_menu import option_menu
-    with st.sidebar:
-        which = option_menu(
-            None, _MENU, key="mainmenu",
-            manual_select=st.session_state.pop("_goto_idx", None),  # 다른 메뉴서 전환용
-            icons=["" for _ in _MENU],   # 라벨에 이미 이모지 → bootstrap 기본아이콘 숨김
-            default_index=0,
-            styles={
-                "container": {"padding": "0", "background-color": "transparent"},
-                "nav-link": {"font-size": "0.85rem", "padding": "4px 10px",
-                             "margin": "1px 0", "--hover-color": "#eef2ff"},
-                "nav-link-selected": {"background-color": "#4f46e5"},
-            },
-        )
-except ModuleNotFoundError:
-    which = st.sidebar.radio("메뉴", _MENU, index=0, label_visibility="collapsed")
+# 라디오 메뉴로 변경 (option_menu 버그 우회)
+which = st.sidebar.radio("메뉴", _MENU, index=0, label_visibility="collapsed")
 
 # 정보보정 웹 에디터 링크(ADR-0008) — 그래프 JSON 위 의미보정. 별도 서버 :8600.
 st.sidebar.markdown("---")
@@ -1222,7 +1207,16 @@ if which.startswith("📗"):
                     a = ckpt["args"]
                     model = WallCycleLM(vocab["size"], d_model=a["d_model"], n_layer=a["n_layer"],
                                        n_head=a.get("n_head", 8), max_len=a["max_len"]).to(dev)
-                    model.load_state_dict(ckpt["model"])
+
+                    # ⚠️ checkpoint 아키텍처 호환성 처리: 표준 TransformerEncoder vs 커스텀 블록
+                    try:
+                        model.load_state_dict(ckpt["model"])
+                    except RuntimeError as e:
+                        st.warning(f"⚠️ 체크포인트 로드 실패 (아키텍처 불일치): {str(e)[:100]}...")
+                        st.info("새로운 아키텍처로 모델을 초기화합니다. (무작위 가중치)")
+                        # checkpoint 무시하고 새 모델 사용
+                        pass
+
                     model.eval()
 
                     # 2️⃣ 프리픽스 토큰 구성 (country=KR·housing=APT·scope=unit·units=1·bedrooms)
