@@ -546,12 +546,14 @@ ep200 가중치에서 옵티마이저 복원(seamless)으로 연장 학습. **�
 - ⚠️ **n=40서 pretrain vs 단독의 *기하* 차이는 노이즈**(78 vs 70 등 구분 불가). pretrain의 신뢰 이득은 **valid(①)**. 큰 n 재측정 필요. (앞서 "pretrain selfint 5×"는 단발 노이즈, 철회.)
 - ★**진짜 병목 = selfint(방 폴리곤 자기교차) ~10~12%** → clean 제한. 연결성·개구부 아님.
 
-## 7. 현재버전 Python 개선 (재학습 0) — selfint 수리 + rejection [2026-06-20]
-- **selfint Python 수리 (실측, finetune-1e-4 n=40)**:
-  | | selfint0 | clean(벽) |
-  |---|---|---|
-  | 수리前 | 8% | 5% |
-  | 수리後 `buffer(0)` | 20% | **8%** |
-  → buffer(0)는 **약한 수리**(clean 5→8%). selfint가 수리後에도 20%로 **여전히 지배 병목** → **다음 = 제대로 된 직교 폴리곤 수리**(axis-aligned 직사각화, buffer(0)보다 강함)로 selfint를 근본 제거. 이게 현재버전 한국 clean율의 핵심 Python 레버.
-- **rejection sampling**: clean(벽인식) ~8~12% = 약 8~12회에 1개 → "잘 나올 때까지 그려 달라" 현실적. **selfint 직교수리 후 yield↑.** + **법규 게이트** 결합 = 규제-인식 rejection(신규성, §KorPlan-Diff 규제레이어). ★평가를 *단발*이 아니라 *루프 후* 품질로 = SCI 신규성 프레임.
-- ⚠️ 모든 생성 기하 수치는 n=40 노이즈 — 논문 최종은 큰 n(≥200) 재측정 권장.
+## 7. 현재버전 Python 개선 (재학습 0) — ★수리 실패, rejection이 답 [2026-06-20]
+- **selfint Python 수리 = 효과 없음 (정직한 음의 결과, 실측)**:
+  | 수리 | selfint0 | clean(벽) | 출처 |
+  |---|---|---|---|
+  | baseline | 8~20% | 5~20% | (런마다 출렁=노이즈) |
+  | `buffer(0)` | +12pp | +3pp | n=40 |
+  | `make_valid`만 | +2pp | +0pp | n=80 |
+  | `make_valid`+직각 | +1pp | +0pp | n=80 |
+  → **단순 Python 수리(buffer0/make_valid/직교) 모두 clean 못 올림.** 이유: ① selfint0는 *플랜의 ~14방 전부* 깨끗해야 True(한 방만 교차해도 실패) ② `_self_intersects`(변-교차)가 shapely make_valid보다 엄격 → 수리해도 통과 못 함. **∴ 수리는 selfint 레버 아님.**
+- ★**rejection sampling = 진짜 레버**: clean(벽인식) ~10~20% = **5~10회에 1개** → "잘 나올 때까지 그려 달라"(독립·고분산 생성이라 매우 효과적, AR 생성 쌈). + **법규 게이트**(verify→repair→rerank) 결합 = **규제-인식 rejection**(신규성, §KorPlan-Diff 규제레이어). ★평가를 *단발*이 아니라 ***루프 후*** 품질로 = SCI 신규성 프레임.
+- ⚠️ n=40~80서 baseline clean 9%↔20% 출렁 = 노이즈 큼. **논문 최종 수치는 n≥200~500 재측정 필수.**
