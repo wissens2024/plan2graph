@@ -1103,10 +1103,9 @@ if which.startswith("📗"):
         "C": "Raster→벡터 헤지(추후) — 다양성 확보용 백업 엔진.",
     }
     _MODELS = [
-        {"name": "KorPlan-Diff-R", "engine": "A", "data": "RPLAN 중국", "status": "학습중", "ckpt": None},
-        {"name": "KorPlan-Diff-K", "engine": "A", "data": "한국 Parsed", "status": "예정", "ckpt": None},
-        {"name": "KorPlan-AR-R", "engine": "B", "data": "RPLAN 중국", "status": "평가가능", "ckpt": "ckpts/korplan_ar_r_fmlm80m.pt"},
-        {"name": "KorPlan-AR-K", "engine": "B", "data": "한국 Parsed(Clean)", "status": "✅ 테스트 가능", "ckpt": "ckpts/korplan_ar_k_fmlm80m.pt"},
+        {"name": "KorPlan-AR-K (ep50)", "engine": "B", "data": "한국 Parsed", "status": "✅ 완료", "ckpt": "ckpts/korplan_ar_k_fmlm80m.pt"},
+        {"name": "KorPlan-AR-K-FT-v1", "engine": "B", "data": "한국 Parsed", "status": "✅ 완료", "ckpt": "ckpts/korplan_ar_korean_ftR.pt"},
+        {"name": "KorPlan-AR-K-FT-v2", "engine": "B", "data": "한국 Parsed", "status": "✅ 최신", "ckpt": "ckpts/korplan_ar_korean_ftR_lr5e5.pt"},
     ]
 
     with st.container(border=True):
