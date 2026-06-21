@@ -678,23 +678,28 @@ def decode(tokens: list, vocab) -> Canon:
         return canon
 
     i += 1
-    while tokens[i] != V.EOS:
+    # Opening 파싱: 범위 체크 추가
+    while i < len(tokens) and tokens[i] != V.EOS:
         if tokens[i] == V.OPEN:
             i += 1
-            oa = tokens[i] - vb["room"]; ob = tokens[i + 1] - vb["room"]; i += 2
-            rid_a = canon.rooms[oa]["id"] if 0 <= oa < len(canon.rooms) else oa
-            rid_b = canon.rooms[ob]["id"] if 0 <= ob < len(canon.rooms) else ob
-            canon.openings.append({"kind": "open", "edge": None, "rooms": [rid_a, rid_b], "pos": 0})
+            if i + 1 < len(tokens):
+                oa = tokens[i] - vb.get("room", 0); ob = tokens[i + 1] - vb.get("room", 0); i += 2
+                rid_a = canon.rooms[oa]["id"] if 0 <= oa < len(canon.rooms) else oa
+                rid_b = canon.rooms[ob]["id"] if 0 <= ob < len(canon.rooms) else ob
+                canon.openings.append({"kind": "open", "edge": None, "rooms": [rid_a, rid_b], "pos": 0})
             continue
         kind = "door" if tokens[i] == V.DOOR else "window"; i += 1
-        ca = tokens[i] - vb["coord"]; cb = tokens[i + 1] - vb["coord"]; i += 2
-        pos = tokens[i] - vb["pos"]; i += 1
-        rooms = []
-        if kind == "door":
-            oa = tokens[i] - vb["room"]; ob = tokens[i + 1] - vb["room"]; i += 2
-            rooms = [canon.rooms[oa]["id"] if 0 <= oa < len(canon.rooms) else oa,
-                     canon.rooms[ob]["id"] if 0 <= ob < len(canon.rooms) else ob]
-        canon.openings.append({"kind": kind, "edge": [ca, cb], "rooms": rooms, "pos": pos})
+        if i + 1 < len(tokens):
+            ca = tokens[i] - vb.get("coord", 0); cb = tokens[i + 1] - vb.get("coord", 0); i += 2
+            pos = (tokens[i] - vb.get("pos", 0)) if i < len(tokens) else 0; i += 1
+            rooms = []
+            if kind == "door" and i + 1 < len(tokens):
+                oa = tokens[i] - vb.get("room", 0); ob = tokens[i + 1] - vb.get("room", 0); i += 2
+                rooms = [canon.rooms[oa]["id"] if 0 <= oa < len(canon.rooms) else oa,
+                         canon.rooms[ob]["id"] if 0 <= ob < len(canon.rooms) else ob]
+            canon.openings.append({"kind": kind, "edge": [ca, cb], "rooms": rooms, "pos": pos})
+        else:
+            break
     return canon
 
 
