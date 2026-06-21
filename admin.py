@@ -382,7 +382,7 @@ try:  # 동그라미 없는 클릭형 메뉴(streamlit-option-menu). 미설치 �
                 "nav-link-selected": {"background-color": "#4f46e5"},
             },
         )
-except ModuleNotFoundError:
+except Exception:
     which = st.sidebar.radio("메뉴", _MENU, index=0, label_visibility="collapsed")
 
 # ════════════════════════════════════════════════════════════════════════════
