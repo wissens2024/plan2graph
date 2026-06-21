@@ -115,26 +115,33 @@ def main():
                     collate_fn=lambda b: collate(b, pad))
     print(f"[data] {len(ds)} seqs, vocab={vocab['size']}, device={dev}")
 
-    # Resume from checkpoint if specified — use checkpoint args for model config
+    # Load/resume from checkpoint
     start_ep = 1
-    if args.resume:
-        ckpt = torch.load(args.resume, map_location=dev)
-        ckpt_args = ckpt.get("args", {})
-        # Override model args from checkpoint
-        args.d_model = ckpt_args.get("d_model", args.d_model)
-        args.n_layer = ckpt_args.get("n_layer", args.n_layer)
-        args.n_head = ckpt_args.get("n_head", args.n_head)
-        args.max_len = ckpt_args.get("max_len", args.max_len)
-        print(f"[resume] {args.resume}에서 모델 설정 로드: d={args.d_model} L={args.n_layer} H={args.n_head}")
-        start_ep = ckpt.get("epoch", 0) + 1
+    ckpt = None
+    dim_ff = None
+    if args.resume or args.out:  # If resuming or output specified, look for existing checkpoint
+        ckpt_path = args.resume if args.resume else args.out
+        try:
+            ckpt = torch.load(ckpt_path, map_location=dev)
+            ckpt_args = ckpt.get("args", {})
+            # Use checkpoint config for model
+            args.d_model = ckpt_args.get("d_model", args.d_model)
+            args.n_layer = ckpt_args.get("n_layer", args.n_layer)
+            args.n_head = ckpt_args.get("n_head", args.n_head)
+            args.max_len = ckpt_args.get("max_len", args.max_len)
+            # Calculate dim_ff from checkpoint mlp.w1.weight shape
+            mlp_w1_shape = ckpt["model"]["blocks.0.mlp.w1.weight"].shape
+            dim_ff = mlp_w1_shape[0]
+            start_ep = ckpt.get("epoch", 0) + 1 if args.resume else 1
+            print(f"[ckpt] {ckpt_path} → d={args.d_model} L={args.n_layer} H={args.n_head} dim_ff={dim_ff}, ep{start_ep}부터")
+        except (FileNotFoundError, KeyError):
+            print(f"[new] 처음부터 학습 (d={args.d_model} L={args.n_layer} H={args.n_head})")
+            ckpt = None
 
     model = WallCycleLM(vocab["size"], d_model=args.d_model, n_layer=args.n_layer,
-                        n_head=args.n_head, max_len=args.max_len).to(dev)
-
-    if args.resume:
-        ckpt = torch.load(args.resume, map_location=dev)
+                        n_head=args.n_head, max_len=args.max_len, dim_ff=dim_ff).to(dev)
+    if ckpt:
         model.load_state_dict(ckpt["model"])
-        print(f"[resume] 가중치 로드 완료 → ep{start_ep}부터 시작")
     nparam = sum(p.numel() for p in model.parameters())
     print(f"[model] {nparam/1e6:.1f}M params, d={args.d_model} L={args.n_layer}")
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
