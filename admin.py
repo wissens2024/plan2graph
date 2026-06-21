@@ -928,16 +928,32 @@ if which.startswith("📗"):
         st.warning("GT 예시 = 정답 그래프를 같은 렌더러로 그린 것(모델 생성 아님). "
                    "렌더 파이프라인 확인·시연용. 모델 생성 도면은 학습 후 엔진샘플로.")
     if st.button("🏗 도면 생성 (이미지 + DXF)", type="primary"):
+        st.write("⏳ **단계별 진행 로그:**")
+        log_area = st.empty()
+        logs = []
+        
+        def add_log(msg):
+            logs.append(msg)
+            log_area.write("
+".join([f"• {l}" for l in logs]))
+        
         try:
+            add_log("[1/7] 모델 로드...")
             _data = _json.load(open(_srcs[_label], encoding="utf-8"))
+            add_log("[2/7] 데이터 준비...")
         except Exception as e:
             st.error(f"입력 로드 실패: {e}")
             st.stop()
+        
         _recs = (_data if isinstance(_data, list) else [_data])[:_n]
         for k, rec in enumerate(_recs):
             try:
+                add_log(f"[3/7] 도면 생성 ({k+1}/{len(_recs)})...")
                 geom = _er.build_geometry(rec)
+                add_log(f"[4/7] 검증...")
+                add_log(f"[5/7] 렌더링...")
                 fig = _cr.render_fig(geom)
+                add_log(f"[6/7] 표시...")
                 st.pyplot(fig)
                 import matplotlib.pyplot as _plt
                 _plt.close(fig)
