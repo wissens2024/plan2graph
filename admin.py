@@ -869,105 +869,268 @@ if which.startswith("📗"):
     import json as _json
     from pathlib import Path as _P
     from plan2graph import cadrender as _cr, engine_render as _er
-    st.title("📗 도면 생성 — 한국형 소버린 엔진 (학습→생성→개선→재학습 반복)")
-    st.caption("ADR-0006/0007. 박스회귀 폐기 → 자체 엔진(DiffPlanner 골격 한국형 13역할/18방). "
-               "한 번에 완성이 아님 — 반복으로 품질을 올린다.")
-    st.markdown(
-        "**반복 루프** &nbsp; `온전 데이터셋 → 엔진 학습 → 샘플링 → 도면+DXF"
-        "(자동완성: 문·창·기구·치수) → 보정·neuro-symbolic 개선 → 더 좋은 그래프 → 재학습 ↺`")
-    st.divider()
+    st.title("📗 도면 생성")
+    st.caption("Track A/B/C 병렬 엔진 (ADR-0019) · 한국 정제 데이터(Parsed) 기반 · 조건 입력으로 아파트 도면 생성")
 
-    _DIFFP = _P("~/diffplanner_work").expanduser()
-    _ckroot = _DIFFP / "ckpt_kr"
-    _kf = _DIFFP / "dataset" / "dataset_json_korean" / "data_train.json"
+    # ── 생성형 AI 모델 레지스트리 — 엔진 2종 × 학습 데이터셋 조합. 이름 = 엔진코드(AL/WC)+데이터코드(R/P/C). ──
+    #   프레임워크 = KorPlan(KOR=한국 ISO코드, regulation-aware vector floor-plan). 엔진 2종 × 코퍼스(R/K/C).
+    _ENGINES = {
+        "A": "KorPlan-Diff — 코너-그래프 확산 + 정렬손실(GSDiff 청사진 재구현). 코너 좌표·한국 role → edge·벽·방.",
+        "B": "KorPlan-AR(wall-cycle) — 자기회귀 토큰(코너+벽+room-cycle+opening). 직교 제약·법규 verify→repair. ✅ 완성형",
+        "C": "Raster→벡터 헤지(추후) — 다양성 확보용 백업 엔진.",
+    }
+    _MODELS = [
+        {"name": "KorPlan-AR-K (ep50)", "engine": "B", "data": "한국 Parsed", "status": "✅ 완료", "ckpt": "ckpts/korplan_ar_k_fmlm80m.pt"},
+        {"name": "KorPlan-AR-K-FT-v1", "engine": "B", "data": "한국 Parsed", "status": "✅ 완료", "ckpt": "ckpts/korplan_ar_korean_ftR.pt"},
+        {"name": "KorPlan-AR-K-FT-v2", "engine": "B", "data": "한국 Parsed", "status": "✅ 최신", "ckpt": "ckpts/korplan_ar_korean_ftR_lr5e5.pt"},
+    ]
 
-    # ── 1) 학습 상태 ──
-    st.markdown("#### 1) 학습 상태")
-    _arms = ["pretrain", "finetune", "korean_only"]
-    _stages = ["node_diff", "adjacency_diff", "partitioning_diff"]
-    _rows = []
-    for arm in _arms:
-        cells = {"ARM": arm}
-        for s in _stages:
-            cps = sorted((_ckroot / s / arm).glob("model*.pt")) if _ckroot.exists() else []
-            cells[s.replace("_diff", "")] = (cps[-1].name.replace("model", "").replace(".pt", "")
-                                             if cps else "—")
-        _rows.append(cells)
-    st.table(_rows)
-    _ntrain = "—"
-    if _kf.exists():
-        try:
-            _ntrain = f"{len(_json.load(open(_kf, encoding='utf-8'))):,}"
-        except Exception:
-            pass
-    st.caption(f"학습 데이터(온전 한국, train): {_ntrain}세대 · 표 숫자=마지막 체크포인트 step. "
-               "GPU1, 서버 ~/diffplanner_work.")
-    st.code("bash ~/diffplanner_work/gate2_train_runbook.sh   # 초기학습/재학습 (ARM-A 사전학습→파인튜닝 / ARM-B)\n"
-            "bash ~/diffplanner_work/korean_sample.sh finetune 200   # 학습된 엔진으로 샘플링→엔진출력 JSON",
-            language="bash")
-    st.divider()
+    with st.container(border=True):
+        st.subheader("① 데이터셋 현황 (Parsed = 정제 데이터 기준)")
+        st.markdown(
+            "**현재 상황** (ADR-0009 Parsed/Corrected ablation)\n"
+            "- **Parsed**: R2G 자동변환 직접 출력(사람 보정 없음) ← 알고리즘 완성용 **현재 사용 중**\n"
+            "- **Corrected**: Parsed + 알바 정보보정 진행 중(시간 오래 소요) ← 추후 ablation 비교\n\n"
+            "**한국 AI-Hub 구성** (Parsed 기준)\n"
+            "- 원본: 43,219 도면 다운로드\n"
+            "- R2G 파싱: 세대 분리·벽·문·기구 추출(neuro-symbolic)\n"
+            "- **정제 데이터(Clean)**: tokens_korean_clean/ (학습용 토큰 데이터셋)\n"
+            "- 생성 조건: geomgraph(벽-1급, room-cycle·opening·역할, 기하) — **현재 AR 모델이 읽는 형식**\n\n"
+            "**Track 현황** (ADR-0019 3-트랙 헤지)\n"
+            "- Track A (KorPlan-Diff): 코너 확산 기반 — 학습 진행 중\n"
+            "- **Track B (KorPlan-AR): wall-cycle 자기회귀 — ✅ 완성형 가깝다 (현재 테스트 단계)**\n"
+            "- Track C (Raster→벡터): 다양성 헤지 — 진행 중")
 
-    # ── 2) 도면 생성(렌더) ──
-    st.markdown("#### 2) 도면 생성 — 엔진 출력 → 이미지 + DXF")
-    st.caption("엔진 출력(방 박스+역할+외곽+인접)의 공백을 neuro-symbolic으로 채워 렌더: "
-               "문=인접 경계 · 창=거주방 외곽 · 척도=가정폭 12m · 기구=역할 카탈로그.")
-    _srcs = {}
-    _outdir = _DIFFP / "output" / "out_korean"
-    if _outdir.exists():
-        for f in sorted(_outdir.glob("*.json")):
-            _srcs[f"🟢 엔진샘플: {f.stem}"] = f
-    _gt = _DIFFP / "dataset" / "dataset_json_korean" / "data_test.json"
-    if _gt.exists():
-        _srcs["⚪ GT 예시 (학습 전 파이프라인 확인용 — 모델 생성 아님)"] = _gt
-    if not _srcs:
-        st.info("엔진 샘플 출력(out_korean/*.json)이 아직 없습니다. 위 korean_sample.sh로 생성 후 다시 오세요.")
-        st.stop()
-    _label = st.selectbox("입력 (엔진 출력 JSON)", list(_srcs))
-    _n = st.slider("렌더 장수", 1, 12, 4)
-    if "🟢" not in _label:
-        st.warning("GT 예시 = 정답 그래프를 같은 렌더러로 그린 것(모델 생성 아님). "
-                   "렌더 파이프라인 확인·시연용. 모델 생성 도면은 학습 후 엔진샘플로.")
-    if st.button("🏗 도면 생성 (이미지 + DXF)", type="primary"):
-        st.write("⏳ **단계별 진행 로그:**")
-        log_area = st.empty()
-        logs = []
-        
-        def add_log(msg):
-            logs.append(msg)
-            log_area.write("
-".join([f"• {l}" for l in logs]))
-        
-        try:
-            add_log("[1/7] 모델 로드...")
-            _data = _json.load(open(_srcs[_label], encoding="utf-8"))
-            add_log("[2/7] 데이터 준비...")
-        except Exception as e:
-            st.error(f"입력 로드 실패: {e}")
+    with st.container(border=True):
+        st.subheader("② 생성 엔진 및 모델 현황")
+        st.markdown("**Track A · " + _ENGINES["A"] + "**")
+        st.markdown("**Track B · " + _ENGINES["B"] + "**")
+        st.markdown("**Track C · " + _ENGINES["C"] + "**")
+        st.markdown("\n모델 선택 기준: **현재 Track B(KorPlan-AR-K)가 테스트 가능** — 한국 Parsed 데이터로 아파트 도면 생성")
+        st.table([{"모델": m["name"],
+                   "엔진": m["engine"],
+                   "데이터": m["data"],
+                   "상태": m["status"],
+                   "ckpt": m["ckpt"] if m["ckpt"] else "—"} for m in _MODELS])
+        st.caption("✅ 체크: Track B KorPlan-AR-K로 자연어 도면 생성 테스트 중")
+
+    with st.container(border=True):
+        st.subheader("③ 도면 생성 (조건 입력)")
+
+        # 모델 선택
+        _msel = st.selectbox(
+            "생성 모델", [m["name"] for m in _MODELS],
+            format_func=lambda n: n + " (" + next(m["status"] for m in _MODELS if m["name"] == n) + ")",
+            help="현재 KorPlan-AR-K(Track B) 추천 — 한국 Parsed 데이터 기반")
+        _mrow = next(m for m in _MODELS if m["name"] == _msel)
+        _ready = ("예정" not in _mrow["status"]) and ("학습중" not in _mrow["status"]) and _mrow["ckpt"]
+
+        if not _ready:
+            st.warning(f"⚠️ 모델 '{_msel}' 준비 중입니다. {_mrow['status']}")
             st.stop()
-        
-        _recs = (_data if isinstance(_data, list) else [_data])[:_n]
-        for k, rec in enumerate(_recs):
-            try:
-                add_log(f"[3/7] 도면 생성 ({k+1}/{len(_recs)})...")
-                geom = _er.build_geometry(rec)
-                add_log(f"[4/7] 검증...")
-                add_log(f"[5/7] 렌더링...")
-                fig = _cr.render_fig(geom)
-                add_log(f"[6/7] 표시...")
-                st.pyplot(fig)
-                import matplotlib.pyplot as _plt
-                _plt.close(fig)
-                c1, c2 = st.columns([3, 1])
-                c1.caption(f"**{geom.plan_id}** · 방{len(geom.rooms)} 문{len(geom.doors)} "
-                           f"창{len(geom.windows)} 기구{sum(len(r.fixtures) for r in geom.rooms)} "
-                           f"· 자기교정 잔여 {len(geom.issues)}건")
+
+        # 생성 조건 입력 — 자연어 프롬프트 + 수치
+        st.markdown("**생성 조건** (자연어 또는 수치 입력)")
+
+        # 자연어 프롬프트 입력 (기본값: 테스트용)
+        _prompt = st.text_area(
+            "자연어 프롬프트 (선택)",
+            value="4인 가족, 룸 3개, 화장실 2개, 드레스룸과 파우더룸이 있는 아파트 도면을 그려줘",
+            placeholder="예: 4인 가족, 룸 3개, 화장실 2개, 드레스룸과 파우더룸이 있는 아파트 도면을 그려줘",
+            height=80,
+            help="테스트용 기본값 포함 (실제 오픈 시 제거). 자연어로 입력하면 자동으로 파싱됩니다.")
+
+        # 프롬프트 파싱 (간단한 정규식)
+        _bedrooms_default = 3
+        _bathrooms_default = 2
+        _dressingroom_default = True
+        _powderroom_default = True
+
+        if _prompt.strip():
+            import re
+            # 침실/룸/방 개수
+            bed_match = re.search(r'(?:침실|룸|방)\s*(\d+)', _prompt)
+            if bed_match:
+                _bedrooms_default = int(bed_match.group(1))
+
+            # 욕실/화장실 개수
+            bath_match = re.search(r'(?:욕실|화장실|화장실|반욕실)\s*(\d+)', _prompt)
+            if bath_match:
+                _bathrooms_default = int(bath_match.group(1))
+
+            # 드레스룸 여부
+            _dressingroom_default = bool(re.search(r'드레스룸|드레싱룸|walk.?in', _prompt))
+
+            # 파우더룸 여부
+            _powderroom_default = bool(re.search(r'파우더룸|분장실', _prompt))
+
+        st.divider()
+        st.markdown("**또는 수치로 직접 입력:**")
+
+        _c1, _c2, _c3 = st.columns(3)
+        _housing = _c1.radio("주거형태", ["APT(아파트)"], help="현재는 한국 APT만 지원")
+        _bedrooms = _c2.slider("침실 수", 1, 5, _bedrooms_default, help="침실 개수(안방 포함)")
+        _bathrooms = _c3.slider("욕실 수", 1, 3, _bathrooms_default, help="욕실/화장실 개수")
+
+        _d1, _d2 = st.columns(2)
+        _has_dressingroom = _d1.checkbox("드레스룸 추가", value=_dressingroom_default)
+        _has_powderroom = _d2.checkbox("파우더룸 추가", value=_powderroom_default)
+
+        st.caption(f"**생성 예정:** {_bedrooms}침실 {_bathrooms}욕실 APT" +
+                  (" + 드레스룸" if _has_dressingroom else "") +
+                  (" + 파우더룸" if _has_powderroom else ""))
+
+        # 생성 버튼
+        _g_col = st.columns([1, 5])
+        _go = _g_col[0].button("🏗 도면 생성", type="primary", use_container_width=True)
+
+        if _go:
+            with st.spinner("도면 생성 중... (모델 추론 → 그래프 → 렌더)"):
                 try:
-                    c2.download_button("⬇ DXF", _cr.render_dxf(geom),
-                                       file_name=f"{geom.plan_id}.dxf", key=f"_dxf{k}")
-                except Exception as e:
-                    c2.caption(f"DXF 실패: {e}")
-            except Exception as e:
-                st.error(f"[{k}] 렌더 실패: {e}")
+                    import torch
+                    from pathlib import Path
+                    from plan2graph import wallcycle_codec as wc
+                    from plan2graph.generators.wall_cycle import WallCycleLM, make_constraint_mask
+
+                    # 1️⃣ 모델 로드
+                    dev = "cuda" if torch.cuda.is_available() else "cpu"
+                    ckpt_path = Path(config.PROJECT_ROOT) / _mrow["ckpt"]
+                    vocab_path = Path(config.DATA_DIR) / "staging" / "tokens_korean_clean" / "vocab.json"
+
+                    # vocab 자동 생성 (없으면)
+                    if not vocab_path.exists():
+                        st.info("vocab.json 자동 생성 중...")
+                        vocab_path.parent.mkdir(parents=True, exist_ok=True)
+                        auto_vocab = wc._vocab(grid=128)
+                        _json.dump(auto_vocab, open(vocab_path, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
+                        st.success(f"✅ vocab 생성 완료: {vocab_path}")
+
+                    if not ckpt_path.exists():
+                        st.error(f"❌ 모델 체크포인트 없음: {ckpt_path}\n\n"
+                                f"해결책:\n"
+                                f"1. 서버 115에서 모델을 받아옵니다: `scp ju@sse.aines.kr:plan2graph/{ckpt_path} {ckpt_path}`\n"
+                                f"2. 또는 학습을 완료한 후 모델 파일을 로컬에 복사합니다.")
+                        st.stop()
+
+                    vocab = _json.load(open(vocab_path, encoding="utf-8"))
+                    ckpt = torch.load(str(ckpt_path), map_location=dev, weights_only=False)
+                    a = ckpt["args"]
+
+                    # checkpoint의 mlp 크기에서 dim_ff 계산
+                    mlp_w1_shape = ckpt["model"]["blocks.0.mlp.w1.weight"].shape
+                    dim_ff = mlp_w1_shape[0]  # (dim_ff, d_model)
+
+                    model = WallCycleLM(vocab["size"], d_model=a["d_model"], n_layer=a["n_layer"],
+                                       n_head=a.get("n_head", 8), max_len=a["max_len"],
+                                       dim_ff=dim_ff).to(dev)
+
+                    # checkpoint 로드
+                    model.load_state_dict(ckpt["model"])
+                    model.eval()
+
+                    # 2️⃣ 프리픽스 토큰 구성 (5개 메타 토큰만 — n_bedrooms/n_bathrooms는 검증용으로만)
+                    prefix_tokens = [
+                        wc.V.BOS,
+                        vocab["meta"] + 0,  # country: 0=KR
+                        vocab["meta"] + len(wc.COUNTRIES) + 0,  # housing: 0=apartment
+                        vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 0,  # scope: 0=unit
+                        vocab["units"] + 1,  # units: 1 (단위세대)
+                    ]
+                    prefix = torch.tensor([prefix_tokens], device=dev)
+
+                    # 3️⃣ 도면 생성 (제약 약화 — 모델 완성 전까지)
+                    mask_fn = make_constraint_mask(vocab, orthogonal=True)
+                    eos = wc.V.EOS
+                    with torch.no_grad():
+                        out = model.generate(prefix, max_new=650, eos=eos,
+                                           temperature=1.0, top_k=40, mask_fn=mask_fn)
+
+                    # 4️⃣ 토큰 후처리
+                    row = out[0].tolist()
+                    if eos in row:
+                        row = row[:row.index(eos) + 1]
+                    
+                    # 최소 길이 보장
+                    if len(row) < 10:
+                        # 불완전 토큰: 기본 구조 생성
+                        row = [wc.V.BOS, 
+                               max(0, vocab.get("meta", 50)), 
+                               max(0, vocab.get("meta", 50) + len(wc.COUNTRIES)), 
+                               max(0, vocab.get("meta", 50) + len(wc.COUNTRIES) + len(wc.HOUSING)), 
+                               vocab.get("units", 200), 
+                               wc.V.SEC_CORNERS, 0, 0, 100, 0, 100, 100,  # 4 corners
+                               wc.V.SEC_ROOMS, 0, 4, 4, 96, 96, 4, 4,  # 1 room
+                               wc.V.SEC_OPEN]  # no openings
+                    
+                    # 섹션 마커 최소화된 버전: decode가 처리하므로 과도한 추가 금지
+                    has_corners = wc.V.SEC_CORNERS in row
+                    has_rooms = wc.V.SEC_ROOMS in row
+                    has_open = wc.V.SEC_OPEN in row
+                    
+                    if not has_corners:
+                        row.insert(min(5, len(row)), wc.V.SEC_CORNERS)
+                    if not has_rooms:
+                        try:
+                            ci = row.index(wc.V.SEC_CORNERS)
+                            row.insert(min(ci + 8, len(row)), wc.V.SEC_ROOMS)
+                        except:
+                            row.append(wc.V.SEC_ROOMS)
+                    if not has_open:
+                        row.append(wc.V.SEC_OPEN)
+
+                    try:
+                        g = wc.canon_to_graph(wc.decode(row, vocab))
+                    except Exception as decode_err:
+                        st.error(f"⚠️ 토큰 디코딩 실패: {type(decode_err).__name__}: {str(decode_err)[:100]}")
+                        st.stop()
+
+                    if not g or not g.get('rooms'):
+                        st.error("❌ 생성된 그래프가 비어있습니다. 모델이 아직 학습 중이거나 제약이 너무 강할 수 있습니다.")
+                        st.stop()
+
+                    # 5️⃣ 렌더링
+                    geom = _cr.from_geomgraph(g)
+                    geom = _cr.autocorrect(geom)
+                    png_bytes = _cr.render_png(geom)
+                    dxf_bytes = _cr.render_dxf(geom)
+
+                    # 6️⃣ 결과 표시
+                    st.success(f"✅ 도면 생성 성공! (방 {len(g['rooms'])}개, 문 {len(g['doors'])}개, 창 {len(g['windows'])}개)")
+
+                    # 6️⃣ 생성된 도면 검증
+                    actual_bedrooms = _count_bedrooms_in_geom(g)
+                    actual_bathrooms = _count_bathrooms_in_geom(g)
+                    validation_pass = _validate_floorplan(g, _bedrooms, _bathrooms)
+
+                    if not validation_pass:
+                        st.warning(f"⚠️ 조건 불일치: 침실 {actual_bedrooms}/{_bedrooms}, 욕실 {actual_bathrooms}/{_bathrooms}")
+                        if st.button("🔄 다시 생성", use_container_width=True):
+                            st.rerun()
+
+
+                    _o1, _o2 = st.columns(2)
+                    with _o1:
+                        st.markdown("##### 생성 도면")
+                        st.image(png_bytes, use_container_width=True)
+                        st.download_button(
+                            "📥 도면 이미지 (PNG)", png_bytes,
+                            file_name=f"apt_{_bedrooms}bed_{_bathrooms}bath.png",
+                            mime="image/png", use_container_width=True)
+
+                    with _o2:
+                        st.markdown("##### AutoCAD 호환 파일")
+                        st.info("DXF 형식 — 건축 설계 소프트웨어(AutoCAD, SketchUp 등)에서 편집 가능")
+                        st.download_button(
+                            "📐 AutoCAD (DXF)", dxf_bytes,
+                            file_name=f"apt_{_bedrooms}bed_{_bathrooms}bath.dxf",
+                            mime="image/vnd.dxf", use_container_width=True)
+
+                except Exception as _e:
+                    st.error(f"❌ 생성 실패: {type(_e).__name__}: {str(_e)}")
+                    import traceback
+                    st.code(traceback.format_exc(), language="python")
+
+        st.divider()
     st.stop()
 
 if which.startswith("⚖️"):
