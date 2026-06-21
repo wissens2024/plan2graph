@@ -883,9 +883,9 @@ if which.startswith("📗"):
         "C": "Raster→벡터 헤지(추후) — 다양성 확보용 백업 엔진.",
     }
     _MODELS = [
-        {"name": "KorPlan-AR-K (ep50)", "engine": "B", "data": "한국 Parsed\n(train 11.9k / val 637 / test 684)", "config": "d=512, L=24, H=32\n77.4M 파라미터", "train": "ep50 완료\nLR:1e-4, BS:32", "status": "✅ 완료", "ckpt": "ckpts/korplan_ar_k_fmlm80m.pt"},
-        {"name": "KorPlan-AR-K-FT-v1", "engine": "B", "data": "한국 Parsed\n(train 11.9k / val 637 / test 684)", "config": "d=512, L=24, H=32\n77.4M 파라미터", "train": "기본모델 FT\nLR:1e-4, ep50", "status": "✅ 완료", "ckpt": "ckpts/korplan_ar_korean_ftR.pt"},
-        {"name": "KorPlan-AR-K-FT-v2", "engine": "B", "data": "한국 Parsed\n(train 11.9k / val 637 / test 684)", "config": "d=512, L=24, H=32\n77.4M 파라미터", "train": "기본모델 FT\nLR:5e-5, ep50", "status": "⏳ 진행 중", "ckpt": "ckpts/korplan_ar_korean_ftR_lr5e5.pt"},
+        {"name": "KorPlan-AR-K (ep50)", "engine": "B", "data": "한국 Parsed\n(13,224: train 11.9k / val 637 / test 684)", "config": "d=512, L=24, H=32\n77.4M 파라미터", "train": "ep50 완료\nLR:1e-4, BS:32", "status": "✅ 완료", "ckpt": "ckpts/korplan_ar_k_fmlm80m.pt"},
+        {"name": "KorPlan-AR-K-FT-v1", "engine": "B", "data": "❌ 파일 없음", "config": "—", "train": "학습 실패\n(dim_ff 오류)", "status": "❌ 파일 없음", "ckpt": "—"},
+        {"name": "KorPlan-AR-K-FT-v2", "engine": "B", "data": "❌ 파일 없음", "config": "—", "train": "학습 실패\n(dim_ff 오류)", "status": "❌ 파일 없음", "ckpt": "—"},
     ]
 
     with st.container(border=True):
