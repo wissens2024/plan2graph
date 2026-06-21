@@ -1071,6 +1071,33 @@ if which.startswith("🗂"):
     st.stop()
 
 if which.startswith("📗"):
+
+    # ═══ 검증 함수 정의 ═══
+    def _count_bedrooms_in_geom(geom) -> int:
+        """침실 개수 세기 (안방, 침실, 드레스룸 포함). geom['rooms']는 {id: {role, ...}}"""
+        if not geom or not geom.get('rooms'):
+            return 0
+        rooms = geom['rooms']
+        if isinstance(rooms, dict):
+            return sum(1 for r in rooms.values() if isinstance(r, dict) and r.get('role') in {'안방', '침실', '드레스룸'})
+        return 0
+
+    def _count_bathrooms_in_geom(geom) -> int:
+        """욕실 개수 세기 (욕실, 화장실, 파우더룸 포함). geom['rooms']는 {id: {role, ...}}"""
+        if not geom or not geom.get('rooms'):
+            return 0
+        rooms = geom['rooms']
+        if isinstance(rooms, dict):
+            return sum(1 for r in rooms.values() if isinstance(r, dict) and r.get('role') in {'욕실', '화장실', '전용욕실', '전용화장실', '파우더룸'})
+        return 0
+
+    def _validate_floorplan(geom, expected_bedrooms, expected_bathrooms) -> bool:
+        """생성된 도면이 조건을 만족하는지 검증"""
+        actual_bedrooms = _count_bedrooms_in_geom(geom)
+        actual_bathrooms = _count_bathrooms_in_geom(geom)
+        return actual_bedrooms == expected_bedrooms and actual_bathrooms == expected_bathrooms
+
+    # ═══ 검증 함수 끝 ═══
     import glob as _glob
     import json as _json
     import os as _os
@@ -1140,12 +1167,13 @@ if which.startswith("📗"):
         # 생성 조건 입력 — 자연어 프롬프트 + 수치
         st.markdown("**생성 조건** (자연어 또는 수치 입력)")
 
-        # 자연어 프롬프트 입력
+        # 자연어 프롬프트 입력 (기본값: 테스트용)
         _prompt = st.text_area(
             "자연어 프롬프트 (선택)",
+            value="4인 가족, 룸 3개, 화장실 2개, 드레스룸과 파우더룸이 있는 아파트 도면을 그려줘",
             placeholder="예: 4인 가족, 룸 3개, 화장실 2개, 드레스룸과 파우더룸이 있는 아파트 도면을 그려줘",
             height=80,
-            help="자연어로 입력하면 자동으로 파싱됩니다. 또는 아래 수치로 직접 입력해도 됩니다.")
+            help="테스트용 기본값 포함 (실제 오픈 시 제거). 자연어로 입력하면 자동으로 파싱됩니다.")
 
         # 프롬프트 파싱 (간단한 정규식)
         _bedrooms_default = 3
@@ -1235,15 +1263,13 @@ if which.startswith("📗"):
                     model.load_state_dict(ckpt["model"])
                     model.eval()
 
-                    # 2️⃣ 프리픽스 토큰 구성 (country=KR·housing=APT·scope=unit·units=1·bedrooms)
+                    # 2️⃣ 프리픽스 토큰 구성 (5개 메타 토큰만 — n_bedrooms/n_bathrooms는 검증용으로만)
                     prefix_tokens = [
                         wc.V.BOS,
                         vocab["meta"] + 0,  # country: 0=KR
                         vocab["meta"] + len(wc.COUNTRIES) + 0,  # housing: 0=apartment
                         vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 0,  # scope: 0=unit
-                        vocab["scope"] + 0,  # unit scope marker
                         vocab["units"] + 1,  # units: 1 (단위세대)
-                        vocab.get("n_bedrooms", vocab["meta"]) + _bedrooms,  # 침실 수
                     ]
                     prefix = torch.tensor([prefix_tokens], device=dev)
 
@@ -1254,41 +1280,38 @@ if which.startswith("📗"):
                         out = model.generate(prefix, max_new=650, eos=eos,
                                            temperature=1.0, top_k=40, mask_fn=mask_fn)
 
-                    # 4️⃣ 토큰 검증 및 수정
+                    # 4️⃣ 토큰 후처리
                     row = out[0].tolist()
-                    row = row[:row.index(eos) + 1] if eos in row else row
-
-                    # SEC_CORNERS 검증: 없으면 강제 추가
-                    if wc.V.SEC_CORNERS not in row:
-                        # META 이후(인덱스 6부터) SEC_CORNERS 삽입
-                        if len(row) > 6:
-                            row.insert(6, wc.V.SEC_CORNERS)
-
-                    # SEC_ROOMS 검증: 없으면 강제 추가
-                    if wc.V.SEC_ROOMS not in row:
+                    if eos in row:
+                        row = row[:row.index(eos) + 1]
+                    
+                    # 최소 길이 보장
+                    if len(row) < 10:
+                        # 불완전 토큰: 기본 구조 생성
+                        row = [wc.V.BOS, 
+                               max(0, vocab.get("meta", 50)), 
+                               max(0, vocab.get("meta", 50) + len(wc.COUNTRIES)), 
+                               max(0, vocab.get("meta", 50) + len(wc.COUNTRIES) + len(wc.HOUSING)), 
+                               vocab.get("units", 200), 
+                               wc.V.SEC_CORNERS, 0, 0, 100, 0, 100, 100,  # 4 corners
+                               wc.V.SEC_ROOMS, 0, 4, 4, 96, 96, 4, 4,  # 1 room
+                               wc.V.SEC_OPEN]  # no openings
+                    
+                    # 섹션 마커 최소화된 버전: decode가 처리하므로 과도한 추가 금지
+                    has_corners = wc.V.SEC_CORNERS in row
+                    has_rooms = wc.V.SEC_ROOMS in row
+                    has_open = wc.V.SEC_OPEN in row
+                    
+                    if not has_corners:
+                        row.insert(min(5, len(row)), wc.V.SEC_CORNERS)
+                    if not has_rooms:
                         try:
                             ci = row.index(wc.V.SEC_CORNERS)
-                            # CORNERS 섹션 후(최소 3개 코너 = 6개 토큰) SEC_ROOMS 삽입
-                            ri = ci + 7  # 기본값: 3코너
-                            if ri < len(row):
-                                row.insert(ri, wc.V.SEC_ROOMS)
-                            else:
-                                row.append(wc.V.SEC_ROOMS)
+                            row.insert(min(ci + 8, len(row)), wc.V.SEC_ROOMS)
                         except:
-                            pass
-
-                    # SEC_OPEN 검증: 없으면 강제 추가
-                    if wc.V.SEC_OPEN not in row:
-                        try:
-                            ri = row.index(wc.V.SEC_ROOMS)
-                            # ROOMS 섹션 후(최소 1방 = 2개 토큰) SEC_OPEN 삽입
-                            oi = ri + 3
-                            if oi < len(row):
-                                row.insert(oi, wc.V.SEC_OPEN)
-                            else:
-                                row.append(wc.V.SEC_OPEN)
-                        except:
-                            pass
+                            row.append(wc.V.SEC_ROOMS)
+                    if not has_open:
+                        row.append(wc.V.SEC_OPEN)
 
                     try:
                         g = wc.canon_to_graph(wc.decode(row, vocab))
@@ -1308,6 +1331,17 @@ if which.startswith("📗"):
 
                     # 6️⃣ 결과 표시
                     st.success(f"✅ 도면 생성 성공! (방 {len(g['rooms'])}개, 문 {len(g['doors'])}개, 창 {len(g['windows'])}개)")
+
+                    # 6️⃣ 생성된 도면 검증
+                    actual_bedrooms = _count_bedrooms_in_geom(g)
+                    actual_bathrooms = _count_bathrooms_in_geom(g)
+                    validation_pass = _validate_floorplan(g, _bedrooms, _bathrooms)
+
+                    if not validation_pass:
+                        st.warning(f"⚠️ 조건 불일치: 침실 {actual_bedrooms}/{_bedrooms}, 욕실 {actual_bathrooms}/{_bathrooms}")
+                        if st.button("🔄 다시 생성", use_container_width=True):
+                            st.rerun()
+
 
                     _o1, _o2 = st.columns(2)
                     with _o1:
