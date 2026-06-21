@@ -115,16 +115,26 @@ def main():
                     collate_fn=lambda b: collate(b, pad))
     print(f"[data] {len(ds)} seqs, vocab={vocab['size']}, device={dev}")
 
-    model = WallCycleLM(vocab["size"], d_model=args.d_model, n_layer=args.n_layer,
-                        n_head=args.n_head, max_len=args.max_len).to(dev)
-
-    # Resume from checkpoint if specified
+    # Resume from checkpoint if specified — use checkpoint args for model config
     start_ep = 1
     if args.resume:
         ckpt = torch.load(args.resume, map_location=dev)
-        model.load_state_dict(ckpt["model"])
+        ckpt_args = ckpt.get("args", {})
+        # Override model args from checkpoint
+        args.d_model = ckpt_args.get("d_model", args.d_model)
+        args.n_layer = ckpt_args.get("n_layer", args.n_layer)
+        args.n_head = ckpt_args.get("n_head", args.n_head)
+        args.max_len = ckpt_args.get("max_len", args.max_len)
+        print(f"[resume] {args.resume}에서 모델 설정 로드: d={args.d_model} L={args.n_layer} H={args.n_head}")
         start_ep = ckpt.get("epoch", 0) + 1
-        print(f"[resume] {args.resume} ep{ckpt.get('epoch', '?')} 로드 → ep{start_ep}부터 시작")
+
+    model = WallCycleLM(vocab["size"], d_model=args.d_model, n_layer=args.n_layer,
+                        n_head=args.n_head, max_len=args.max_len).to(dev)
+
+    if args.resume:
+        ckpt = torch.load(args.resume, map_location=dev)
+        model.load_state_dict(ckpt["model"])
+        print(f"[resume] 가중치 로드 완료 → ep{start_ep}부터 시작")
     nparam = sum(p.numel() for p in model.parameters())
     print(f"[model] {nparam/1e6:.1f}M params, d={args.d_model} L={args.n_layer}")
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
