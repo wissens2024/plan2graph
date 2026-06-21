@@ -583,8 +583,14 @@ def decode(tokens: list, vocab) -> Canon:
     vb = vocab
     grid, nbins = vb["grid"], vb["nbins"]
     i = 0
-    assert tokens[i] == V.BOS; i += 1
+    if not tokens or tokens[i] != V.BOS:
+        raise ValueError(f"BOS 토큰 없음: {tokens[:5] if tokens else []}")
+    i += 1
+
     # META
+    if len(tokens) < i + 5:
+        raise ValueError(f"META 토큰 불충분: {len(tokens)} < {i+5}")
+
     c_tok = tokens[i] - vb["meta"]; i += 1
     h_tok = tokens[i] - vb["meta"] - len(COUNTRIES); i += 1
     s_tok = tokens[i] - vb["meta"] - len(COUNTRIES) - len(HOUSING); i += 1
@@ -596,20 +602,82 @@ def decode(tokens: list, vocab) -> Canon:
             "scope": SCOPES[scope_tok] if 0 <= scope_tok < len(SCOPES) else "unit",
             "units": units_tok}
     canon = Canon(grid=grid, bbox=[0, 0, grid, grid], meta=meta)
-    assert tokens[i] == V.SEC_CORNERS; i += 1
-    while tokens[i] != V.SEC_ROOMS:
-        qx = tokens[i] - vb["coord"]; qy = tokens[i + 1] - vb["coord"]; i += 2
-        canon.corners.append((qx, qy))
-    assert tokens[i] == V.SEC_ROOMS; i += 1
+
+    # SEC_CORNERS 강제 복구: 없으면 건너뛰고 찾기
+    if i < len(tokens) and tokens[i] == V.SEC_CORNERS:
+        i += 1
+    else:
+        # SEC_CORNERS를 찾으려 시도
+        found_corners = False
+        for j in range(i, min(i + 20, len(tokens))):
+            if tokens[j] == V.SEC_CORNERS:
+                i = j + 1
+                found_corners = True
+                break
+        if not found_corners:
+            # 기본값: 최소 3개 코너 추가(육각형)
+            canon.corners = [(0, 0), (grid, 0), (grid, grid)]
+            if V.SEC_ROOMS in tokens:
+                i = tokens.index(V.SEC_ROOMS)
+            elif V.SEC_OPEN in tokens:
+                i = tokens.index(V.SEC_OPEN)
+            else:
+                i = len(tokens) - 1
+            return canon
+    # 코너 파싱: SEC_ROOMS까지
+    while i < len(tokens) and tokens[i] != V.SEC_ROOMS:
+        if i + 1 < len(tokens):
+            qx = min(grid, max(0, tokens[i] - vb["coord"]))
+            qy = min(grid, max(0, tokens[i + 1] - vb["coord"]))
+            if (qx, qy) not in canon.corners:
+                canon.corners.append((qx, qy))
+            i += 2
+        else:
+            break
+
+    # SEC_ROOMS 강제 복구
+    if i < len(tokens) and tokens[i] == V.SEC_ROOMS:
+        i += 1
+    else:
+        found_rooms = False
+        for j in range(i, min(i + 20, len(tokens))):
+            if tokens[j] == V.SEC_ROOMS:
+                i = j + 1
+                found_rooms = True
+                break
+        if not found_rooms and V.SEC_OPEN not in tokens:
+            # 기본 방 1개 추가
+            canon.rooms.append({"id": 0, "role_id": 0, "cycle": [0, grid, grid, 0]})
+            return canon
     rid = 0
-    while tokens[i] != V.SEC_OPEN:
+    while i < len(tokens) and tokens[i] != V.SEC_OPEN:
+        if tokens[i] < vb["role"] or tokens[i] >= vb["role"] + len(ROLES):
+            i += 1
+            continue
         role_id = tokens[i] - vb["role"]; i += 1
         cyc = []
-        while tokens[i] != V.ROOM_END:
-            cyc.append(tokens[i] - vb["coord"]); i += 1
+        while i < len(tokens) and tokens[i] != V.ROOM_END:
+            if vb["coord"] <= tokens[i] <= vb["coord"] + grid:
+                cyc.append(tokens[i] - vb["coord"])
+            i += 1
+        if i < len(tokens) and tokens[i] == V.ROOM_END:
+            i += 1
+        if cyc:  # 빈 cycle 제외
+            canon.rooms.append({"id": rid, "role_id": role_id, "cycle": cyc})
+            rid += 1
+
+    # SEC_OPEN 강제 복구
+    if i < len(tokens) and tokens[i] == V.SEC_OPEN:
         i += 1
-        canon.rooms.append({"id": rid, "role_id": role_id, "cycle": cyc}); rid += 1
-    assert tokens[i] == V.SEC_OPEN; i += 1
+    else:
+        found_open = False
+        for j in range(i, min(i + 20, len(tokens))):
+            if tokens[j] == V.SEC_OPEN:
+                i = j + 1
+                found_open = True
+                break
+        if not found_open:
+            return canon
     while tokens[i] != V.EOS:
         if tokens[i] == V.OPEN:
             i += 1
