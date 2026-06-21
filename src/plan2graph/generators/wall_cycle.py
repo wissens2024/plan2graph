@@ -57,9 +57,9 @@ class TransformerBlock(nn.Module):
     """checkpoint: blocks.N.{n1,attn,n2,mlp}.* """
     def __init__(self, d_model: int, n_head: int, dim_ff: int):
         super().__init__()
-        self.n1 = nn.LayerNorm(d_model)
+        self.n1 = nn.LayerNorm(d_model, bias=False)
         self.attn = MultiHeadAttention(d_model, n_head)
-        self.n2 = nn.LayerNorm(d_model)
+        self.n2 = nn.LayerNorm(d_model, bias=False)
         self.mlp = FeedForward(d_model, dim_ff)
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor | None = None) -> torch.Tensor:
@@ -70,16 +70,17 @@ class TransformerBlock(nn.Module):
 
 class WallCycleLM(nn.Module):
     def __init__(self, vocab_size: int, d_model: int = 256, n_layer: int = 6,
-                 n_head: int = 8, max_len: int = 1152, dropout: float = 0.1):
+                 n_head: int = 8, max_len: int = 1152, dim_ff: int | None = None, dropout: float = 0.1):
         super().__init__()
         self.max_len = max_len
         self.tok = nn.Embedding(vocab_size, d_model)
         self.drop = nn.Dropout(dropout)
-        dim_ff = 4 * d_model
+        if dim_ff is None:
+            dim_ff = 4 * d_model
         self.blocks = nn.ModuleList([
             TransformerBlock(d_model, n_head, dim_ff) for _ in range(n_layer)
         ])
-        self.norm = nn.LayerNorm(d_model)
+        self.norm = nn.LayerNorm(d_model, bias=False)
         self.head = nn.Linear(d_model, vocab_size, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

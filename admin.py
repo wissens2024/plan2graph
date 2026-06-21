@@ -369,7 +369,8 @@ _MENU = ["🧮 종합 현황",
          "⚖️ 성능 비교",
          "📜 법령 DB"]
 # 라디오 메뉴로 변경 (option_menu 버그 우회)
-which = st.sidebar.radio("메뉴", _MENU, index=0, label_visibility="collapsed")
+# 기본값을 "📗 도면 생성" (인덱스 6)으로 설정하여 도면생성 화면을 바로 표시
+which = st.sidebar.radio("메뉴", _MENU, index=6, label_visibility="collapsed")
 
 # 정보보정 웹 에디터 링크(ADR-0008) — 그래프 JSON 위 의미보정. 별도 서버 :8600.
 st.sidebar.markdown("---")
@@ -1075,7 +1076,6 @@ if which.startswith("📗"):
     import os as _os
 
     from plan2graph import cadrender as _cr
-    from plan2graph.generators.wall_cycle import WallCycleLM, make_constraint_mask
 
     st.title("📗 도면 생성")
     st.caption("Track A/B/C 병렬 엔진 (ADR-0019) · 한국 정제 데이터(Parsed) 기반 · 조건 입력으로 아파트 도면 생성")
@@ -1195,18 +1195,41 @@ if which.startswith("📗"):
             with st.spinner("도면 생성 중... (모델 추론 → 그래프 → 렌더)"):
                 try:
                     import torch
+                    from pathlib import Path
                     from plan2graph import wallcycle_codec as wc
+                    from plan2graph.generators.wall_cycle import WallCycleLM, make_constraint_mask
 
                     # 1️⃣ 모델 로드
                     dev = "cuda" if torch.cuda.is_available() else "cpu"
-                    ckpt_path = _mrow["ckpt"]
-                    vocab_path = "data/staging/tokens_korean_clean/vocab.json"
+                    ckpt_path = Path(config.PROJECT_ROOT) / _mrow["ckpt"]
+                    vocab_path = Path(config.DATA_DIR) / "staging" / "tokens_korean_clean" / "vocab.json"
+
+                    # vocab 자동 생성 (없으면)
+                    if not vocab_path.exists():
+                        st.info("vocab.json 자동 생성 중...")
+                        vocab_path.parent.mkdir(parents=True, exist_ok=True)
+                        auto_vocab = wc._vocab(grid=128)
+                        _json.dump(auto_vocab, open(vocab_path, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
+                        st.success(f"✅ vocab 생성 완료: {vocab_path}")
+
+                    if not ckpt_path.exists():
+                        st.error(f"❌ 모델 체크포인트 없음: {ckpt_path}\n\n"
+                                f"해결책:\n"
+                                f"1. 서버 115에서 모델을 받아옵니다: `scp ju@sse.aines.kr:plan2graph/{ckpt_path} {ckpt_path}`\n"
+                                f"2. 또는 학습을 완료한 후 모델 파일을 로컬에 복사합니다.")
+                        st.stop()
 
                     vocab = _json.load(open(vocab_path, encoding="utf-8"))
-                    ckpt = torch.load(ckpt_path, map_location=dev, weights_only=False)
+                    ckpt = torch.load(str(ckpt_path), map_location=dev, weights_only=False)
                     a = ckpt["args"]
+
+                    # checkpoint의 mlp 크기에서 dim_ff 계산
+                    mlp_w1_shape = ckpt["model"]["blocks.0.mlp.w1.weight"].shape
+                    dim_ff = mlp_w1_shape[0]  # (dim_ff, d_model)
+
                     model = WallCycleLM(vocab["size"], d_model=a["d_model"], n_layer=a["n_layer"],
-                                       n_head=a.get("n_head", 8), max_len=a["max_len"]).to(dev)
+                                       n_head=a.get("n_head", 8), max_len=a["max_len"],
+                                       dim_ff=dim_ff).to(dev)
 
                     # checkpoint 로드
                     model.load_state_dict(ckpt["model"])
