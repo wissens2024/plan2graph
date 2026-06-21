@@ -1247,12 +1247,12 @@ if which.startswith("📗"):
                     ]
                     prefix = torch.tensor([prefix_tokens], device=dev)
 
-                    # 3️⃣ 도면 생성 (제약 조건 적용)
-                    mask_fn = make_constraint_mask(vocab, orthogonal=True)
+                    # 3️⃣ 도면 생성 (제약 약화 — 모델 완성 전까지)
+                    # mask_fn = make_constraint_mask(vocab, orthogonal=True)  # 주석: 너무 강함
                     eos = wc.V.EOS
                     with torch.no_grad():
                         out = model.generate(prefix, max_new=650, eos=eos,
-                                           temperature=1.0, top_k=40, mask_fn=mask_fn)
+                                           temperature=1.0, top_k=40, mask_fn=None)  # 제약 비활성화
 
                     # 4️⃣ 토큰 검증 및 수정
                     row = out[0].tolist()
