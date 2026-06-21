@@ -651,7 +651,11 @@ def decode(tokens: list, vocab) -> Canon:
         i += 1
     else:
         # SEC_ROOMS 없으면 기본값 방 1개 생성 후 반환
-        canon.rooms = [{"id": 0, "role_id": 0, "cycle": [0, grid, grid, 0]}]
+        if len(canon.corners) >= 3:
+            canonical_cycle = list(range(len(canon.corners)))
+        else:
+            canonical_cycle = [0] * max(1, len(canon.corners))
+        canon.rooms = [{"id": 0, "role_id": 0, "cycle": canonical_cycle}]
         return canon
 
     # 방 파싱
