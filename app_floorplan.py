@@ -1,5 +1,6 @@
 """FastAPI 도면생성 앱 - Streamlit과 독립적"""
 import json
+import base64
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
@@ -11,6 +12,8 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
 import config
+from plan2graph import wallcycle_codec as wc
+from plan2graph.cadrender import Renderer as CadRenderer
 
 app = FastAPI(title="KorPlan Floor Plan Generator")
 
@@ -49,17 +52,60 @@ async def generate_floorplan(bedrooms: int = 3, bathrooms: int = 2):
         if not (1 <= bathrooms <= 3):
             raise ValueError("욕실은 1-3개여야 합니다")
 
-        # TODO: 실제 도면생성 로직 구현
+        # 1️⃣ 모델 로드
+        import torch
+        ckpt_path = ROOT / "ckpts" / "korplan_ar_k_fmlm80m.pt"
+        ckpt = torch.load(ckpt_path, map_location="cpu")
+
+        from plan2graph.wallcycle_codec import WallCycleLM, V
+        model_dict = ckpt["model"]
+        actual_dim_ff = model_dict["blocks.0.mlp.w1.weight"].shape[0]
+        model = WallCycleLM(vocab_size=len(V), dim_ff=actual_dim_ff)
+        model.load_state_dict(model_dict)
+        model.eval()
+
+        # 2️⃣ 토큰 생성 (Prefix)
+        vocab = wc.V
+        prefix = [vocab.BOS, vocab.KOR, vocab.APT, vocab.SCHEMA_G0, vocab.SCOPE_UNIT, 1]
+        prefix_tensor = torch.tensor([prefix], dtype=torch.long)
+
+        # 3️⃣ 도면 생성
+        eos = vocab.EOS
+        with torch.no_grad():
+            generated = model.generate(prefix_tensor, max_new=650, eos=eos, temperature=1.0, top_k=40)
+
+        row = generated[0].tolist()
+
+        # 4️⃣ 디코딩 + 기하 구성
+        canon = wc.decode(row, vocab)
+        g = wc.canon_to_graph(canon)
+
+        # 5️⃣ 렌더링
+        _cr = CadRenderer()
+        geom = _cr.build_geom(g)
+        png_bytes = _cr.render_png(geom, format="bytes")
+
+        # Base64 인코딩
+        png_b64 = base64.b64encode(png_bytes).decode()
 
         return JSONResponse({
             "status": "success",
             "bedrooms": bedrooms,
             "bathrooms": bathrooms,
-            "message": "준비 중"
+            "image": f"data:image/png;base64,{png_b64}",
+            "message": f"✅ {bedrooms}침실 {bathrooms}욕실 도면 생성 완료!"
         })
 
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        import traceback
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }
+        )
 
 if __name__ == "__main__":
     import uvicorn
