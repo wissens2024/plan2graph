@@ -1254,10 +1254,51 @@ if which.startswith("📗"):
                         out = model.generate(prefix, max_new=650, eos=eos,
                                            temperature=1.0, top_k=40, mask_fn=mask_fn)
 
-                    # 4️⃣ 디코딩
+                    # 4️⃣ 토큰 검증 및 수정
                     row = out[0].tolist()
                     row = row[:row.index(eos) + 1] if eos in row else row
-                    g = wc.canon_to_graph(wc.decode(row, vocab))
+
+                    # SEC_CORNERS 검증: 없으면 강제 추가
+                    if wc.V.SEC_CORNERS not in row:
+                        # META 이후(인덱스 6부터) SEC_CORNERS 삽입
+                        if len(row) > 6:
+                            row.insert(6, wc.V.SEC_CORNERS)
+
+                    # SEC_ROOMS 검증: 없으면 강제 추가
+                    if wc.V.SEC_ROOMS not in row:
+                        try:
+                            ci = row.index(wc.V.SEC_CORNERS)
+                            # CORNERS 섹션 후(최소 3개 코너 = 6개 토큰) SEC_ROOMS 삽입
+                            ri = ci + 7  # 기본값: 3코너
+                            if ri < len(row):
+                                row.insert(ri, wc.V.SEC_ROOMS)
+                            else:
+                                row.append(wc.V.SEC_ROOMS)
+                        except:
+                            pass
+
+                    # SEC_OPEN 검증: 없으면 강제 추가
+                    if wc.V.SEC_OPEN not in row:
+                        try:
+                            ri = row.index(wc.V.SEC_ROOMS)
+                            # ROOMS 섹션 후(최소 1방 = 2개 토큰) SEC_OPEN 삽입
+                            oi = ri + 3
+                            if oi < len(row):
+                                row.insert(oi, wc.V.SEC_OPEN)
+                            else:
+                                row.append(wc.V.SEC_OPEN)
+                        except:
+                            pass
+
+                    try:
+                        g = wc.canon_to_graph(wc.decode(row, vocab))
+                    except Exception as decode_err:
+                        st.error(f"⚠️ 토큰 디코딩 실패: {type(decode_err).__name__}: {str(decode_err)[:100]}")
+                        st.stop()
+
+                    if not g or not g.get('rooms'):
+                        st.error("❌ 생성된 그래프가 비어있습니다. 모델이 아직 학습 중이거나 제약이 너무 강할 수 있습니다.")
+                        st.stop()
 
                     # 5️⃣ 렌더링
                     geom = _cr.from_geomgraph(g)
