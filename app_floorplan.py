@@ -73,10 +73,10 @@ async def generate_floorplan(bedrooms: int = 3, bathrooms: int = 2):
 
         # Prefix 토큰
         prefix = [
-            vocab["meta"] + 0,  # country: KR (0)
-            vocab["meta"] + len(wc.COUNTRIES) + 0,  # housing: APT (0)
-            vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 0,  # schema: g-0.4 (0)
-            vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 1 + 0,  # scope: UNIT (0)
+            wc.V.BOS,
+            vocab["meta"] + 0,  # country: KR
+            vocab["meta"] + len(wc.COUNTRIES) + 0,  # housing: APT
+            vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 0,  # scope: UNIT
             vocab["units"] + 1,  # units: 1
         ]
         prefix_tensor = torch.tensor([prefix], dtype=torch.long)
