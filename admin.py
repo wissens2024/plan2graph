@@ -383,7 +383,6 @@ try:  # 동그라미 없는 클릭형 메뉴(streamlit-option-menu). 미설치 �
             },
         )
 except Exception:
-    which = st.sidebar.radio("메뉴", _MENU, index=0, label_visibility="collapsed")
     which = "🧮 종합 현황"
 
 # ════════════════════════════════════════════════════════════════════════════
