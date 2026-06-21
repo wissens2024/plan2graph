@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import config
 from plan2graph import wallcycle_codec as wc
-from plan2graph.cadrender import Renderer as CadRenderer
+from plan2graph import cadrender as cr
 
 app = FastAPI(title="KorPlan Floor Plan Generator")
 
@@ -81,9 +81,9 @@ async def generate_floorplan(bedrooms: int = 3, bathrooms: int = 2):
         g = wc.canon_to_graph(canon)
 
         # 5️⃣ 렌더링
-        _cr = CadRenderer()
-        geom = _cr.build_geom(g)
-        png_bytes = _cr.render_png(geom, format="bytes")
+        geom = cr.from_geomgraph(g)
+        geom = cr.autocorrect(geom)
+        png_bytes = cr.render_png(geom)
 
         # Base64 인코딩
         png_b64 = base64.b64encode(png_bytes).decode()
