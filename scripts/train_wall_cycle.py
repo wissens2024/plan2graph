@@ -133,8 +133,10 @@ def main():
             mlp_w1_shape = ckpt["model"]["blocks.0.mlp.w1.weight"].shape
             dim_ff = mlp_w1_shape[0]
             start_ep = ckpt.get("epoch", 0) + 1 if args.resume else 1
+            print(f"[CKPT-DEBUG] dim_ff={dim_ff} from mlp_w1_shape={mlp_w1_shape}")
             print(f"[ckpt] {ckpt_path} → d={args.d_model} L={args.n_layer} H={args.n_head} dim_ff={dim_ff}, ep{start_ep}부터")
-        except (FileNotFoundError, KeyError):
+        except Exception as e:
+            print(f"[ERR] {type(e).__name__}: {e}")
             print(f"[new] 처음부터 학습 (d={args.d_model} L={args.n_layer} H={args.n_head})")
             ckpt = None
 
