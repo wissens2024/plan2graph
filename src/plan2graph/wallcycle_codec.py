@@ -590,7 +590,11 @@ def decode(tokens: list, vocab) -> Canon:
                 "scope": "unit", "units": 1}
         canon = Canon(grid=grid, bbox=[0, 0, grid, grid], meta=meta)
         canon.corners = [(0, 0), (grid, 0), (grid, grid)]
-        canon.rooms = [{"id": 0, "role_id": 0, "cycle": [0, grid, grid, 0]}]
+        if len(canon.corners) >= 3:
+            canonical_cycle = list(range(len(canon.corners)))
+        else:
+            canonical_cycle = [0] * len(canon.corners)
+        canon.rooms = [{"id": 0, "role_id": 0, "cycle": canonical_cycle}]
         return canon
 
     i = 0

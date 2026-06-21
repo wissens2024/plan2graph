@@ -363,69 +363,44 @@ def _record(**kw):
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
 st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
 _MENU = ["🧮 종합 현황",
-         "🏢 AI-Hub 검수 · Parsed", "🏠 CubiCasa 검수", "📐 RPLAN 검수",
-         "🧩 AI-Hub 검수 · Corrected",
-         "🗂 데이터셋 도면", "📗 도면 생성",
+         "🏢 AI-Hub 검수 (T)", "🏠 CubiCasa 검수", "📐 RPLAN 검수",
+         "🧩 AI-Hub 검수 (G)", "📗 도면 생성",
          "⚖️ 성능 비교",
          "📜 법령 DB"]
-# 라디오 메뉴로 변경 (option_menu 버그 우회)
-# 기본값을 "📗 도면 생성" (인덱스 6)으로 설정하여 도면생성 화면을 바로 표시
-which = st.sidebar.radio("메뉴", _MENU, index=6, label_visibility="collapsed")
-
-# 정보보정 웹 에디터 링크(ADR-0008) — 그래프 JSON 위 의미보정. 별도 서버 :8600.
-st.sidebar.markdown("---")
-st.sidebar.markdown(
-    '<a href="/editor/" target="_blank" style="text-decoration:none;font-weight:600">'
-    '✏️ 정보보정 에디터 (웹)</a>', unsafe_allow_html=True)
-st.sidebar.caption("PNG 위 역할·인접·합치기·나누기 즉시반영 → edits/. nginx `/editor/`→:8600 "
-                   "(임시: `ssh -L 8600:localhost:8600` 후 localhost:8600).")
+try:  # 동그라미 없는 클릭형 메뉴(streamlit-option-menu). 미설치 시 라디오로 폴백.
+    from streamlit_option_menu import option_menu
+    with st.sidebar:
+        which = option_menu(
+            None, _MENU, key="mainmenu",
+            manual_select=st.session_state.pop("_goto_idx", None),  # 다른 메뉴서 전환용
+            icons=["" for _ in _MENU],   # 라벨에 이미 이모지 → bootstrap 기본아이콘 숨김
+            default_index=0,
+            styles={
+                "container": {"padding": "0", "background-color": "transparent"},
+                "nav-link": {"font-size": "0.85rem", "padding": "4px 10px",
+                             "margin": "1px 0", "--hover-color": "#eef2ff"},
+                "nav-link-selected": {"background-color": "#4f46e5"},
+            },
+        )
+except ModuleNotFoundError:
+    which = st.sidebar.radio("메뉴", _MENU, index=0, label_visibility="collapsed")
 
 # ════════════════════════════════════════════════════════════════════════════
-# 🧩 AI-Hub 검수 · Corrected — R2G 파서 출력을 사람이 정보보정(역할·인접) → staging/corrected (ADR-0008/0009)
+# 🧩 AI-Hub 검수 (G) — 원본 위에서 사람이 위상 직접 구축(자동추론 0) → staging/gline
 # ════════════════════════════════════════════════════════════════════════════
 if which.startswith("🧩"):
-    # ADR-0008: 편집은 웹 에디터(:8600, edits/)로 이관. 이 화면 = 진행도·현황·막힌 사유(검수).
-    # (옛 topoedit.render_editor 박스드로잉 편집기 임베드 폐기 — 함수는 topoedit.py에 보존.)
-    from plan2graph import dataset_status as DS, sources
-    st.title("🧩 AI-Hub 검수 · Corrected — R2G 파서 출력 + 인간 보정(HITL)")
-    st.caption("R2G 파서 그래프(graphs/)를 사람이 정보보정(역할·인접·합치기·나누기) → edits/. "
-               "실제 보정은 웹 에디터에서. 이 화면은 진행도·현황·막힌 사유.")
-    st.markdown('<a href="/editor/" target="_blank" style="display:inline-block;background:#1f6fd6;'
-                'color:#fff;padding:8px 16px;border-radius:6px;text-decoration:none;font-weight:700">'
-                '✏️ 웹 에디터로 보정하기</a>', unsafe_allow_html=True)
-    _cs = DS.corrected_status(sources.graphs_dir("corrected"))
-    m = st.columns(5)
-    m[0].metric("전체 세대", f"{_cs['total']:,}")
-    m[1].metric("사용(파서 통과)", f"{_cs['use']:,}")
-    m[2].metric("보정필요", f"{_cs['fix']:,}")
-    m[3].metric("제외", f"{_cs['excl']:,}")
-    m[4].metric("보정완료(edits/)", f"{_cs['done']:,}")
-    st.caption(f"사용가능 현재 {_cs['usable_now']:,} · 보정 다 하면 상한 {_cs['usable_max']:,} "
-               f"· 도면 {_cs.get('n_drawings', 0):,}장")
-    cL, cR = st.columns(2)
-    with cL:
-        if _cs.get("warns"):
-            st.markdown("**보정필요 사유 — 무엇을 고치면 사용가능?**")
-            st.dataframe([{"사유": k, "건수": v} for k, v in _cs["warns"].items()],
-                         use_container_width=True, hide_index=True)
-    with cR:
-        if _cs.get("reasons"):
-            st.markdown("**제외 사유 — 라벨로 못 살림**")
-            st.dataframe([{"사유": k, "건수": v} for k, v in _cs["reasons"].items()],
-                         use_container_width=True, hide_index=True)
-    bh = _cs.get("by_house", {})
-    if bh:
-        st.markdown("**거주형태별(세대)**")
-        st.dataframe([{"거주형태": h, "사용": v["unit"]["use"], "보정필요": v["unit"]["fix"],
-                       "제외": v["unit"]["excl"], "보정완료": v["unit"]["done"]}
-                      for h, v in sorted(bh.items())], use_container_width=True, hide_index=True)
+    from plan2graph import topoedit
+    st.title("🧩 AI-Hub 검수 (G) — 위상+기하 보정")
+    # 상단 데이터셋 합계(사용/보정필요/제외/보정완료)는 종합현황·버전표에 있어 중복 → 제거.
+    # 대신 '사람 보정 건수'(SVG 보정완료 세대)를 편집기 상단 바에 표시(render_editor).
+    topoedit.render_editor(show_title=False)
     st.stop()
 
 # ════════════════════════════════════════════════════════════════════════════
 # 🧮 검수 현황(종합) — AI-Hub·CubiCasa·RPLAN 변환 결과를 한 화면에서 비교
 # ════════════════════════════════════════════════════════════════════════════
 if which.startswith("🧮"):
-    from plan2graph import dataset_status, sources
+    from plan2graph import dataset_status
 
     st.title("🧮 검수 현황(종합)")
 
@@ -478,28 +453,17 @@ if which.startswith("🧮"):
         st.caption(f"사용 {d['use']:,} + 보정·복구 {d['fix']:,} + 제외 {d['excl']:,} = {d['total']:,} (=다운로드)")
         st.divider()
 
-    # ── AI-Hub 인간보정(Corrected) 진행 — 파서출력 위 사람 정보보정(ADR-0008, edits/) ──
-    _cs = dataset_status.corrected_status(sources.graphs_dir("corrected"))
-    st.markdown("### ✏️ AI-Hub 인간보정(Corrected) 진행 — 세대")
-    _cc = st.columns(4)
-    _cc[0].metric("보정완료(edits/)", f"{_cs['done']:,}")
-    _cc[1].metric("보정필요", f"{_cs['fix']:,}")
-    _cc[2].metric("사용(파서 통과)", f"{_cs['use']:,}")
-    _cc[3].metric("사용가능 현재→상한", f"{_cs['usable_now']:,}→{_cs['usable_max']:,}")
-    st.caption("R2G 파서 출력을 사람이 정보보정 → edits/. 상세·보정은 좌측 🧩 Corrected / 웹 에디터.")
-    st.divider()
-
-    # ── 파이프라인 진행 상황 — ADR-0006(소버린 엔진) · ADR-0008/0009(비교축·용어) ──
+    # ── 파이프라인 진행 상황 — 현재 구조(ADR-0006/0007): 박스회귀 폐기 → 자체 소버린 엔진 ──
     st.markdown("### 🧭 파이프라인 진행 상황 — 데이터 → 통일그래프 → 한국형 엔진 → 도면+DXF")
-    st.caption("ADR-0006 소버린 엔진(DiffPlanner 골격 한국형 확장) · ADR-0008 비교축(Parsed∥Corrected). "
-               "✅완료 · 🔄진행 · ⬜예정. 엔진은 서버 ~/diffplanner_work.")
+    st.caption("현재 구조(ADR-0006/0007): 박스회귀 폐기 → 자체 소버린 엔진(DiffPlanner 골격 "
+               "한국형 확장). ✅완료 · 🔄진행 · ⬜예정. 엔진은 서버 ~/diffplanner_work.")
     _DIFFP = Path("~/diffplanner_work").expanduser()
     _ckpt_root = _DIFFP / "ckpt_kr"
 
     def _eng_ckpt(arm):  # 해당 ARM 학습 체크포인트 존재?
         if not _ckpt_root.exists():
             return False
-        return any(any((_ckpt_root / s / arm).glob("*model*.pt"))
+        return any(any((_ckpt_root / s / arm).glob("model*.pt"))
                    for s in ("node_diff", "adjacency_diff", "partitioning_diff"))
 
     _kor_data = _DIFFP / "dataset" / "dataset_json_korean" / "data_train.json"
@@ -507,7 +471,7 @@ if which.startswith("🧮"):
     _stages = [
         ("1. 품질 게이트(온전/보정필요)", "plan_quality · 온전 64.7%", "✅",
          "src/plan2graph/plan_quality.py"),
-        ("2. 통일 그래프(R2G 파서)", "geomgraph", "✅", "src/plan2graph/geomgraph.py"),
+        ("2. 통일 그래프(2층 스키마)", "geomgraph", "✅", "src/plan2graph/geomgraph.py"),
         ("3. 엔진 데이터 변환(온전만 · 13역할/18방)",
          ("준비됨" if _kor_data.exists() else "—"), "✅" if _kor_data.exists() else "⬜",
          "scripts/korean_to_engine.py"),
@@ -518,7 +482,7 @@ if which.startswith("🧮"):
          "gate2_train_runbook.sh → ckpt_kr"),
         ("6. 샘플링 → 도면+DXF(neuro-symbolic 완성)", "korean_sample → cadrender", "✅",
          "scripts/diffplanner_to_cadrender.py"),
-        ("7. 비교(Parsed∥Corrected·ARM · FID·법규·완성도)", "⚖️ 성능 비교 화면", "⬜", "ADR-0008 비교축"),
+        ("7. 비교(T∥G·ARM · FID·법규·완성도)", "⚖️ 성능 비교 화면", "⬜", "ADR-0007 ④"),
     ]
     st.table([{"단계": s, "상태": stt, "산출물": a, "위치": loc}
               for s, a, stt, loc in _stages])
@@ -527,7 +491,7 @@ if which.startswith("🧮"):
     # ── 데이터셋 버전(생성 학습용) — releases/<버전>/manifest.json 에서 직접 읽음(단일 출처) ──
     st.markdown("### 📦 데이터셋 버전 (생성 학습용)")
     st.caption("releases/<버전>/manifest.json 에서 직접 읽음 — GUI·문서·코드가 같은 출처라 숫자 일치. "
-               "Parsed=R2G 파서 출력 · Corrected=파서 출력+인간보정 HITL.")
+               "T-라인=위상그래프(v0~) · G-라인=기하 2층 스키마(g0~).")
     import glob as _glob
     _vrows = []
     for _v, _line, _rp in config.list_releases():
@@ -536,7 +500,7 @@ if which.startswith("🧮"):
         except Exception:  # noqa: BLE001
             continue
         _vrows.append({"버전": _m.get("version", _v),
-                       "조건": "Parsed" if _line == "parsed" else "Corrected",
+                       "라인": "T-라인" if _line == "tline" else "G-라인",
                        "스키마": _m.get("schema", "?"),
                        "출처": "자동" if _m.get("auto") else "보정포함",
                        "주택형": ",".join(_m.get("houses", [])),
@@ -556,7 +520,7 @@ if which.startswith("🏢"):
     from PIL import Image as _PImage
     from plan2graph import inspect_excluded as _ix
 
-    st.title("🏢 AI-Hub 검수 · Parsed — R2G 파서 출력(인간보정 없음)")
+    st.title("🏢 AI-Hub 검수 (T) — 자동변환 그래프")
     # 상단 데이터셋 합계(사용/보정필요/제외)는 종합현황에 있어 중복 → 제거. 검수 본연(원본 육안)만.
     # (_aim_t 정의는 아래 '변환 보정' 기능에서 쓰이므로 유지 — 메트릭 렌더만 제거)
     _aim_t = config.DATA_DIR / "staging" / "aihub" / "manifest.jsonl"
@@ -653,8 +617,8 @@ if which.startswith("🏢"):
     view = st.radio(
         "보기 모드", ["그래프검수(원본∥그래프)", "나란히(원본 | 오버레이)", "겹쳐보기", "원본만"],
         index=0, horizontal=True,
-        help="그래프검수=원본∥그래프 오버레이 검수 · 나란히/겹쳐/원본만=라벨 육안확인 · "
-             "사람 정보보정은 좌측 메뉴 🧩 AI-Hub 검수 · Corrected")
+        help="그래프검수=구버전 위상 검수 · 나란히/겹쳐/원본만=라벨 육안확인 · "
+             "사람 위상 구축은 좌측 메뉴 🧩 AI-Hub 검수 (G)")
     # 보정(재변환) 도구 — 분류 콤보가 '보정필요(fix)'일 때만 노출(사용/제외/전체에선 숨김).
     _disp_by_label = {lab: dispo for (dispo, _r), lab in AIHUB_LABEL.items()}
     if _aim_t.exists() and _disp_by_label.get(cat) == "fix":
@@ -901,480 +865,102 @@ if which.startswith("📐"):
                    lambda r, ov: _rpi.render(r, overlay=ov), _cap)
     _pager("pg_rplan", npages, "bot")
     st.stop()
-if which.startswith("🗂"):
-    import glob as _glob
-    import json as _json
-    import os as _os
-    import re as _re
-    import zipfile as _zip
-
-    from plan2graph import cadrender as _cr
-
-    st.title("🗂 데이터셋 도면 — 그래프 → 도면 이미지 · AutoCAD(DXF)")
-    st.caption("데이터셋(=그래프)을 골라 필터하고, 하나를 선택하면 **왼쪽=생성 도면+DXF, 오른쪽=원본 도면**. "
-               "검수처럼 콤보·이전/다음으로 한 장씩 본다.")
-
-    _CG = str(config.DATA_DIR / "staging" / "corrected" / "graphs")
-    _PNG_CACHE = config.DATA_DIR / "staging" / "corrected" / "png"
-    _PNG_INDEX = config.DATA_DIR / "staging" / "corrected" / "_png_index.json"
-    # 4개 데이터셋 — 현재 geomgraph 렌더 가능 = AI-Hub(자동/보정 같은 corrected 폴더, ADR-0009).
-    #   RPLAN(.mat)·CubiCasa(svg)는 geomgraph 변환 대기 → 콤보엔 있으나 준비중 안내.
-    _DATASETS = {
-        "AI-Hub Corrected (보정)": {"dir": _CG, "ready": True},
-        "AI-Hub Parsed (자동)": {"dir": _CG, "ready": True},
-        "RPLAN": {"dir": None, "ready": False},
-        "CubiCasa5k": {"dir": None, "ready": False},
-    }
-    # 데이터셋 + 필터 콤보를 한 줄로(데이터셋 | 주거형태 | 구분 | 방 개수)
-    _row = st.columns([2, 1, 1, 1])
-    _ds = _row[0].selectbox("데이터셋", list(_DATASETS), key="dsv_ds")
-    _info = _DATASETS[_ds]
-    if not _info["ready"]:
-        st.info("**" + _ds + "** 는 geomgraph 변환 대기입니다. AI-Hub로 먼저 확인하세요. "
-                "(학습 결합용으로 RPLAN/CubiCasa geomgraph 변환은 후속 작업)")
-        st.stop()
-
-    @st.cache_resource(show_spinner=False)
-    def _png_idx():
-        try:
-            return _json.load(open(_PNG_INDEX, encoding="utf-8"))
-        except Exception:  # noqa: BLE001
-            return {}
-
-    def _orig_png(stem):
-        """plan_id stem → 원본 sheet PNG bytes (캐시→zip). edit_server._png_bytes 동일 로직."""
-        m = _re.search(r"_FP_(.+?)_u\d+$", stem) or _re.search(r"_FP_(.+)$", stem)
-        if not m:
-            return None
-        sig = m.group(1)
-        _PNG_CACHE.mkdir(parents=True, exist_ok=True)
-        cache = _PNG_CACHE / (sig + ".png")
-        if cache.exists():
-            return cache.read_bytes()
-        idx = _png_idx()
-        if sig not in idx:
-            return None
-        zp, entry = idx[sig]
-        try:
-            with _zip.ZipFile(zp) as zf:
-                data = zf.read(entry)
-            cache.write_bytes(data)
-            return data
-        except Exception:  # noqa: BLE001
-            return None
-
-    @st.cache_data(show_spinner="데이터셋 인덱스 빌드(최초 1회)...")
-    def _ds_index(gdir, _bust):
-        out = []
-        for f in _glob.glob(_os.path.join(gdir, "*.json")):
-            try:
-                g = _json.load(open(f, encoding="utf-8"))
-            except Exception:  # noqa: BLE001
-                continue
-            rooms = (g.get("rooms") or {}).values()
-            meta = g.get("meta") or {}
-            v = g.get("validation") or {}
-            _ent = meta.get("n_entrance")
-            # plan_scope(ADR-0016): 단위세대(unit)/1층 단면(floor). 빌드는 unit 고정이라 현관수로 도출(현관≥2=분리 전 층).
-            _scope = "floor" if (meta.get("plan_scope") == "floor" or (_ent or 1) >= 2) else "unit"
-            out.append({
-                "gid": _os.path.basename(f),
-                "house": meta.get("house_type") or g.get("house") or "?",
-                "n_bed": sum(1 for r in rooms if (r.get("role") or r.get("base")) in ("침실", "안방")),
-                "n_ent": _ent,
-                "scope": _scope,
-                "disp": "제외" if not v.get("passed") else ("보정필요" if v.get("warnings") else "사용"),
-            })
-        return out
-
-    _bust = str(int(_os.path.getmtime(_info["dir"]))) if _os.path.isdir(_info["dir"]) else "0"
-    idx = _ds_index(_info["dir"], _bust)
-    if not idx:
-        st.warning("그래프가 없습니다(재빌드 중일 수 있음). 잠시 후 새로고침.")
-        st.stop()
-
-    # ── 필터(데이터셋과 한 줄): 주거형태 | 구분(단위/층) | 방 개수 ──
-    _houses = sorted({r["house"] for r in idx if r["house"] and r["house"] != "?"})
-    _HOUSE_KO = {"APT": "APT(아파트)", "DEH": "DEH(단독)", "ROW": "ROW(연립)"}
-    _hf = _row[1].selectbox("주거형태", ["(전체)"] + _houses, format_func=lambda k: _HOUSE_KO.get(k, k))
-    _SCOPE_KO = {"unit": "단위세대", "floor": "1층 단면"}
-    _scf = _row[2].selectbox("구분", ["(전체)", "unit", "floor"], format_func=lambda k: _SCOPE_KO.get(k, k),
-                             help="plan_scope(ADR-0016): 단위세대(현관1) / 1층 단면(현관2+·분리 전)")
-    _beds = sorted({r["n_bed"] for r in idx})
-    _rf = _row[3].selectbox("방 개수", ["(전체)"] + [str(b) for b in _beds],
-                            help="방 = 침실·안방(찐 방). 노드 전체 수가 아님")
-
-    def _ok(r):
-        if _hf != "(전체)" and r["house"] != _hf:
-            return False
-        if _scf != "(전체)" and r["scope"] != _scf:
-            return False
-        if _rf != "(전체)" and str(r["n_bed"]) != _rf:
-            return False
-        return True
-
-    _hits = sorted((r for r in idx if _ok(r)), key=lambda r: r["gid"])
-    _cnt, _ref = st.columns([6, 1])
-    _cnt.write("**" + format(len(_hits), ",") + "개** 일치 (전체 " + format(len(idx), ",") + ")")
-    if _ref.button("🔄 새로고침", use_container_width=True):
-        _ds_index.clear()
-        st.rerun()
-    if not _hits:
-        st.info("조건에 맞는 도면이 없습니다. 필터를 완화하세요.")
-        st.stop()
-
-    # ── 단일 선택: 이전/다음 + 콤보 ──
-    _ik = "dsv_i"
-    st.session_state.setdefault(_ik, 0)
-    st.session_state[_ik] = max(0, min(st.session_state[_ik], len(_hits) - 1))
-    _p, _s, _n = st.columns([1, 6, 1])
-    if _p.button("◀ 이전", use_container_width=True):
-        st.session_state[_ik] = max(0, st.session_state[_ik] - 1)
-    if _n.button("다음 ▶", use_container_width=True):
-        st.session_state[_ik] = min(len(_hits) - 1, st.session_state[_ik] + 1)
-    _gids = [r["gid"] for r in _hits]
-    _sel = _s.selectbox("도면 선택", _gids, index=st.session_state[_ik],
-                        format_func=lambda g: g[:-5])
-    st.session_state[_ik] = _gids.index(_sel)
-    _s.caption(str(st.session_state[_ik] + 1) + " / " + format(len(_hits), ",") + " 장")
-    _r = _hits[st.session_state[_ik]]
-    _stem = _sel[:-5]
-
-    @st.cache_data(show_spinner=False)
-    def _dsv_render(gdir, gid):
-        g = _json.load(open(_os.path.join(gdir, gid), encoding="utf-8"))
-        geom = _cr.autocorrect(_cr.from_geomgraph(g))
-        return _cr.render_png(geom), _cr.render_dxf(geom)
-
-    _L, _R = st.columns(2)
-    with _L:
-        st.markdown("##### 생성 도면 (그래프 → 렌더)")
-        try:
-            _png, _dxf = _dsv_render(_info["dir"], _sel)
-            st.image(_png, use_container_width=True)
-            _d1, _d2 = st.columns(2)
-            _d1.download_button("📥 도면 이미지(PNG)", _png, file_name=_stem + ".png",
-                                mime="image/png", key="dsv_png", use_container_width=True)
-            _d2.download_button("📐 AutoCAD(DXF)", _dxf, file_name=_stem + ".dxf",
-                                mime="image/vnd.dxf", key="dsv_dxf", use_container_width=True)
-        except Exception as _e:  # noqa: BLE001
-            st.error("렌더 실패: " + str(_e))
-        st.caption("**" + _stem + "** · " + str(_r["house"]) + " · 침실 " + str(_r["n_bed"]) +
-                   " · 현관 " + str(_r["n_ent"]) + " · " + _r["disp"])
-    with _R:
-        st.markdown("##### 원본 도면")
-        _op = _orig_png(_stem)
-        if _op:
-            st.image(_op, use_container_width=True)
-        else:
-            st.info("원본 PNG를 찾지 못했습니다(zip 인덱스 미보유 또는 추출 실패).")
-    st.stop()
-
 if which.startswith("📗"):
-
-    # ═══ 검증 함수 정의 ═══
-    def _count_bedrooms_in_geom(geom) -> int:
-        """침실 개수 세기 (안방, 침실, 드레스룸 포함). geom['rooms']는 {id: {role, ...}}"""
-        if not geom or not geom.get('rooms'):
-            return 0
-        rooms = geom['rooms']
-        if isinstance(rooms, dict):
-            return sum(1 for r in rooms.values() if isinstance(r, dict) and r.get('role') in {'안방', '침실', '드레스룸'})
-        return 0
-
-    def _count_bathrooms_in_geom(geom) -> int:
-        """욕실 개수 세기 (욕실, 화장실, 파우더룸 포함). geom['rooms']는 {id: {role, ...}}"""
-        if not geom or not geom.get('rooms'):
-            return 0
-        rooms = geom['rooms']
-        if isinstance(rooms, dict):
-            return sum(1 for r in rooms.values() if isinstance(r, dict) and r.get('role') in {'욕실', '화장실', '전용욕실', '전용화장실', '파우더룸'})
-        return 0
-
-    def _validate_floorplan(geom, expected_bedrooms, expected_bathrooms) -> bool:
-        """생성된 도면이 조건을 만족하는지 검증"""
-        actual_bedrooms = _count_bedrooms_in_geom(geom)
-        actual_bathrooms = _count_bathrooms_in_geom(geom)
-        return actual_bedrooms == expected_bedrooms and actual_bathrooms == expected_bathrooms
-
-    # ═══ 검증 함수 끝 ═══
-    import glob as _glob
     import json as _json
-    import os as _os
+    from pathlib import Path as _P
+    from plan2graph import cadrender as _cr, engine_render as _er
+    st.title("📗 도면 생성 — 한국형 소버린 엔진 (학습→생성→개선→재학습 반복)")
+    st.caption("ADR-0006/0007. 박스회귀 폐기 → 자체 엔진(DiffPlanner 골격 한국형 13역할/18방). "
+               "한 번에 완성이 아님 — 반복으로 품질을 올린다.")
+    st.markdown(
+        "**반복 루프** &nbsp; `온전 데이터셋 → 엔진 학습 → 샘플링 → 도면+DXF"
+        "(자동완성: 문·창·기구·치수) → 보정·neuro-symbolic 개선 → 더 좋은 그래프 → 재학습 ↺`")
+    st.divider()
 
-    from plan2graph import cadrender as _cr
+    _DIFFP = _P("~/diffplanner_work").expanduser()
+    _ckroot = _DIFFP / "ckpt_kr"
+    _kf = _DIFFP / "dataset" / "dataset_json_korean" / "data_train.json"
 
-    st.title("📗 도면 생성")
-    st.caption("Track A/B/C 병렬 엔진 (ADR-0019) · 한국 정제 데이터(Parsed) 기반 · 조건 입력으로 아파트 도면 생성")
+    # ── 1) 학습 상태 ──
+    st.markdown("#### 1) 학습 상태")
+    _arms = ["pretrain", "finetune", "korean_only"]
+    _stages = ["node_diff", "adjacency_diff", "partitioning_diff"]
+    _rows = []
+    for arm in _arms:
+        cells = {"ARM": arm}
+        for s in _stages:
+            cps = sorted((_ckroot / s / arm).glob("model*.pt")) if _ckroot.exists() else []
+            cells[s.replace("_diff", "")] = (cps[-1].name.replace("model", "").replace(".pt", "")
+                                             if cps else "—")
+        _rows.append(cells)
+    st.table(_rows)
+    _ntrain = "—"
+    if _kf.exists():
+        try:
+            _ntrain = f"{len(_json.load(open(_kf, encoding='utf-8'))):,}"
+        except Exception:
+            pass
+    st.caption(f"학습 데이터(온전 한국, train): {_ntrain}세대 · 표 숫자=마지막 체크포인트 step. "
+               "GPU1, 서버 ~/diffplanner_work.")
+    st.code("bash ~/diffplanner_work/gate2_train_runbook.sh   # 초기학습/재학습 (ARM-A 사전학습→파인튜닝 / ARM-B)\n"
+            "bash ~/diffplanner_work/korean_sample.sh finetune 200   # 학습된 엔진으로 샘플링→엔진출력 JSON",
+            language="bash")
+    st.divider()
 
-    # ── 생성형 AI 모델 레지스트리 — 엔진 2종 × 학습 데이터셋 조합. 이름 = 엔진코드(AL/WC)+데이터코드(R/P/C). ──
-    #   프레임워크 = KorPlan(KOR=한국 ISO코드, regulation-aware vector floor-plan). 엔진 2종 × 코퍼스(R/K/C).
-    _ENGINES = {
-        "A": "KorPlan-Diff — 코너-그래프 확산 + 정렬손실(GSDiff 청사진 재구현). 코너 좌표·한국 role → edge·벽·방.",
-        "B": "KorPlan-AR(wall-cycle) — 자기회귀 토큰(코너+벽+room-cycle+opening). 직교 제약·법규 verify→repair. ✅ 완성형",
-        "C": "Raster→벡터 헤지(추후) — 다양성 확보용 백업 엔진.",
-    }
-    _MODELS = [
-        {"name": "KorPlan-AR-K (ep50)", "engine": "B", "data": "한국 Parsed", "status": "✅ 완료", "ckpt": "ckpts/korplan_ar_k_fmlm80m.pt"},
-        {"name": "KorPlan-AR-K-FT-v1", "engine": "B", "data": "한국 Parsed", "status": "✅ 완료", "ckpt": "ckpts/korplan_ar_korean_ftR.pt"},
-        {"name": "KorPlan-AR-K-FT-v2", "engine": "B", "data": "한국 Parsed", "status": "✅ 최신", "ckpt": "ckpts/korplan_ar_korean_ftR_lr5e5.pt"},
-    ]
-
-    with st.container(border=True):
-        st.subheader("① 데이터셋 현황 (Parsed = 정제 데이터 기준)")
-        st.markdown(
-            "**현재 상황** (ADR-0009 Parsed/Corrected ablation)\n"
-            "- **Parsed**: R2G 자동변환 직접 출력(사람 보정 없음) ← 알고리즘 완성용 **현재 사용 중**\n"
-            "- **Corrected**: Parsed + 알바 정보보정 진행 중(시간 오래 소요) ← 추후 ablation 비교\n\n"
-            "**한국 AI-Hub 구성** (Parsed 기준)\n"
-            "- 원본: 43,219 도면 다운로드\n"
-            "- R2G 파싱: 세대 분리·벽·문·기구 추출(neuro-symbolic)\n"
-            "- **정제 데이터(Clean)**: tokens_korean_clean/ (학습용 토큰 데이터셋)\n"
-            "- 생성 조건: geomgraph(벽-1급, room-cycle·opening·역할, 기하) — **현재 AR 모델이 읽는 형식**\n\n"
-            "**Track 현황** (ADR-0019 3-트랙 헤지)\n"
-            "- Track A (KorPlan-Diff): 코너 확산 기반 — 학습 진행 중\n"
-            "- **Track B (KorPlan-AR): wall-cycle 자기회귀 — ✅ 완성형 가깝다 (현재 테스트 단계)**\n"
-            "- Track C (Raster→벡터): 다양성 헤지 — 진행 중")
-
-    with st.container(border=True):
-        st.subheader("② 생성 엔진 및 모델 현황")
-        st.markdown("**Track A · " + _ENGINES["A"] + "**")
-        st.markdown("**Track B · " + _ENGINES["B"] + "**")
-        st.markdown("**Track C · " + _ENGINES["C"] + "**")
-        st.markdown("\n모델 선택 기준: **현재 Track B(KorPlan-AR-K)가 테스트 가능** — 한국 Parsed 데이터로 아파트 도면 생성")
-        st.table([{"모델": m["name"],
-                   "엔진": m["engine"],
-                   "데이터": m["data"],
-                   "상태": m["status"],
-                   "ckpt": m["ckpt"] if m["ckpt"] else "—"} for m in _MODELS])
-        st.caption("✅ 체크: Track B KorPlan-AR-K로 자연어 도면 생성 테스트 중")
-
-    with st.container(border=True):
-        st.subheader("③ 도면 생성 (조건 입력)")
-
-        # 모델 선택
-        _msel = st.selectbox(
-            "생성 모델", [m["name"] for m in _MODELS],
-            format_func=lambda n: n + " (" + next(m["status"] for m in _MODELS if m["name"] == n) + ")",
-            help="현재 KorPlan-AR-K(Track B) 추천 — 한국 Parsed 데이터 기반")
-        _mrow = next(m for m in _MODELS if m["name"] == _msel)
-        _ready = ("예정" not in _mrow["status"]) and ("학습중" not in _mrow["status"]) and _mrow["ckpt"]
-
-        if not _ready:
-            st.warning(f"⚠️ 모델 '{_msel}' 준비 중입니다. {_mrow['status']}")
+    # ── 2) 도면 생성(렌더) ──
+    st.markdown("#### 2) 도면 생성 — 엔진 출력 → 이미지 + DXF")
+    st.caption("엔진 출력(방 박스+역할+외곽+인접)의 공백을 neuro-symbolic으로 채워 렌더: "
+               "문=인접 경계 · 창=거주방 외곽 · 척도=가정폭 12m · 기구=역할 카탈로그.")
+    _srcs = {}
+    _outdir = _DIFFP / "output" / "out_korean"
+    if _outdir.exists():
+        for f in sorted(_outdir.glob("*.json")):
+            _srcs[f"🟢 엔진샘플: {f.stem}"] = f
+    _gt = _DIFFP / "dataset" / "dataset_json_korean" / "data_test.json"
+    if _gt.exists():
+        _srcs["⚪ GT 예시 (학습 전 파이프라인 확인용 — 모델 생성 아님)"] = _gt
+    if not _srcs:
+        st.info("엔진 샘플 출력(out_korean/*.json)이 아직 없습니다. 위 korean_sample.sh로 생성 후 다시 오세요.")
+        st.stop()
+    _label = st.selectbox("입력 (엔진 출력 JSON)", list(_srcs))
+    _n = st.slider("렌더 장수", 1, 12, 4)
+    if "🟢" not in _label:
+        st.warning("GT 예시 = 정답 그래프를 같은 렌더러로 그린 것(모델 생성 아님). "
+                   "렌더 파이프라인 확인·시연용. 모델 생성 도면은 학습 후 엔진샘플로.")
+    if st.button("🏗 도면 생성 (이미지 + DXF)", type="primary"):
+        try:
+            _data = _json.load(open(_srcs[_label], encoding="utf-8"))
+        except Exception as e:
+            st.error(f"입력 로드 실패: {e}")
             st.stop()
-
-        # 생성 조건 입력 — 자연어 프롬프트 + 수치
-        st.markdown("**생성 조건** (자연어 또는 수치 입력)")
-
-        # 자연어 프롬프트 입력 (기본값: 테스트용)
-        _prompt = st.text_area(
-            "자연어 프롬프트 (선택)",
-            value="4인 가족, 룸 3개, 화장실 2개, 드레스룸과 파우더룸이 있는 아파트 도면을 그려줘",
-            placeholder="예: 4인 가족, 룸 3개, 화장실 2개, 드레스룸과 파우더룸이 있는 아파트 도면을 그려줘",
-            height=80,
-            help="테스트용 기본값 포함 (실제 오픈 시 제거). 자연어로 입력하면 자동으로 파싱됩니다.")
-
-        # 프롬프트 파싱 (간단한 정규식)
-        _bedrooms_default = 3
-        _bathrooms_default = 2
-        _dressingroom_default = True
-        _powderroom_default = True
-
-        if _prompt.strip():
-            import re
-            # 침실/룸/방 개수
-            bed_match = re.search(r'(?:침실|룸|방)\s*(\d+)', _prompt)
-            if bed_match:
-                _bedrooms_default = int(bed_match.group(1))
-
-            # 욕실/화장실 개수
-            bath_match = re.search(r'(?:욕실|화장실|화장실|반욕실)\s*(\d+)', _prompt)
-            if bath_match:
-                _bathrooms_default = int(bath_match.group(1))
-
-            # 드레스룸 여부
-            _dressingroom_default = bool(re.search(r'드레스룸|드레싱룸|walk.?in', _prompt))
-
-            # 파우더룸 여부
-            _powderroom_default = bool(re.search(r'파우더룸|분장실', _prompt))
-
-        st.divider()
-        st.markdown("**또는 수치로 직접 입력:**")
-
-        _c1, _c2, _c3 = st.columns(3)
-        _housing = _c1.radio("주거형태", ["APT(아파트)"], help="현재는 한국 APT만 지원")
-        _bedrooms = _c2.slider("침실 수", 1, 5, _bedrooms_default, help="침실 개수(안방 포함)")
-        _bathrooms = _c3.slider("욕실 수", 1, 3, _bathrooms_default, help="욕실/화장실 개수")
-
-        _d1, _d2 = st.columns(2)
-        _has_dressingroom = _d1.checkbox("드레스룸 추가", value=_dressingroom_default)
-        _has_powderroom = _d2.checkbox("파우더룸 추가", value=_powderroom_default)
-
-        st.caption(f"**생성 예정:** {_bedrooms}침실 {_bathrooms}욕실 APT" +
-                  (" + 드레스룸" if _has_dressingroom else "") +
-                  (" + 파우더룸" if _has_powderroom else ""))
-
-        # 생성 버튼
-        _g_col = st.columns([1, 5])
-        _go = _g_col[0].button("🏗 도면 생성", type="primary", use_container_width=True)
-
-        if _go:
-            with st.spinner("도면 생성 중... (모델 추론 → 그래프 → 렌더)"):
+        _recs = (_data if isinstance(_data, list) else [_data])[:_n]
+        for k, rec in enumerate(_recs):
+            try:
+                geom = _er.build_geometry(rec)
+                fig = _cr.render_fig(geom)
+                st.pyplot(fig)
+                import matplotlib.pyplot as _plt
+                _plt.close(fig)
+                c1, c2 = st.columns([3, 1])
+                c1.caption(f"**{geom.plan_id}** · 방{len(geom.rooms)} 문{len(geom.doors)} "
+                           f"창{len(geom.windows)} 기구{sum(len(r.fixtures) for r in geom.rooms)} "
+                           f"· 자기교정 잔여 {len(geom.issues)}건")
                 try:
-                    import torch
-                    from pathlib import Path
-                    from plan2graph import wallcycle_codec as wc
-                    from plan2graph.generators.wall_cycle import WallCycleLM, make_constraint_mask
-
-                    # 1️⃣ 모델 로드
-                    dev = "cuda" if torch.cuda.is_available() else "cpu"
-                    ckpt_path = Path(config.PROJECT_ROOT) / _mrow["ckpt"]
-                    vocab_path = Path(config.DATA_DIR) / "staging" / "tokens_korean_clean" / "vocab.json"
-
-                    # vocab 자동 생성 (없으면)
-                    if not vocab_path.exists():
-                        st.info("vocab.json 자동 생성 중...")
-                        vocab_path.parent.mkdir(parents=True, exist_ok=True)
-                        auto_vocab = wc._vocab(grid=128)
-                        _json.dump(auto_vocab, open(vocab_path, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
-                        st.success(f"✅ vocab 생성 완료: {vocab_path}")
-
-                    if not ckpt_path.exists():
-                        st.error(f"❌ 모델 체크포인트 없음: {ckpt_path}\n\n"
-                                f"해결책:\n"
-                                f"1. 서버 115에서 모델을 받아옵니다: `scp ju@sse.aines.kr:plan2graph/{ckpt_path} {ckpt_path}`\n"
-                                f"2. 또는 학습을 완료한 후 모델 파일을 로컬에 복사합니다.")
-                        st.stop()
-
-                    vocab = _json.load(open(vocab_path, encoding="utf-8"))
-                    ckpt = torch.load(str(ckpt_path), map_location=dev, weights_only=False)
-                    a = ckpt["args"]
-
-                    # checkpoint의 mlp 크기에서 dim_ff 계산
-                    mlp_w1_shape = ckpt["model"]["blocks.0.mlp.w1.weight"].shape
-                    dim_ff = mlp_w1_shape[0]  # (dim_ff, d_model)
-
-                    model = WallCycleLM(vocab["size"], d_model=a["d_model"], n_layer=a["n_layer"],
-                                       n_head=a.get("n_head", 8), max_len=a["max_len"],
-                                       dim_ff=dim_ff).to(dev)
-
-                    # checkpoint 로드
-                    model.load_state_dict(ckpt["model"])
-                    model.eval()
-
-                    # 2️⃣ 프리픽스 토큰 구성 (5개 메타 토큰만 — n_bedrooms/n_bathrooms는 검증용으로만)
-                    prefix_tokens = [
-                        wc.V.BOS,
-                        vocab["meta"] + 0,  # country: 0=KR
-                        vocab["meta"] + len(wc.COUNTRIES) + 0,  # housing: 0=apartment
-                        vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 0,  # scope: 0=unit
-                        vocab["units"] + 1,  # units: 1 (단위세대)
-                    ]
-                    prefix = torch.tensor([prefix_tokens], device=dev)
-
-                    # 3️⃣ 도면 생성 (제약 약화 — 모델 완성 전까지)
-                    mask_fn = make_constraint_mask(vocab, orthogonal=True)
-                    eos = wc.V.EOS
-                    with torch.no_grad():
-                        out = model.generate(prefix, max_new=650, eos=eos,
-                                           temperature=1.0, top_k=40, mask_fn=mask_fn)
-
-                    # 4️⃣ 토큰 후처리
-                    row = out[0].tolist()
-                    if eos in row:
-                        row = row[:row.index(eos) + 1]
-                    
-                    # 최소 길이 보장
-                    if len(row) < 10:
-                        # 불완전 토큰: 기본 구조 생성
-                        row = [wc.V.BOS, 
-                               max(0, vocab.get("meta", 50)), 
-                               max(0, vocab.get("meta", 50) + len(wc.COUNTRIES)), 
-                               max(0, vocab.get("meta", 50) + len(wc.COUNTRIES) + len(wc.HOUSING)), 
-                               vocab.get("units", 200), 
-                               wc.V.SEC_CORNERS, 0, 0, 100, 0, 100, 100,  # 4 corners
-                               wc.V.SEC_ROOMS, 0, 4, 4, 96, 96, 4, 4,  # 1 room
-                               wc.V.SEC_OPEN]  # no openings
-                    
-                    # 섹션 마커 최소화된 버전: decode가 처리하므로 과도한 추가 금지
-                    has_corners = wc.V.SEC_CORNERS in row
-                    has_rooms = wc.V.SEC_ROOMS in row
-                    has_open = wc.V.SEC_OPEN in row
-                    
-                    if not has_corners:
-                        row.insert(min(5, len(row)), wc.V.SEC_CORNERS)
-                    if not has_rooms:
-                        try:
-                            ci = row.index(wc.V.SEC_CORNERS)
-                            row.insert(min(ci + 8, len(row)), wc.V.SEC_ROOMS)
-                        except:
-                            row.append(wc.V.SEC_ROOMS)
-                    if not has_open:
-                        row.append(wc.V.SEC_OPEN)
-
-                    try:
-                        g = wc.canon_to_graph(wc.decode(row, vocab))
-                    except Exception as decode_err:
-                        st.error(f"⚠️ 토큰 디코딩 실패: {type(decode_err).__name__}: {str(decode_err)[:100]}")
-                        st.stop()
-
-                    if not g or not g.get('rooms'):
-                        st.error("❌ 생성된 그래프가 비어있습니다. 모델이 아직 학습 중이거나 제약이 너무 강할 수 있습니다.")
-                        st.stop()
-
-                    # 5️⃣ 렌더링
-                    geom = _cr.from_geomgraph(g)
-                    geom = _cr.autocorrect(geom)
-                    png_bytes = _cr.render_png(geom)
-                    dxf_bytes = _cr.render_dxf(geom)
-
-                    # 6️⃣ 결과 표시
-                    st.success(f"✅ 도면 생성 성공! (방 {len(g['rooms'])}개, 문 {len(g['doors'])}개, 창 {len(g['windows'])}개)")
-
-                    # 6️⃣ 생성된 도면 검증
-                    actual_bedrooms = _count_bedrooms_in_geom(g)
-                    actual_bathrooms = _count_bathrooms_in_geom(g)
-                    validation_pass = _validate_floorplan(g, _bedrooms, _bathrooms)
-
-                    if not validation_pass:
-                        st.warning(f"⚠️ 조건 불일치: 침실 {actual_bedrooms}/{_bedrooms}, 욕실 {actual_bathrooms}/{_bathrooms}")
-                        if st.button("🔄 다시 생성", use_container_width=True):
-                            st.rerun()
-
-
-                    _o1, _o2 = st.columns(2)
-                    with _o1:
-                        st.markdown("##### 생성 도면")
-                        st.image(png_bytes, use_container_width=True)
-                        st.download_button(
-                            "📥 도면 이미지 (PNG)", png_bytes,
-                            file_name=f"apt_{_bedrooms}bed_{_bathrooms}bath.png",
-                            mime="image/png", use_container_width=True)
-
-                    with _o2:
-                        st.markdown("##### AutoCAD 호환 파일")
-                        st.info("DXF 형식 — 건축 설계 소프트웨어(AutoCAD, SketchUp 등)에서 편집 가능")
-                        st.download_button(
-                            "📐 AutoCAD (DXF)", dxf_bytes,
-                            file_name=f"apt_{_bedrooms}bed_{_bathrooms}bath.dxf",
-                            mime="image/vnd.dxf", use_container_width=True)
-
-                except Exception as _e:
-                    st.error(f"❌ 생성 실패: {type(_e).__name__}: {str(_e)}")
-                    import traceback
-                    st.code(traceback.format_exc(), language="python")
-
-        st.divider()
+                    c2.download_button("⬇ DXF", _cr.render_dxf(geom),
+                                       file_name=f"{geom.plan_id}.dxf", key=f"_dxf{k}")
+                except Exception as e:
+                    c2.caption(f"DXF 실패: {e}")
+            except Exception as e:
+                st.error(f"[{k}] 렌더 실패: {e}")
     st.stop()
 
 if which.startswith("⚖️"):
-    st.title("⚖️ 성능 비교 — Parsed ∥ Corrected (도면 품질)")
-    st.caption("같은 R2G 파서·같은 엔진(ADR-0006), **입력 품질만 변수**(ADR-0008·0009 = human-correction ablation). "
-               "Parsed=파서 출력(인간보정 없음) · Corrected=파서 출력+인간 보정(HITL). "
+    st.title("⚖️ 성능 비교 — 기하모델 A/B (도면 품질)")
+    st.caption("같은 파이프라인·같은 데이터, **기하모델만 변수**(ADR-0007). "
+               "T=약한 기하(박스 baseline) · G=강한 기하(소버린 엔진, ADR-0006). "
                "비교 잣대 = FID · 법규준수 · 완성도, 이미지+DXF 나란히.")
     st.info("준비 중 — 한국형 엔진(ARM-A 사전학습→파인튜닝 / ARM-B) 학습이 끝나면 "
-            "동결 test 샘플을 Parsed∥Corrected·ARM-A∥B로 한 화면에 비교합니다. "
+            "동결 test 샘플을 T∥G·ARM-A∥B·보정전후로 한 화면에 비교합니다. "
             "샘플→렌더 파이프라인(korean_sample → diffplanner_to_cadrender)은 준비 완료.")
     st.stop()
 
@@ -1721,193 +1307,194 @@ def _filtered():
 
 
 items = _filtered()
-st.sidebar.markdown(f"**대상: {len(items):,}개**")
-st.sidebar.caption(f"전체 채택 {len(get_queue('accepted')):,} · 격리 {len(get_queue('quarantine')):,}")
-st.sidebar.caption(f"이번까지 결정 기록: {len(review.load_ledger()):,}건")
+if items:
+    st.sidebar.markdown(f"**대상: {len(items):,}개**")
+    st.sidebar.caption(f"전체 채택 {len(get_queue('accepted')):,} · 격리 {len(get_queue('quarantine')):,}")
+    st.sidebar.caption(f"이번까지 결정 기록: {len(review.load_ledger()):,}건")
 
-if not items:
-    st.info("표시할 항목이 없습니다. 큐/필터를 바꿔보세요.")
-    st.stop()
-
-if "i" not in st.session_state:
-    st.session_state.i = 0
-st.session_state.i = max(0, min(st.session_state.i, len(items) - 1))
-n1, n2, n3 = st.sidebar.columns(3)
-n1.button("◀ 이전", on_click=_go, args=(-1,), use_container_width=True)
-n3.button("다음 ▶", on_click=_go, args=(1,), use_container_width=True)
-st.session_state.i = max(0, min(st.session_state.i, len(items) - 1))
-st.sidebar.progress((st.session_state.i + 1) / len(items),
-                    text=f"{st.session_state.i + 1} / {len(items)}")
-st.session_state["note"] = st.sidebar.text_input("결정 메모(선택)", "")
-st.sidebar.markdown("---")
-NODE_SIZE = st.sidebar.slider("그래프 노드 크기", 800, 6000, 2600, 200)
-FONT_SIZE = st.sidebar.slider("노드 글자 크기", 8, 22, 13, 1)
-_LAYOUT_MAP = {"도면 위치(가독)": "spatial", "펼치기(kamada)": "kamada", "원좌표": "geo"}
-LAYOUT = _LAYOUT_MAP[st.sidebar.radio("그래프 배치", list(_LAYOUT_MAP), index=0)]
-
-cur = items[st.session_state.i]
-sid = cur["sheet_id"]
-idx = get_indices()
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# ✅ 채택 큐 — 데이터셋에 들어간 세대 검수
-# ════════════════════════════════════════════════════════════════════════════
-if qkey == "accepted":
-    gid = cur["graph_id"]
-    st.subheader(f"✅ 채택 검수 — `{gid}`")
-    rec = review.load_record(gid)
-    if rec is None:
-        st.error("레코드 파일이 없습니다(이미 제외됐을 수 있음).")
+    if not items:
+        st.info("표시할 항목이 없습니다. 큐/필터를 바꿔보세요.")
         st.stop()
+
+    if "i" not in st.session_state:
+        st.session_state.i = 0
+    st.session_state.i = max(0, min(st.session_state.i, len(items) - 1))
+    n1, n2, n3 = st.sidebar.columns(3)
+    n1.button("◀ 이전", on_click=_go, args=(-1,), use_container_width=True)
+    n3.button("다음 ▶", on_click=_go, args=(1,), use_container_width=True)
+    st.session_state.i = max(0, min(st.session_state.i, len(items) - 1))
+    st.sidebar.progress((st.session_state.i + 1) / len(items),
+                        text=f"{st.session_state.i + 1} / {len(items)}")
+    st.session_state["note"] = st.sidebar.text_input("결정 메모(선택)", "")
+    st.sidebar.markdown("---")
+    NODE_SIZE = st.sidebar.slider("그래프 노드 크기", 800, 6000, 2600, 200)
+    FONT_SIZE = st.sidebar.slider("노드 글자 크기", 8, 22, 13, 1)
+    _LAYOUT_MAP = {"도면 위치(가독)": "spatial", "펼치기(kamada)": "kamada", "원좌표": "geo"}
+    LAYOUT = _LAYOUT_MAP[st.sidebar.radio("그래프 배치", list(_LAYOUT_MAP), index=0)]
+
+    cur = items[st.session_state.i]
+    sid = cur["sheet_id"]
+    idx = get_indices()
+
+
+    # ════════════════════════════════════════════════════════════════════════════
+    # ✅ 채택 큐 — 데이터셋에 들어간 세대 검수
+    # ════════════════════════════════════════════════════════════════════════════
+    if qkey == "accepted":
+        gid = cur["graph_id"]
+        st.subheader(f"✅ 채택 검수 — `{gid}`")
+        rec = review.load_record(gid)
+        if rec is None:
+            st.error("레코드 파일이 없습니다(이미 제외됐을 수 있음).")
+            st.stop()
+        sheet = get_sheet(sid)
+        focus = [n["id"] for n in rec["layout"]["nodes"] if isinstance(n["id"], int)]
+
+        v1, v2 = st.columns([1.2, 1])
+        with v1:
+            if sheet:
+                st.pyplot(review.render_overlay_fig(sheet, focus_rooms=focus),
+                          use_container_width=True)
+            else:
+                st.warning("도면 PNG 로드 실패 — 그래프만 표시")
+        with v2:
+            st.pyplot(review.render_graph_fig(review.record_to_graph(rec),
+                                              title=f"{gid} 위상", node_size=NODE_SIZE,
+                                              font_size=FONT_SIZE, layout=LAYOUT), use_container_width=True)
+        st.caption(LEGEND)
+
+        m = rec["meta"]
+        c = rec["constraints"]
+        st.markdown(f"**방 {m['n_rooms']} · 문 {m['n_doors']} · 무결성 "
+                    f"{'✅통과' if rec['validation'].get('passed') else '❌위반'}**")
+        st.caption(ORIGIN_NOTE)
+        cc1, cc2 = st.columns(2)
+        cc1.markdown("**program (방 구성) — 우리가 집계**")
+        cc1.json(c["program"])
+        cc2.markdown("**adjacency (인접 요구) — 우리가 파생**")
+        cc2.write(c["adjacency"])
+
+        st.markdown("### 판정")
+        b1, b2 = st.columns(2)
+        if b1.button("✔ 승인 (정상)", type="primary", use_container_width=True):
+            _record(sheet_id=sid, graph_id=gid, action="approve", algorithm="",
+                    params="", result_status="approved")
+            st.success("승인 기록.")
+            _go(1); st.rerun()
+        if b2.button("⚠ 문제 있음 → 격리", use_container_width=True):
+            FLAGGED.mkdir(parents=True, exist_ok=True)
+            src = GRAPHS / f"{gid}.json"
+            if src.exists():
+                src.rename(FLAGGED / f"{gid}.json")
+            _record(sheet_id=sid, graph_id=gid, action="flag_problem", algorithm="",
+                    params="", result_status="flagged")
+            st.warning("문제로 격리(flagged/로 이동).")
+            _go(1); st.rerun()
+        st.stop()
+
+
+    # ════════════════════════════════════════════════════════════════════════════
+    # ⚠ 격리 큐 — 교정 후 데이터셋 레코드 미리보기·승인
+    # ════════════════════════════════════════════════════════════════════════════
+    st.subheader(f"⚠ 격리 교정 — `{sid}`")
+    st.caption(f"격리 사유: `{cur.get('reason','-')}`  ·  원래 program: {cur.get('program','-')}")
     sheet = get_sheet(sid)
-    focus = [n["id"] for n in rec["layout"]["nodes"] if isinstance(n["id"], int)]
+    if sheet is None:
+        st.error("도면 로드 실패(연결 인덱스에 없음).")
+        st.stop()
+
+    before = review.unit_records(sheet.dr, sheet.G, sid, sheet.house)
+    n_before = sum(1 for u in before if u["status"] == "complete")
+
+    st.markdown("### 🔧 교정 알고리즘")
+    cA, cB = st.columns([1.3, 1])
+    with cA:
+        algo = st.radio("선택", ["없음", "벽틈 개방통로 추론", "인접 병합"], horizontal=True)
+        gap = st.slider("max_gap (px) — 방 사이 최대 간격", 20, 120, 60, 5)
+        ratio = st.slider("개구부 비율 임계 (벽틈)", 0.0, 1.0, 0.30, 0.05)
+
+    extra = []
+    if algo == "벽틈 개방통로 추론":
+        extra = review.algo_wallgap_open(sheet.dr, max_gap=gap, min_open_ratio=ratio)
+    elif algo == "인접 병합":
+        extra = review.algo_adjacency_merge(sheet.dr, sheet.G, max_gap=gap)
+
+    H = review.apply_edges(sheet.G, sheet.dr, extra) if extra else sheet.G
+    after = review.unit_records(sheet.dr, H, sid, sheet.house)
+    n_after = sum(1 for u in after if u["status"] == "complete")
+
+    with cB:
+        st.metric("완벽 세대 (교정 전 → 후)", f"{n_before} → {n_after}",
+                  delta=n_after - n_before)
+        st.caption(f"추가 엣지 {len(extra)}개 · 세대 {len(before)}→{len(after)}")
 
     v1, v2 = st.columns([1.2, 1])
     with v1:
-        if sheet:
-            st.pyplot(review.render_overlay_fig(sheet, focus_rooms=focus),
-                      use_container_width=True)
-        else:
-            st.warning("도면 PNG 로드 실패 — 그래프만 표시")
+        st.pyplot(review.render_overlay_fig(sheet, extra_edges=extra), use_container_width=True)
     with v2:
-        st.pyplot(review.render_graph_fig(review.record_to_graph(rec),
-                                          title=f"{gid} 위상", node_size=NODE_SIZE,
-                                          font_size=FONT_SIZE, layout=LAYOUT), use_container_width=True)
+        st.pyplot(review.render_graph_fig(H, title="교정 후 위상" if extra else "현재 위상",
+                                          node_size=NODE_SIZE, font_size=FONT_SIZE, layout=LAYOUT),
+                  use_container_width=True)
     st.caption(LEGEND)
 
-    m = rec["meta"]
-    c = rec["constraints"]
-    st.markdown(f"**방 {m['n_rooms']} · 문 {m['n_doors']} · 무결성 "
-                f"{'✅통과' if rec['validation'].get('passed') else '❌위반'}**")
+    # ── 데이터셋 레코드 미리보기 (실제로 들어갈 내용) ───────────────────────────────
+    st.markdown("### 📦 데이터셋에 들어갈 세대 (교정 후)")
     st.caption(ORIGIN_NOTE)
-    cc1, cc2 = st.columns(2)
-    cc1.markdown("**program (방 구성) — 우리가 집계**")
-    cc1.json(c["program"])
-    cc2.markdown("**adjacency (인접 요구) — 우리가 파생**")
-    cc2.write(c["adjacency"])
-
-    st.markdown("### 판정")
-    b1, b2 = st.columns(2)
-    if b1.button("✔ 승인 (정상)", type="primary", use_container_width=True):
-        _record(sheet_id=sid, graph_id=gid, action="approve", algorithm="",
-                params="", result_status="approved")
-        st.success("승인 기록.")
-        _go(1); st.rerun()
-    if b2.button("⚠ 문제 있음 → 격리", use_container_width=True):
-        FLAGGED.mkdir(parents=True, exist_ok=True)
-        src = GRAPHS / f"{gid}.json"
-        if src.exists():
-            src.rename(FLAGGED / f"{gid}.json")
-        _record(sheet_id=sid, graph_id=gid, action="flag_problem", algorithm="",
-                params="", result_status="flagged")
-        st.warning("문제로 격리(flagged/로 이동).")
-        _go(1); st.rerun()
-    st.stop()
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# ⚠ 격리 큐 — 교정 후 데이터셋 레코드 미리보기·승인
-# ════════════════════════════════════════════════════════════════════════════
-st.subheader(f"⚠ 격리 교정 — `{sid}`")
-st.caption(f"격리 사유: `{cur.get('reason','-')}`  ·  원래 program: {cur.get('program','-')}")
-sheet = get_sheet(sid)
-if sheet is None:
-    st.error("도면 로드 실패(연결 인덱스에 없음).")
-    st.stop()
-
-before = review.unit_records(sheet.dr, sheet.G, sid, sheet.house)
-n_before = sum(1 for u in before if u["status"] == "complete")
-
-st.markdown("### 🔧 교정 알고리즘")
-cA, cB = st.columns([1.3, 1])
-with cA:
-    algo = st.radio("선택", ["없음", "벽틈 개방통로 추론", "인접 병합"], horizontal=True)
-    gap = st.slider("max_gap (px) — 방 사이 최대 간격", 20, 120, 60, 5)
-    ratio = st.slider("개구부 비율 임계 (벽틈)", 0.0, 1.0, 0.30, 0.05)
-
-extra = []
-if algo == "벽틈 개방통로 추론":
-    extra = review.algo_wallgap_open(sheet.dr, max_gap=gap, min_open_ratio=ratio)
-elif algo == "인접 병합":
-    extra = review.algo_adjacency_merge(sheet.dr, sheet.G, max_gap=gap)
-
-H = review.apply_edges(sheet.G, sheet.dr, extra) if extra else sheet.G
-after = review.unit_records(sheet.dr, H, sid, sheet.house)
-n_after = sum(1 for u in after if u["status"] == "complete")
-
-with cB:
-    st.metric("완벽 세대 (교정 전 → 후)", f"{n_before} → {n_after}",
-              delta=n_after - n_before)
-    st.caption(f"추가 엣지 {len(extra)}개 · 세대 {len(before)}→{len(after)}")
-
-v1, v2 = st.columns([1.2, 1])
-with v1:
-    st.pyplot(review.render_overlay_fig(sheet, extra_edges=extra), use_container_width=True)
-with v2:
-    st.pyplot(review.render_graph_fig(H, title="교정 후 위상" if extra else "현재 위상",
-                                      node_size=NODE_SIZE, font_size=FONT_SIZE, layout=LAYOUT),
-              use_container_width=True)
-st.caption(LEGEND)
-
-# ── 데이터셋 레코드 미리보기 (실제로 들어갈 내용) ───────────────────────────────
-st.markdown("### 📦 데이터셋에 들어갈 세대 (교정 후)")
-st.caption(ORIGIN_NOTE)
-complete_units = [u for u in after if u["status"] == "complete"]
-if not complete_units:
-    st.warning("아직 완벽한 세대가 없습니다. 알고리즘/임계값을 조절해 보세요.")
-else:
-    st.success(f"완벽 세대 {len(complete_units)}개 — 채택 시 데이터셋에 기록됩니다.")
-    for u in complete_units:
-        rec = u["record"]
-        with st.expander(f"🏠 {rec['graph_id']}  ·  방 {rec['meta']['n_rooms']}  ·  "
-                         f"무결성 {'✅' if rec['validation'].get('passed') else '❌'}"):
-            ec1, ec2 = st.columns([1, 1])
-            with ec1:
-                st.caption("이 세대만 도면에서 강조")
-                st.pyplot(review.render_overlay_fig(sheet, extra_edges=extra,
-                          focus_rooms=[n for n in u["rooms"] if isinstance(n, int)]),
-                          use_container_width=True)
-            with ec2:
-                st.caption("program (방 구성)")
-                st.json(rec["constraints"]["program"])
-                st.caption("adjacency (인접 요구)")
-                st.write(rec["constraints"]["adjacency"])
-
-# ── 결정 버튼 ─────────────────────────────────────────────────────────────────
-st.markdown("### ✅ 결정")
-b1, b2, b3, b4 = st.columns(4)
-
-
-def _save(units, action, result):
-    GRAPHS.mkdir(parents=True, exist_ok=True)
-    w = 0
-    for u in units:
-        if u["status"] == "complete":
+    complete_units = [u for u in after if u["status"] == "complete"]
+    if not complete_units:
+        st.warning("아직 완벽한 세대가 없습니다. 알고리즘/임계값을 조절해 보세요.")
+    else:
+        st.success(f"완벽 세대 {len(complete_units)}개 — 채택 시 데이터셋에 기록됩니다.")
+        for u in complete_units:
             rec = u["record"]
-            (GRAPHS / f"{rec['graph_id']}.json").write_text(
-                json.dumps(rec, ensure_ascii=False), encoding="utf-8")
-            w += 1
-    _record(sheet_id=sid, graph_id=cur.get("graph_id", ""), action=action,
-            algorithm=algo, params=f"gap={gap},ratio={ratio}",
-            result_status=f"{result}_{w}", n_rooms_before=n_before, n_rooms_after=n_after)
-    return w
+            with st.expander(f"🏠 {rec['graph_id']}  ·  방 {rec['meta']['n_rooms']}  ·  "
+                             f"무결성 {'✅' if rec['validation'].get('passed') else '❌'}"):
+                ec1, ec2 = st.columns([1, 1])
+                with ec1:
+                    st.caption("이 세대만 도면에서 강조")
+                    st.pyplot(review.render_overlay_fig(sheet, extra_edges=extra,
+                              focus_rooms=[n for n in u["rooms"] if isinstance(n, int)]),
+                              use_container_width=True)
+                with ec2:
+                    st.caption("program (방 구성)")
+                    st.json(rec["constraints"]["program"])
+                    st.caption("adjacency (인접 요구)")
+                    st.write(rec["constraints"]["adjacency"])
+
+    # ── 결정 버튼 ─────────────────────────────────────────────────────────────────
+    st.markdown("### ✅ 결정")
+    b1, b2, b3, b4 = st.columns(4)
 
 
-if b1.button("🔧 교정 적용·채택", type="primary", disabled=not extra or n_after == 0,
-             use_container_width=True):
-    w = _save(after, "apply_correction", "recovered")
-    st.success(f"교정 적용 — 완벽 세대 {w}개 데이터셋 기록.")
-    _go(1); st.rerun()
-if b2.button("✔ 그대로 채택", disabled=n_after == 0, use_container_width=True):
-    w = _save(after, "accept_as_is", "accepted")
-    st.success(f"채택 {w}개 기록.")
-    _go(1); st.rerun()
-if b3.button("🗑 영구 제외", use_container_width=True):
-    _record(sheet_id=sid, action="exclude", algorithm=algo, params="",
-            result_status="excluded")
-    st.warning("영구 제외 기록.")
-    _go(1); st.rerun()
-if b4.button("⏭ 보류·다음", use_container_width=True):
-    _record(sheet_id=sid, action="skip", algorithm=algo, params="", result_status="skipped")
-    _go(1); st.rerun()
+    def _save(units, action, result):
+        GRAPHS.mkdir(parents=True, exist_ok=True)
+        w = 0
+        for u in units:
+            if u["status"] == "complete":
+                rec = u["record"]
+                (GRAPHS / f"{rec['graph_id']}.json").write_text(
+                    json.dumps(rec, ensure_ascii=False), encoding="utf-8")
+                w += 1
+        _record(sheet_id=sid, graph_id=cur.get("graph_id", ""), action=action,
+                algorithm=algo, params=f"gap={gap},ratio={ratio}",
+                result_status=f"{result}_{w}", n_rooms_before=n_before, n_rooms_after=n_after)
+        return w
+
+
+    if b1.button("🔧 교정 적용·채택", type="primary", disabled=not extra or n_after == 0,
+                 use_container_width=True):
+        w = _save(after, "apply_correction", "recovered")
+        st.success(f"교정 적용 — 완벽 세대 {w}개 데이터셋 기록.")
+        _go(1); st.rerun()
+    if b2.button("✔ 그대로 채택", disabled=n_after == 0, use_container_width=True):
+        w = _save(after, "accept_as_is", "accepted")
+        st.success(f"채택 {w}개 기록.")
+        _go(1); st.rerun()
+    if b3.button("🗑 영구 제외", use_container_width=True):
+        _record(sheet_id=sid, action="exclude", algorithm=algo, params="",
+                result_status="excluded")
+        st.warning("영구 제외 기록.")
+        _go(1); st.rerun()
+    if b4.button("⏭ 보류·다음", use_container_width=True):
+        _record(sheet_id=sid, action="skip", algorithm=algo, params="", result_status="skipped")
+        _go(1); st.rerun()
