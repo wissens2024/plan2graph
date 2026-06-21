@@ -30,14 +30,14 @@ class MultiHeadAttention(nn.Module):
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor | None = None) -> torch.Tensor:
         B, T, D = x.shape
-        qkv = self.qkv(x).view(B, T, 3, self.n_head, self.d_k).transpose(1, 3)  # (B,3,nh,T,dk)
-        q, k, v = qkv[:, 0], qkv[:, 1], qkv[:, 2]
+        qkv = self.qkv(x).view(B, T, 3, self.n_head, self.d_k).permute(0, 2, 3, 1, 4)  # (B,3,nh,T,dk)
+        q, k, v = qkv[:, 0], qkv[:, 1], qkv[:, 2]  # 각각 (B,nh,T,dk)
         scores = (q @ k.transpose(-2, -1)) / (self.d_k ** 0.5)
         if mask is not None:
             scores = scores + mask.unsqueeze(0).unsqueeze(0)
         attn = F.softmax(scores, dim=-1)
-        out = attn @ v
-        out = out.transpose(1, 2).contiguous().view(B, T, D)
+        out = attn @ v  # (B,nh,T,dk)
+        out = out.transpose(1, 2).contiguous().view(B, T, D)  # (B,T,nh,dk) → (B,T,D)
         return self.proj(out)
 
 
