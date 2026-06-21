@@ -73,13 +73,14 @@ class WallCycleLM(nn.Module):
                  n_head: int = 8, max_len: int = 1152, dropout: float = 0.1):
         super().__init__()
         self.max_len = max_len
-        self.d_model = d_model
         self.tok = nn.Embedding(vocab_size, d_model)
         self.drop = nn.Dropout(dropout)
         dim_ff = 4 * d_model
         self.blocks = nn.ModuleList([
             TransformerBlock(d_model, n_head, dim_ff) for _ in range(n_layer)
         ])
+        self.norm = nn.LayerNorm(d_model)
+        self.head = nn.Linear(d_model, vocab_size, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """x: (B,T) 토큰 id → (B,T,vocab) logits. causal."""
@@ -88,8 +89,7 @@ class WallCycleLM(nn.Module):
         mask = torch.triu(torch.full((T, T), float("-inf"), device=x.device), diagonal=1)
         for block in self.blocks:
             h = block(h, mask=mask)
-        # proj to vocab (no final ln, no explicit head)
-        return F.linear(h, self.tok.weight)
+        return self.head(self.norm(h))
 
     @torch.no_grad()
     def generate(self, prefix: torch.Tensor, max_new: int, eos: int,
