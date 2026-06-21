@@ -29,6 +29,8 @@ if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 @app.get("/")
+@app.get("/floorplan/")
+@app.get("/floorplan")
 async def root():
     """도면생성 페이지"""
     return FileResponse(ROOT / "static" / "floorplan.html")
