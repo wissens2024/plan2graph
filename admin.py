@@ -1131,7 +1131,6 @@ if which.startswith("📗"):
                     st.code(traceback.format_exc(), language="python")
 
         st.divider()
-    st.stop()
 
 if which.startswith("⚖️"):
     st.title("⚖️ 성능 비교 — 기하모델 A/B (도면 품질)")
