@@ -54,19 +54,31 @@ async def generate_floorplan(bedrooms: int = 3, bathrooms: int = 2):
 
         # 1️⃣ 모델 로드
         import torch
+        from plan2graph.generators.wall_cycle import WallCycleLM
+
         ckpt_path = ROOT / "ckpts" / "korplan_ar_k_fmlm80m.pt"
         ckpt = torch.load(ckpt_path, map_location="cpu")
+        a = ckpt["args"]
 
-        from plan2graph.wallcycle_codec import WallCycleLM, V
-        model_dict = ckpt["model"]
-        actual_dim_ff = model_dict["blocks.0.mlp.w1.weight"].shape[0]
-        model = WallCycleLM(vocab_size=len(V), dim_ff=actual_dim_ff)
-        model.load_state_dict(model_dict)
+        mlp_w1_shape = ckpt["model"]["blocks.0.mlp.w1.weight"].shape
+        dim_ff = mlp_w1_shape[0]
+
+        model = WallCycleLM(wc.V["size"], d_model=a["d_model"], n_layer=a["n_layer"],
+                           n_head=a.get("n_head", 8), max_len=a["max_len"],
+                           dim_ff=dim_ff)
+        model.load_state_dict(ckpt["model"])
         model.eval()
 
         # 2️⃣ 토큰 생성 (Prefix)
         vocab = wc.V
-        prefix = [vocab.BOS, vocab.KOR, vocab.APT, vocab.SCHEMA_G0, vocab.SCOPE_UNIT, 1]
+        prefix = [
+            vocab.BOS,
+            vocab.KOR,          # country: KR
+            vocab.APT,          # housing: apartment
+            vocab.SCHEMA_G0,    # schema: g-0.4
+            vocab.SCOPE_UNIT,   # scope: unit
+            1,                  # units: 1세대
+        ]
         prefix_tensor = torch.tensor([prefix], dtype=torch.long)
 
         # 3️⃣ 도면 생성
