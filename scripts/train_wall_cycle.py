@@ -104,6 +104,7 @@ def main():
                     help="생성 시 constrained decoding(ADR-0012 §3) 적용")
     ap.add_argument("--orthogonal", action="store_true", help="직각 강제(대각선 차단)")
     ap.add_argument("--out", default="")
+    ap.add_argument("--resume", default="", help="사전학습 체크포인트 로드 (FT용)")
     args = ap.parse_args()
 
     dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -116,6 +117,14 @@ def main():
 
     model = WallCycleLM(vocab["size"], d_model=args.d_model, n_layer=args.n_layer,
                         n_head=args.n_head, max_len=args.max_len).to(dev)
+
+    # Resume from checkpoint if specified
+    start_ep = 1
+    if args.resume:
+        ckpt = torch.load(args.resume, map_location=dev)
+        model.load_state_dict(ckpt["model"])
+        start_ep = ckpt.get("epoch", 0) + 1
+        print(f"[resume] {args.resume} ep{ckpt.get('epoch', '?')} 로드 → ep{start_ep}부터 시작")
     nparam = sum(p.numel() for p in model.parameters())
     print(f"[model] {nparam/1e6:.1f}M params, d={args.d_model} L={args.n_layer}")
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
@@ -123,7 +132,7 @@ def main():
     if mask_fn:
         print("[constrained] decoding 마스크 ON (ADR-0012 §3)")
 
-    for ep in range(1, args.epochs + 1):
+    for ep in range(start_ep, args.epochs + 1):
         model.train()
         tot = 0.0
         for x in dl:
