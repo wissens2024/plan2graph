@@ -1145,9 +1145,9 @@ elif which.startswith("✏️"):
     - 기하 오류 수정
     """)
 
-    # edit_server (포트 8600) 링크
+    # edit_server (포트 8600) 링크 — nginx `/editor/` 경로
     st.markdown("#### 📝 도면 편집기")
-    st.markdown("[🔗 도면 편집 페이지로 이동 (포트 8600)](http://127.0.0.1:8600)", unsafe_allow_html=True)
+    st.markdown("[🔗 도면 편집 페이지로 이동](/editor/)", unsafe_allow_html=True)
     st.info("📌 편집기는 별도 탭에서 열립니다. 벽, 방, 문, 창을 수정한 후 저장하세요.")
 
 elif which.startswith("⚖️"):
