@@ -364,7 +364,7 @@ def _record(**kw):
 st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
 _MENU = ["🧮 종합 현황",
          "🏢 AI-Hub 검수 (T)", "🏠 CubiCasa 검수", "📐 RPLAN 검수",
-         "🧩 AI-Hub 검수 (G)", "📗 도면 생성",
+         "🧩 AI-Hub 검수 (G)", "📗 도면 생성", "✏️ 도면정보보정",
          "⚖️ 성능 비교",
          "📜 법령 DB"]
 try:  # 동그라미 없는 클릭형 메뉴(streamlit-option-menu). 미설치 시 라디오로 폴백.
@@ -1134,6 +1134,21 @@ if which.startswith("📗"):
                     st.code(traceback.format_exc(), language="python")
 
         st.divider()
+
+elif which.startswith("✏️"):
+    st.title("✏️ 도면정보보정 — 생성 도면 기하 편집")
+    st.markdown("""
+    생성된 도면의 기하 정보를 수동으로 조정합니다.
+    - 벽 위치 및 두께 조정
+    - 방 경계 수정
+    - 문·창 위치 재배치
+    - 기하 오류 수정
+    """)
+
+    # edit_server (포트 8600) 링크
+    st.markdown("#### 📝 도면 편집기")
+    st.markdown("[🔗 도면 편집 페이지로 이동 (포트 8600)](http://127.0.0.1:8600)", unsafe_allow_html=True)
+    st.info("📌 편집기는 별도 탭에서 열립니다. 벽, 방, 문, 창을 수정한 후 저장하세요.")
 
 if which.startswith("⚖️"):
     st.title("⚖️ 성능 비교 — 기하모델 A/B (도면 품질)")
