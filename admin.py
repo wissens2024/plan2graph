@@ -883,9 +883,9 @@ if which.startswith("📗"):
         "C": "Raster→벡터 헤지(추후) — 다양성 확보용 백업 엔진.",
     }
     _MODELS = [
-        {"name": "KorPlan-AR-K (ep50)", "engine": "B", "data": "한국 Parsed", "status": "✅ 완료", "ckpt": "ckpts/korplan_ar_k_fmlm80m.pt"},
-        {"name": "KorPlan-AR-K-FT-v1", "engine": "B", "data": "한국 Parsed", "status": "✅ 완료", "ckpt": "ckpts/korplan_ar_korean_ftR.pt"},
-        {"name": "KorPlan-AR-K-FT-v2", "engine": "B", "data": "한국 Parsed", "status": "✅ 최신", "ckpt": "ckpts/korplan_ar_korean_ftR_lr5e5.pt"},
+        {"name": "KorPlan-AR-K (ep50)", "engine": "B", "data": "한국 Parsed\n(train 23M, 9.7k 도면)", "config": "d=512, L=24, H=32\n77.4M 파라미터", "train": "ep50 완료\nLR:1e-4, BS:32", "status": "✅ 완료", "ckpt": "ckpts/korplan_ar_k_fmlm80m.pt"},
+        {"name": "KorPlan-AR-K-FT-v1", "engine": "B", "data": "한국 Parsed\n(train 23M, 9.7k 도면)", "config": "d=512, L=24, H=32\n77.4M 파라미터", "train": "기본모델 FT\nLR:1e-4, ep50", "status": "✅ 완료", "ckpt": "ckpts/korplan_ar_korean_ftR.pt"},
+        {"name": "KorPlan-AR-K-FT-v2", "engine": "B", "data": "한국 Parsed\n(train 23M, 9.7k 도면)", "config": "d=512, L=24, H=32\n77.4M 파라미터", "train": "기본모델 FT\nLR:5e-5, ep50", "status": "⏳ 진행 중", "ckpt": "ckpts/korplan_ar_korean_ftR_lr5e5.pt"},
     ]
 
     with st.container(border=True):
@@ -912,9 +912,10 @@ if which.startswith("📗"):
         st.markdown("\n모델 선택 기준: **현재 Track B(KorPlan-AR-K)가 테스트 가능** — 한국 Parsed 데이터로 아파트 도면 생성")
         st.table([{"모델": m["name"],
                    "엔진": m["engine"],
-                   "데이터": m["data"],
-                   "상태": m["status"],
-                   "ckpt": m["ckpt"] if m["ckpt"] else "—"} for m in _MODELS])
+                   "데이터셋": m["data"],
+                   "모델 구성": m["config"],
+                   "학습": m["train"],
+                   "상태": m["status"]} for m in _MODELS])
         st.caption("✅ 체크: Track B KorPlan-AR-K로 자연어 도면 생성 테스트 중")
 
     with st.container(border=True):
