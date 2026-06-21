@@ -363,8 +363,8 @@ def _record(**kw):
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
 st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
 _MENU = ["🧮 종합 현황",
-         "🏢 AI-Hub 검수 (T)", "🏠 CubiCasa 검수", "📐 RPLAN 검수",
-         "🧩 AI-Hub 검수 (G)", "📗 도면 생성", "✏️ 도면정보보정",
+         "🏢 AI-Hub 검수 (Parsed)", "🏠 CubiCasa 검수", "📐 RPLAN 검수",
+         "🧩 AI-Hub 검수 (Corrected)", "📗 도면 생성", "✏️ 도면정보보정",
          "⚖️ 성능 비교",
          "📜 법령 DB"]
 try:  # 동그라미 없는 클릭형 메뉴(streamlit-option-menu). 미설치 시 라디오로 폴백.
