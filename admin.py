@@ -1150,7 +1150,7 @@ elif which.startswith("✏️"):
     st.markdown("[🔗 도면 편집 페이지로 이동 (포트 8600)](http://127.0.0.1:8600)", unsafe_allow_html=True)
     st.info("📌 편집기는 별도 탭에서 열립니다. 벽, 방, 문, 창을 수정한 후 저장하세요.")
 
-if which.startswith("⚖️"):
+elif which.startswith("⚖️"):
     st.title("⚖️ 성능 비교 — 기하모델 A/B (도면 품질)")
     st.caption("같은 파이프라인·같은 데이터, **기하모델만 변수**(ADR-0007). "
                "T=약한 기하(박스 baseline) · G=강한 기하(소버린 엔진, ADR-0006). "
