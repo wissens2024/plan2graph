@@ -679,7 +679,8 @@ def decode(tokens: list, vocab) -> Canon:
 
     # 기본값 방이 없으면 추가
     if not canon.rooms:
-        canon.rooms = [{"id": 0, "role_id": 0, "cycle": [0, grid, grid, 0]}]
+        canonical_cycle = list(range(len(canon.corners))) if len(canon.corners) >= 3 else [0] * max(1, len(canon.corners))
+        canon.rooms = [{"id": 0, "role_id": 0, "cycle": canonical_cycle}]
 
     # SEC_OPEN 파싱: 없으면 openings 비워두고 반환
     if i >= len(tokens) or tokens[i] != V.SEC_OPEN:
