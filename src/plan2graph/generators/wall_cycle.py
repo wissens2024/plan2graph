@@ -14,6 +14,58 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
+
+class MultiHeadAttention(nn.Module):
+    """checkpoint: blocks.N.attn.{qkv,proj}.weight"""
+    def __init__(self, d_model: int, n_head: int):
+        super().__init__()
+        assert d_model % n_head == 0
+        self.d_model = d_model
+        self.n_head = n_head
+        self.d_k = d_model // n_head
+        self.qkv = nn.Linear(d_model, 3 * d_model, bias=False)
+        self.proj = nn.Linear(d_model, d_model, bias=False)
+
+    def forward(self, x: torch.Tensor, mask: torch.Tensor | None = None) -> torch.Tensor:
+        B, T, D = x.shape
+        qkv = self.qkv(x).view(B, T, 3, self.n_head, self.d_k).transpose(1, 3)  # (B,3,nh,T,dk)
+        q, k, v = qkv[:, 0], qkv[:, 1], qkv[:, 2]
+        scores = (q @ k.transpose(-2, -1)) / (self.d_k ** 0.5)
+        if mask is not None:
+            scores = scores + mask.unsqueeze(0).unsqueeze(0)
+        attn = F.softmax(scores, dim=-1)
+        out = attn @ v
+        out = out.transpose(1, 2).contiguous().view(B, T, D)
+        return self.proj(out)
+
+
+class FeedForward(nn.Module):
+    """checkpoint: blocks.N.mlp.{w1,w3,w2}.weight"""
+    def __init__(self, d_model: int, dim_ff: int):
+        super().__init__()
+        self.w1 = nn.Linear(d_model, dim_ff, bias=False)
+        self.w3 = nn.Linear(d_model, dim_ff, bias=False)
+        self.w2 = nn.Linear(dim_ff, d_model, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.w2(F.gelu(self.w1(x)) * self.w3(x))
+
+
+class TransformerBlock(nn.Module):
+    """checkpoint: blocks.N.{n1,attn,n2,mlp}.* """
+    def __init__(self, d_model: int, n_head: int, dim_ff: int):
+        super().__init__()
+        self.n1 = nn.LayerNorm(d_model)
+        self.attn = MultiHeadAttention(d_model, n_head)
+        self.n2 = nn.LayerNorm(d_model)
+        self.mlp = FeedForward(d_model, dim_ff)
+
+    def forward(self, x: torch.Tensor, mask: torch.Tensor | None = None) -> torch.Tensor:
+        x = x + self.attn(self.n1(x), mask=mask)
+        x = x + self.mlp(self.n2(x))
+        return x
 
 
 class WallCycleLM(nn.Module):
@@ -24,23 +76,13 @@ class WallCycleLM(nn.Module):
         self.tok = nn.Embedding(vocab_size, d_model)
         self.pos = nn.Embedding(max_len, d_model)
         self.drop = nn.Dropout(dropout)
-        layer = nn.TransformerEncoderLayer(
-            d_model, n_head, dim_feedforward=4 * d_model, dropout=dropout,
-            activation="gelu", batch_first=True, norm_first=True)
-        self.blocks = nn.TransformerEncoder(layer, n_layer)
+        dim_ff = 4 * d_model
+        self.blocks = nn.ModuleList([
+            TransformerBlock(d_model, n_head, dim_ff) for _ in range(n_layer)
+        ])
         self.ln = nn.LayerNorm(d_model)
         self.head = nn.Linear(d_model, vocab_size, bias=False)
-        self.head.weight = self.tok.weight              # weight tying
-        self.apply(self._init)
-
-    @staticmethod
-    def _init(m):
-        if isinstance(m, nn.Linear):
-            nn.init.normal_(m.weight, std=0.02)
-            if m.bias is not None:
-                nn.init.zeros_(m.bias)
-        elif isinstance(m, nn.Embedding):
-            nn.init.normal_(m.weight, std=0.02)
+        self.head.weight = self.tok.weight
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """x: (B,T) 토큰 id → (B,T,vocab) logits. causal."""
@@ -48,7 +90,8 @@ class WallCycleLM(nn.Module):
         pos = torch.arange(T, device=x.device)
         h = self.drop(self.tok(x) + self.pos(pos)[None])
         mask = torch.triu(torch.full((T, T), float("-inf"), device=x.device), diagonal=1)
-        h = self.blocks(h, mask=mask, is_causal=True)
+        for block in self.blocks:
+            h = block(h, mask=mask)
         return self.head(self.ln(h))
 
     @torch.no_grad()
