@@ -46,16 +46,19 @@ async def health():
 async def generate_floorplan(bedrooms: int = 3, bathrooms: int = 2):
     """도면 생성 엔드포인트"""
     try:
-        # 입력 검증
-        if not (1 <= bedrooms <= 5):
-            raise ValueError("침실은 1-5개여야 합니다")
-        if not (1 <= bathrooms <= 3):
-            raise ValueError("욕실은 1-3개여야 합니다")
-
-        # 1️⃣ 모델 로드
         import torch
         from plan2graph.generators.wall_cycle import WallCycleLM
 
+        # vocab 로드
+        vocab_path = Path(config.DATA_DIR) / "staging" / "tokens_korean_clean" / "vocab.json"
+        if not vocab_path.exists():
+            vocab = wc._vocab(grid=128)
+            vocab_path.parent.mkdir(parents=True, exist_ok=True)
+            json.dump(vocab, open(vocab_path, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
+        else:
+            vocab = json.load(open(vocab_path, encoding="utf-8"))
+
+        # 모델 로드
         ckpt_path = ROOT / "ckpts" / "korplan_ar_k_fmlm80m.pt"
         ckpt = torch.load(ckpt_path, map_location="cpu")
         a = ckpt["args"]
@@ -63,41 +66,37 @@ async def generate_floorplan(bedrooms: int = 3, bathrooms: int = 2):
         mlp_w1_shape = ckpt["model"]["blocks.0.mlp.w1.weight"].shape
         dim_ff = mlp_w1_shape[0]
 
-        model = WallCycleLM(wc.V["size"], d_model=a["d_model"], n_layer=a["n_layer"],
-                           n_head=a.get("n_head", 8), max_len=a["max_len"],
-                           dim_ff=dim_ff)
+        model = WallCycleLM(vocab["size"], d_model=a["d_model"], n_layer=a["n_layer"],
+                           n_head=a.get("n_head", 8), max_len=a["max_len"], dim_ff=dim_ff)
         model.load_state_dict(ckpt["model"])
         model.eval()
 
-        # 2️⃣ 토큰 생성 (Prefix)
-        vocab = wc.V
+        # Prefix 토큰
         prefix = [
-            vocab.BOS,
-            vocab.KOR,          # country: KR
-            vocab.APT,          # housing: apartment
-            vocab.SCHEMA_G0,    # schema: g-0.4
-            vocab.SCOPE_UNIT,   # scope: unit
-            1,                  # units: 1세대
+            vocab["meta"] + 0,  # country: KR (0)
+            vocab["meta"] + len(wc.COUNTRIES) + 0,  # housing: APT (0)
+            vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 0,  # schema: g-0.4 (0)
+            vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 1 + 0,  # scope: UNIT (0)
+            vocab["units"] + 1,  # units: 1
         ]
         prefix_tensor = torch.tensor([prefix], dtype=torch.long)
 
-        # 3️⃣ 도면 생성
-        eos = vocab.EOS
+        # 생성
+        eos = vocab.get("EOS", 2)
         with torch.no_grad():
             generated = model.generate(prefix_tensor, max_new=650, eos=eos, temperature=1.0, top_k=40)
 
         row = generated[0].tolist()
 
-        # 4️⃣ 디코딩 + 기하 구성
+        # 디코딩 + 기하
         canon = wc.decode(row, vocab)
         g = wc.canon_to_graph(canon)
 
-        # 5️⃣ 렌더링
+        # 렌더링
         geom = cr.from_geomgraph(g)
         geom = cr.autocorrect(geom)
         png_bytes = cr.render_png(geom)
 
-        # Base64 인코딩
         png_b64 = base64.b64encode(png_bytes).decode()
 
         return JSONResponse({
@@ -115,7 +114,7 @@ async def generate_floorplan(bedrooms: int = 3, bathrooms: int = 2):
             content={
                 "status": "error",
                 "error": str(e),
-                "traceback": traceback.format_exc()
+                "traceback": traceback.format_exc()[:500]
             }
         )
 
