@@ -374,7 +374,7 @@ try:  # 동그라미 없는 클릭형 메뉴(streamlit-option-menu). 미설치 �
             None, _MENU, key="mainmenu",
             manual_select=st.session_state.pop("_goto_idx", None),  # 다른 메뉴서 전환용
             icons=["" for _ in _MENU],   # 라벨에 이미 이모지 → bootstrap 기본아이콘 숨김
-            default_index=0,
+            default_index=5,  # 📗 도면 생성 기본값 (인덱스 5)
             styles={
                 "container": {"padding": "0", "background-color": "transparent"},
                 "nav-link": {"font-size": "0.85rem", "padding": "4px 10px",
