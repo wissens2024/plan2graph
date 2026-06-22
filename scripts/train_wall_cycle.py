@@ -146,11 +146,14 @@ def main():
         model.load_state_dict(ckpt["model"])
     nparam = sum(p.numel() for p in model.parameters())
     print(f"[model] {nparam/1e6:.1f}M params, d={args.d_model} L={args.n_layer}")
+    print(f"[DEBUG] 옵티마이저 생성 중...")
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
+    print(f"[DEBUG] 옵티마이저 생성 완료")
     mask_fn = make_constraint_mask(vocab, orthogonal=args.orthogonal) if args.constrained else None
     if mask_fn:
         print("[constrained] decoding 마스크 ON (ADR-0012 §3)")
 
+    print(f"[DEBUG] ep{start_ep}~{args.epochs} 학습 루프 시작")
     for ep in range(start_ep, args.epochs + 1):
         model.train()
         tot = 0.0
