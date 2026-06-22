@@ -119,7 +119,7 @@ def main():
     start_ep = 1
     ckpt = None
     dim_ff = None
-    if args.resume or args.out:  # If resuming or output specified, look for existing checkpoint
+    if args.resume:  # Resume only if explicitly specified
         ckpt_path = args.resume if args.resume else args.out
         try:
             ckpt = torch.load(ckpt_path, map_location=dev)
