@@ -99,12 +99,9 @@ def main():
     ap.add_argument("--n-head", type=int, default=8)
     ap.add_argument("--max-len", type=int, default=1152)
     ap.add_argument("--diag-every", type=int, default=25)
-    ap.add_argument("--ckpt-every", type=int, default=10, help="N epoch마다 체크포인트 저장")
     ap.add_argument("--constrained", action="store_true",
                     help="생성 시 constrained decoding(ADR-0012 §3) 적용")
-    ap.add_argument("--orthogonal", action="store_true", help="직각 강제(대각선 차단)")
     ap.add_argument("--out", default="")
-    ap.add_argument("--resume", default="", help="사전학습 체크포인트 로드 (FT용)")
     args = ap.parse_args()
 
     dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -115,46 +112,16 @@ def main():
                     collate_fn=lambda b: collate(b, pad))
     print(f"[data] {len(ds)} seqs, vocab={vocab['size']}, device={dev}")
 
-    # Load/resume from checkpoint
-    start_ep = 1
-    ckpt = None
-    dim_ff = None
-    if args.resume:  # Resume only if explicitly specified
-        ckpt_path = args.resume if args.resume else args.out
-        try:
-            ckpt = torch.load(ckpt_path, map_location=dev)
-            ckpt_args = ckpt.get("args", {})
-            # Use checkpoint config for model
-            args.d_model = ckpt_args.get("d_model", args.d_model)
-            args.n_layer = ckpt_args.get("n_layer", args.n_layer)
-            args.n_head = ckpt_args.get("n_head", args.n_head)
-            args.max_len = ckpt_args.get("max_len", args.max_len)
-            # Calculate dim_ff from checkpoint mlp.w1.weight shape
-            mlp_w1_shape = ckpt["model"]["blocks.0.mlp.w1.weight"].shape
-            dim_ff = mlp_w1_shape[0]
-            start_ep = ckpt.get("epoch", 0) + 1 if args.resume else 1
-            print(f"[CKPT-DEBUG] dim_ff={dim_ff} from mlp_w1_shape={mlp_w1_shape}")
-            print(f"[ckpt] {ckpt_path} → d={args.d_model} L={args.n_layer} H={args.n_head} dim_ff={dim_ff}, ep{start_ep}부터")
-        except Exception as e:
-            print(f"[ERR] {type(e).__name__}: {e}")
-            print(f"[new] 처음부터 학습 (d={args.d_model} L={args.n_layer} H={args.n_head})")
-            ckpt = None
-
     model = WallCycleLM(vocab["size"], d_model=args.d_model, n_layer=args.n_layer,
-                        n_head=args.n_head, max_len=args.max_len, dim_ff=dim_ff).to(dev)
-    if ckpt:
-        model.load_state_dict(ckpt["model"])
+                        n_head=args.n_head, max_len=args.max_len).to(dev)
     nparam = sum(p.numel() for p in model.parameters())
     print(f"[model] {nparam/1e6:.1f}M params, d={args.d_model} L={args.n_layer}")
-    print(f"[DEBUG] 옵티마이저 생성 중...")
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
-    print(f"[DEBUG] 옵티마이저 생성 완료")
-    mask_fn = make_constraint_mask(vocab, orthogonal=args.orthogonal) if args.constrained else None
+    mask_fn = make_constraint_mask(vocab) if args.constrained else None
     if mask_fn:
         print("[constrained] decoding 마스크 ON (ADR-0012 §3)")
 
-    print(f"[DEBUG] ep{start_ep}~{args.epochs} 학습 루프 시작")
-    for ep in range(start_ep, args.epochs + 1):
+    for ep in range(1, args.epochs + 1):
         model.train()
         tot = 0.0
         for x in dl:
@@ -170,11 +137,10 @@ def main():
         if ep % args.diag_every == 0 or ep == args.epochs:
             d = diagnose(model, vocab, dev, mask_fn=mask_fn)
             print(f"ep{ep:4d} loss {tot/len(ds):.4f} | valid {d['valid_rate']} "
-                  f"uniq {d['uniq_rate']} rooms~{d['mean_rooms']}(max{d['max_rooms']})",
-                  flush=True)
-        if args.out and (ep % args.ckpt_every == 0 or ep == args.epochs):
-            torch.save({"model": model.state_dict(), "args": vars(args), "epoch": ep}, args.out)
-            print(f"  [ckpt] ep{ep} → {args.out}", flush=True)
+                  f"uniq {d['uniq_rate']} rooms~{d['mean_rooms']}(max{d['max_rooms']})")
+    if args.out:
+        torch.save({"model": model.state_dict(), "args": vars(args)}, args.out)
+        print(f"[saved] {args.out}")
 
 
 if __name__ == "__main__":
