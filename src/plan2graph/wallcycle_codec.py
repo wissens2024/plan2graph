@@ -405,6 +405,11 @@ def _edge_pos(ek, pos, corners, bbox, grid, nbins=16):
 def canon_to_graph(canon: Canon) -> dict:
     bbox, grid = canon.bbox, canon.grid
     cpx = [_dequant(q, bbox, grid) for q in canon.corners]   # corner → px
+    nc = len(cpx)
+    # 견고화: 생성물(under-trained)의 범위초과 corner 참조 제거 → IndexError 방지.
+    for rm in canon.rooms:
+        rm["cycle"] = [c for c in rm["cycle"] if 0 <= c < nc]
+    canon.rooms = [rm for rm in canon.rooms if len(rm["cycle"]) >= 3]
 
     # walls 유도: 모든 room-cycle 엣지 집계
     edge_rooms: dict = {}
@@ -448,6 +453,8 @@ def canon_to_graph(canon: Canon) -> dict:
                 edges.append({"from": rms[0], "to": rms[1], "via": "open", "door_id": None})
             continue
         ek = _edge_key(op["edge"][0], op["edge"][1])
+        if not (0 <= ek[0] < nc and 0 <= ek[1] < nc):
+            continue   # 범위초과 opening corner 참조 무시
         wid = wall_of_edge.get(ek)
         a, b = cpx[ek[0]], cpx[ek[1]]
         t = op["pos"] / 16.0
@@ -669,7 +676,9 @@ def decode(tokens: list, vocab) -> Canon:
         cyc = []
         while i < len(tokens) and tokens[i] != V.ROOM_END:
             if vb.get("coord") and vb["coord"] <= tokens[i] <= vb["coord"] + grid:
-                cyc.append(tokens[i] - vb["coord"])
+                ci = tokens[i] - vb["coord"]
+                if 0 <= ci < len(canon.corners):   # 유효 코너 참조만(범위초과=IndexError 방지)
+                    cyc.append(ci)
             i += 1
         if i < len(tokens) and tokens[i] == V.ROOM_END:
             i += 1

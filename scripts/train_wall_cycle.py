@@ -99,9 +99,15 @@ def main():
     ap.add_argument("--n-head", type=int, default=8)
     ap.add_argument("--max-len", type=int, default=1152)
     ap.add_argument("--diag-every", type=int, default=25)
+    ap.add_argument("--ckpt-every", type=int, default=10, help="N epoch마다 체크포인트 저장")
     ap.add_argument("--constrained", action="store_true",
                     help="생성 시 constrained decoding(ADR-0012 §3) 적용")
+    ap.add_argument("--orthogonal", action="store_true", help="직각 강제(대각선 차단)")
     ap.add_argument("--out", default="")
+    ap.add_argument("--resume", default="", help="사전학습 체크포인트 로드 (FT용)")
+    ap.add_argument("--dim-ff", type=int, default=0, help="0=기본(4*d). 80M 재현은 1408")
+    ap.add_argument("--grad-ckpt", action="store_true", help="gradient checkpointing(80M 필수)")
+    ap.add_argument("--amp", action="store_true", help="혼합정밀(fp16) 학습")
     args = ap.parse_args()
 
     dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -112,35 +118,74 @@ def main():
                     collate_fn=lambda b: collate(b, pad))
     print(f"[data] {len(ds)} seqs, vocab={vocab['size']}, device={dev}")
 
+    # Load/resume from checkpoint
+    start_ep = 1
+    ckpt = None
+    dim_ff = None
+    if args.resume:  # Resume only if explicitly specified
+        ckpt_path = args.resume if args.resume else args.out
+        try:
+            ckpt = torch.load(ckpt_path, map_location=dev)
+            ckpt_args = ckpt.get("args", {})
+            # Use checkpoint config for model
+            args.d_model = ckpt_args.get("d_model", args.d_model)
+            args.n_layer = ckpt_args.get("n_layer", args.n_layer)
+            args.n_head = ckpt_args.get("n_head", args.n_head)
+            args.max_len = ckpt_args.get("max_len", args.max_len)
+            # Calculate dim_ff from checkpoint mlp.w1.weight shape
+            mlp_w1_shape = ckpt["model"]["blocks.0.mlp.w1.weight"].shape
+            dim_ff = mlp_w1_shape[0]
+            start_ep = ckpt.get("epoch", 0) + 1 if args.resume else 1
+            print(f"[CKPT-DEBUG] dim_ff={dim_ff} from mlp_w1_shape={mlp_w1_shape}")
+            print(f"[ckpt] {ckpt_path} → d={args.d_model} L={args.n_layer} H={args.n_head} dim_ff={dim_ff}, ep{start_ep}부터")
+        except Exception as e:
+            print(f"[ERR] {type(e).__name__}: {e}")
+            print(f"[new] 처음부터 학습 (d={args.d_model} L={args.n_layer} H={args.n_head})")
+            ckpt = None
+
+    if dim_ff is None and args.dim_ff > 0:
+        dim_ff = args.dim_ff
     model = WallCycleLM(vocab["size"], d_model=args.d_model, n_layer=args.n_layer,
-                        n_head=args.n_head, max_len=args.max_len).to(dev)
+                        n_head=args.n_head, max_len=args.max_len, dim_ff=dim_ff,
+                        grad_ckpt=args.grad_ckpt).to(dev)
+    if ckpt:
+        model.load_state_dict(ckpt["model"])
     nparam = sum(p.numel() for p in model.parameters())
-    print(f"[model] {nparam/1e6:.1f}M params, d={args.d_model} L={args.n_layer}")
+    print(f"[model] {nparam/1e6:.1f}M params, d={args.d_model} L={args.n_layer} | grad_ckpt={args.grad_ckpt} amp={args.amp} dim_ff={dim_ff}")
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
-    mask_fn = make_constraint_mask(vocab) if args.constrained else None
+    if ckpt and isinstance(ckpt, dict) and "opt" in ckpt:
+        try:
+            opt.load_state_dict(ckpt["opt"]); print("[init] 옵티마이저 상태 복원")
+        except Exception as e:
+            print(f"[warn] opt 복원 실패: {e}")
+    scaler = torch.cuda.amp.GradScaler(enabled=args.amp)
+    mask_fn = make_constraint_mask(vocab, orthogonal=args.orthogonal) if args.constrained else None
     if mask_fn:
         print("[constrained] decoding 마스크 ON (ADR-0012 §3)")
 
-    for ep in range(1, args.epochs + 1):
+    print(f"[DEBUG] ep{start_ep}~{args.epochs} 학습 루프 시작")
+    for ep in range(start_ep, args.epochs + 1):
         model.train()
         tot = 0.0
         for x in dl:
             x = x.to(dev)
-            logits = model(x)
-            # pad(=EOS) 위치는 첫 EOS만 학습, 이후는 ignore
-            tgt = x.clone()
-            loss = causal_lm_loss(logits, tgt, ignore_index=-100)
-            opt.zero_grad(); loss.backward()
+            opt.zero_grad()
+            with torch.autocast("cuda", dtype=torch.float16, enabled=args.amp):
+                logits = model(x)
+                loss = causal_lm_loss(logits, x, ignore_index=-100)
+            scaler.scale(loss).backward()
+            scaler.unscale_(opt)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            opt.step()
+            scaler.step(opt); scaler.update()
             tot += loss.item() * x.size(0)
         if ep % args.diag_every == 0 or ep == args.epochs:
             d = diagnose(model, vocab, dev, mask_fn=mask_fn)
             print(f"ep{ep:4d} loss {tot/len(ds):.4f} | valid {d['valid_rate']} "
-                  f"uniq {d['uniq_rate']} rooms~{d['mean_rooms']}(max{d['max_rooms']})")
-    if args.out:
-        torch.save({"model": model.state_dict(), "args": vars(args)}, args.out)
-        print(f"[saved] {args.out}")
+                  f"uniq {d['uniq_rate']} rooms~{d['mean_rooms']}(max{d['max_rooms']})",
+                  flush=True)
+        if args.out and (ep % args.ckpt_every == 0 or ep == args.epochs):
+            torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "args": vars(args), "epoch": ep}, args.out)
+            print(f"  [ckpt] ep{ep} → {args.out}", flush=True)
 
 
 if __name__ == "__main__":

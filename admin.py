@@ -1038,6 +1038,28 @@ if which.startswith("🗂"):
     st.stop()
 
 if which.startswith("📗"):
+    # ═══ 검증 함수 (5221bdd 리팩터링서 정의 유실 → 복구) ═══
+    def _count_bedrooms_in_geom(geom) -> int:
+        """침실 개수 (안방·침실·드레스룸). geom['rooms']={id:{role,...}}"""
+        rooms = (geom or {}).get('rooms')
+        if not isinstance(rooms, dict):
+            return 0
+        return sum(1 for r in rooms.values()
+                   if isinstance(r, dict) and r.get('role') in {'안방', '침실', '드레스룸'})
+
+    def _count_bathrooms_in_geom(geom) -> int:
+        """욕실 개수 (욕실·화장실·전용욕실·전용화장실·파우더룸)."""
+        rooms = (geom or {}).get('rooms')
+        if not isinstance(rooms, dict):
+            return 0
+        return sum(1 for r in rooms.values()
+                   if isinstance(r, dict) and r.get('role') in {'욕실', '화장실', '전용욕실', '전용화장실', '파우더룸'})
+
+    def _validate_floorplan(geom, expected_bedrooms, expected_bathrooms) -> bool:
+        """생성 도면이 조건(침실·욕실 수)을 만족하는지."""
+        return (_count_bedrooms_in_geom(geom) == expected_bedrooms
+                and _count_bathrooms_in_geom(geom) == expected_bathrooms)
+    # ═══ 검증 함수 끝 ═══
     import json as _json
     from pathlib import Path as _P
     from plan2graph import cadrender as _cr, engine_render as _er

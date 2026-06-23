@@ -13,6 +13,7 @@ opening 토큰을 next-token으로 생성. 겹침0은 표현(corner 공유)이 �
 from __future__ import annotations
 
 import torch
+import torch.utils.checkpoint
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -32,11 +33,7 @@ class MultiHeadAttention(nn.Module):
         B, T, D = x.shape
         qkv = self.qkv(x).view(B, T, 3, self.n_head, self.d_k).permute(0, 2, 3, 1, 4)  # (B,3,nh,T,dk)
         q, k, v = qkv[:, 0], qkv[:, 1], qkv[:, 2]  # 각각 (B,nh,T,dk)
-        scores = (q @ k.transpose(-2, -1)) / (self.d_k ** 0.5)
-        if mask is not None:
-            scores = scores + mask.unsqueeze(0).unsqueeze(0)
-        attn = F.softmax(scores, dim=-1)
-        out = attn @ v  # (B,nh,T,dk)
+        out = F.scaled_dot_product_attention(q, k, v, is_causal=True)  # (B,nh,T,dk)
         out = out.transpose(1, 2).contiguous().view(B, T, D)  # (B,T,nh,dk) → (B,T,D)
         return self.proj(out)
 
@@ -70,9 +67,11 @@ class TransformerBlock(nn.Module):
 
 class WallCycleLM(nn.Module):
     def __init__(self, vocab_size: int, d_model: int = 256, n_layer: int = 6,
-                 n_head: int = 8, max_len: int = 1152, dim_ff: int | None = None, dropout: float = 0.1):
+                 n_head: int = 8, max_len: int = 1152, dim_ff: int | None = None, dropout: float = 0.1,
+                 grad_ckpt: bool = False):
         super().__init__()
         self.max_len = max_len
+        self.grad_ckpt = grad_ckpt
         self.tok = nn.Embedding(vocab_size, d_model)
         self.drop = nn.Dropout(dropout)
         if dim_ff is None:
@@ -89,7 +88,10 @@ class WallCycleLM(nn.Module):
         h = self.drop(self.tok(x))
         mask = torch.triu(torch.full((T, T), float("-inf"), device=x.device), diagonal=1)
         for block in self.blocks:
-            h = block(h, mask=mask)
+            if self.grad_ckpt and self.training:
+                h = torch.utils.checkpoint.checkpoint(block, h, mask, use_reentrant=False)
+            else:
+                h = block(h, mask=mask)
         return self.head(self.norm(h))
 
     @torch.no_grad()
