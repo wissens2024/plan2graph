@@ -3,7 +3,7 @@
 #   eval은 house_type 인지 이관(소비자) 후 별도 — 여기선 모델만 학습(runs/<run_id>/checkpoint.pt).
 #   사용: nohup bash scripts/run_typed_matrix.sh > logs/typed_matrix.log 2>&1 &
 cd ~/plan2graph || exit 1
-MM="$HOME/bin/micromamba run -n p2g"
+MM="$HOME/bin/micromamba run -r /home/ju/.local/share/mamba -n p2g"
 export CUDA_VISIBLE_DEVICES=0 PYTHONPATH=src
 echo "[$(date +%H:%M:%S)] TYPED matrix v0 × 5시드 (GPU0)"
 for S in 42 1 2 3 4; do

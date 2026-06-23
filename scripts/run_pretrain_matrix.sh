@@ -4,7 +4,7 @@
 #   사전: recipes/global_rplan.json·global_all.json 존재. GPU1만(운영 GPU0 보호).
 #   사용: nohup bash scripts/run_pretrain_matrix.sh > logs/v34_matrix.log 2>&1 &
 cd ~/plan2graph || exit 1
-MM="$HOME/bin/micromamba run -n p2g"
+MM="$HOME/bin/micromamba run -r /home/ju/.local/share/mamba -n p2g"
 export CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src
 echo "[$(date +%H:%M:%S)] freeze global_rplan"
 $MM python -m plan2graph.release global_rplan 2>&1 | python3 -c "import sys,json;d=json.load(sys.stdin);print('  global_rplan',d['per_source'],d['splits'])" || { echo "freeze rplan FAIL"; exit 1; }

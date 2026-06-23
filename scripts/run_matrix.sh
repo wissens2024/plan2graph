@@ -10,7 +10,7 @@
 #   예) bash scripts/run_matrix.sh v0
 #       bash scripts/run_matrix.sh v2
 cd ~/plan2graph || exit 1
-MM="$HOME/bin/micromamba run -n p2g"
+MM="$HOME/bin/micromamba run -r /home/ju/.local/share/mamba -n p2g"
 export CUDA_VISIBLE_DEVICES=1
 export PYTHONPATH=src
 VER="${1:-v0}"
