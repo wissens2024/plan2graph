@@ -364,7 +364,7 @@ def _record(**kw):
 st.sidebar.markdown("#### 🏗 Plan2Graph 관리자")
 _MENU = ["🧮 종합 현황",
          "🏢 AI-Hub 검수 (Parsed)", "🏠 CubiCasa 검수", "📐 RPLAN 검수",
-         "🧩 AI-Hub 검수 (Corrected)", "📗 도면 생성", "✏️ 도면정보보정",
+         "🧩 AI-Hub 검수 (Corrected)", "🗂 데이터셋 도면", "📗 도면 생성", "✏️ 도면정보보정",
          "⚖️ 성능 비교",
          "📜 법령 DB"]
 try:  # 동그라미 없는 클릭형 메뉴(streamlit-option-menu). 미설치 시 라디오로 폴백.
@@ -868,6 +868,175 @@ if which.startswith("📐"):
                    lambda r, ov: _rpi.render(r, overlay=ov), _cap)
     _pager("pg_rplan", npages, "bot")
     st.stop()
+if which.startswith("🗂"):
+    import glob as _glob
+    import json as _json
+    import os as _os
+    import re as _re
+    import zipfile as _zip
+
+    from plan2graph import cadrender as _cr
+
+    st.title("🗂 데이터셋 도면 — 그래프 → 도면 이미지 · AutoCAD(DXF)")
+    st.caption("데이터셋(=그래프)을 골라 필터하고, 하나를 선택하면 **왼쪽=생성 도면+DXF, 오른쪽=원본 도면**. "
+               "검수처럼 콤보·이전/다음으로 한 장씩 본다.")
+
+    _CG = str(config.DATA_DIR / "staging" / "corrected" / "graphs")
+    _PNG_CACHE = config.DATA_DIR / "staging" / "corrected" / "png"
+    _PNG_INDEX = config.DATA_DIR / "staging" / "corrected" / "_png_index.json"
+    # 4개 데이터셋 — 현재 geomgraph 렌더 가능 = AI-Hub(자동/보정 같은 corrected 폴더, ADR-0009).
+    #   RPLAN(.mat)·CubiCasa(svg)는 geomgraph 변환 대기 → 콤보엔 있으나 준비중 안내.
+    _DATASETS = {
+        "AI-Hub Corrected (보정)": {"dir": _CG, "ready": True},
+        "AI-Hub Parsed (자동)": {"dir": _CG, "ready": True},
+        "RPLAN": {"dir": None, "ready": False},
+        "CubiCasa5k": {"dir": None, "ready": False},
+    }
+    # 데이터셋 + 필터 콤보를 한 줄로(데이터셋 | 주거형태 | 구분 | 방 개수)
+    _row = st.columns([2, 1, 1, 1])
+    _ds = _row[0].selectbox("데이터셋", list(_DATASETS), key="dsv_ds")
+    _info = _DATASETS[_ds]
+    if not _info["ready"]:
+        st.info("**" + _ds + "** 는 geomgraph 변환 대기입니다. AI-Hub로 먼저 확인하세요. "
+                "(학습 결합용으로 RPLAN/CubiCasa geomgraph 변환은 후속 작업)")
+        st.stop()
+
+    @st.cache_resource(show_spinner=False)
+    def _png_idx():
+        try:
+            return _json.load(open(_PNG_INDEX, encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            return {}
+
+    def _orig_png(stem):
+        """plan_id stem → 원본 sheet PNG bytes (캐시→zip). edit_server._png_bytes 동일 로직."""
+        m = _re.search(r"_FP_(.+?)_u\d+$", stem) or _re.search(r"_FP_(.+)$", stem)
+        if not m:
+            return None
+        sig = m.group(1)
+        _PNG_CACHE.mkdir(parents=True, exist_ok=True)
+        cache = _PNG_CACHE / (sig + ".png")
+        if cache.exists():
+            return cache.read_bytes()
+        idx = _png_idx()
+        if sig not in idx:
+            return None
+        zp, entry = idx[sig]
+        try:
+            with _zip.ZipFile(zp) as zf:
+                data = zf.read(entry)
+            cache.write_bytes(data)
+            return data
+        except Exception:  # noqa: BLE001
+            return None
+
+    @st.cache_data(show_spinner="데이터셋 인덱스 빌드(최초 1회)...")
+    def _ds_index(gdir, _bust):
+        out = []
+        for f in _glob.glob(_os.path.join(gdir, "*.json")):
+            try:
+                g = _json.load(open(f, encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                continue
+            rooms = (g.get("rooms") or {}).values()
+            meta = g.get("meta") or {}
+            v = g.get("validation") or {}
+            _ent = meta.get("n_entrance")
+            # plan_scope(ADR-0016): 단위세대(unit)/1층 단면(floor). 빌드는 unit 고정이라 현관수로 도출(현관≥2=분리 전 층).
+            _scope = "floor" if (meta.get("plan_scope") == "floor" or (_ent or 1) >= 2) else "unit"
+            out.append({
+                "gid": _os.path.basename(f),
+                "house": meta.get("house_type") or g.get("house") or "?",
+                "n_bed": sum(1 for r in rooms if (r.get("role") or r.get("base")) in ("침실", "안방")),
+                "n_ent": _ent,
+                "scope": _scope,
+                "disp": "제외" if not v.get("passed") else ("보정필요" if v.get("warnings") else "사용"),
+            })
+        return out
+
+    _bust = str(int(_os.path.getmtime(_info["dir"]))) if _os.path.isdir(_info["dir"]) else "0"
+    idx = _ds_index(_info["dir"], _bust)
+    if not idx:
+        st.warning("그래프가 없습니다(재빌드 중일 수 있음). 잠시 후 새로고침.")
+        st.stop()
+
+    # ── 필터(데이터셋과 한 줄): 주거형태 | 구분(단위/층) | 방 개수 ──
+    _houses = sorted({r["house"] for r in idx if r["house"] and r["house"] != "?"})
+    _HOUSE_KO = {"APT": "APT(아파트)", "DEH": "DEH(단독)", "ROW": "ROW(연립)"}
+    _hf = _row[1].selectbox("주거형태", ["(전체)"] + _houses, format_func=lambda k: _HOUSE_KO.get(k, k))
+    _SCOPE_KO = {"unit": "단위세대", "floor": "1층 단면"}
+    _scf = _row[2].selectbox("구분", ["(전체)", "unit", "floor"], format_func=lambda k: _SCOPE_KO.get(k, k),
+                             help="plan_scope(ADR-0016): 단위세대(현관1) / 1층 단면(현관2+·분리 전)")
+    _beds = sorted({r["n_bed"] for r in idx})
+    _rf = _row[3].selectbox("방 개수", ["(전체)"] + [str(b) for b in _beds],
+                            help="방 = 침실·안방(찐 방). 노드 전체 수가 아님")
+
+    def _ok(r):
+        if _hf != "(전체)" and r["house"] != _hf:
+            return False
+        if _scf != "(전체)" and r["scope"] != _scf:
+            return False
+        if _rf != "(전체)" and str(r["n_bed"]) != _rf:
+            return False
+        return True
+
+    _hits = sorted((r for r in idx if _ok(r)), key=lambda r: r["gid"])
+    _cnt, _ref = st.columns([6, 1])
+    _cnt.write("**" + format(len(_hits), ",") + "개** 일치 (전체 " + format(len(idx), ",") + ")")
+    if _ref.button("🔄 새로고침", use_container_width=True):
+        _ds_index.clear()
+        st.rerun()
+    if not _hits:
+        st.info("조건에 맞는 도면이 없습니다. 필터를 완화하세요.")
+        st.stop()
+
+    # ── 단일 선택: 이전/다음 + 콤보 ──
+    _ik = "dsv_i"
+    st.session_state.setdefault(_ik, 0)
+    st.session_state[_ik] = max(0, min(st.session_state[_ik], len(_hits) - 1))
+    _p, _s, _n = st.columns([1, 6, 1])
+    if _p.button("◀ 이전", use_container_width=True):
+        st.session_state[_ik] = max(0, st.session_state[_ik] - 1)
+    if _n.button("다음 ▶", use_container_width=True):
+        st.session_state[_ik] = min(len(_hits) - 1, st.session_state[_ik] + 1)
+    _gids = [r["gid"] for r in _hits]
+    _sel = _s.selectbox("도면 선택", _gids, index=st.session_state[_ik],
+                        format_func=lambda g: g[:-5])
+    st.session_state[_ik] = _gids.index(_sel)
+    _s.caption(str(st.session_state[_ik] + 1) + " / " + format(len(_hits), ",") + " 장")
+    _r = _hits[st.session_state[_ik]]
+    _stem = _sel[:-5]
+
+    @st.cache_data(show_spinner=False)
+    def _dsv_render(gdir, gid):
+        g = _json.load(open(_os.path.join(gdir, gid), encoding="utf-8"))
+        geom = _cr.autocorrect(_cr.from_geomgraph(g))
+        return _cr.render_png(geom), _cr.render_dxf(geom)
+
+    _L, _R = st.columns(2)
+    with _L:
+        st.markdown("##### 생성 도면 (그래프 → 렌더)")
+        try:
+            _png, _dxf = _dsv_render(_info["dir"], _sel)
+            st.image(_png, use_container_width=True)
+            _d1, _d2 = st.columns(2)
+            _d1.download_button("📥 도면 이미지(PNG)", _png, file_name=_stem + ".png",
+                                mime="image/png", key="dsv_png", use_container_width=True)
+            _d2.download_button("📐 AutoCAD(DXF)", _dxf, file_name=_stem + ".dxf",
+                                mime="image/vnd.dxf", key="dsv_dxf", use_container_width=True)
+        except Exception as _e:  # noqa: BLE001
+            st.error("렌더 실패: " + str(_e))
+        st.caption("**" + _stem + "** · " + str(_r["house"]) + " · 침실 " + str(_r["n_bed"]) +
+                   " · 현관 " + str(_r["n_ent"]) + " · " + _r["disp"])
+    with _R:
+        st.markdown("##### 원본 도면")
+        _op = _orig_png(_stem)
+        if _op:
+            st.image(_op, use_container_width=True)
+        else:
+            st.info("원본 PNG를 찾지 못했습니다(zip 인덱스 미보유 또는 추출 실패).")
+    st.stop()
+
 if which.startswith("📗"):
     import json as _json
     from pathlib import Path as _P
