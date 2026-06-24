@@ -50,11 +50,17 @@ def main():
     ap.add_argument("--snap", action="store_true",
                     help="벽두께 표현 정규화(축좌표 스냅+edge-split+문 재매칭). 한국(AI-Hub)용. RPLAN엔 불필요.")
     ap.add_argument("--snap-tol", type=float, default=2.5, help="스냅 tolerance(grid 단위). 안전권 2.5~3.0.")
+    ap.add_argument("--ids", default="", help="클린 타깃 한정: {'ids':[...]} 또는 [...] JSON. gid 화이트리스트.")
     args = ap.parse_args()
 
     vocab = wc._vocab(args.grid)
     os.makedirs(args.out, exist_ok=True)
     files = sorted(glob.glob(os.path.join(args.dir, "APT_*.json")))   # APT만
+    if args.ids:                                                      # 클린셋(1세대·APT·평면도) 한정
+        _idblob = json.load(open(args.ids, encoding="utf-8"))
+        idset = set(_idblob["ids"] if isinstance(_idblob, dict) else _idblob)
+        files = [f for f in files if os.path.basename(f)[:-5] in idset]
+        print(f"[ids] {len(idset)} 화이트리스트 → {len(files)} 파일 매칭")
     if args.limit:
         files = files[: args.limit]
 
