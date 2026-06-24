@@ -624,3 +624,23 @@ ep200 가중치에서 옵티마이저 복원(seamless)으로 연장 학습. **�
 
 ## 미검증 — 생성 레벨(Ablation B로 확정)
 표현 레벨만 검증됨. *스냅 학습 모델이 비스냅보다 잘 생성하는가*는 미검증 → 두 토큰화(비스냅 tokens_korean_clean·스냅 재토큰화) 각각 학습→동일 프로토콜 생성 비교. 기대: 한국 clean 0%→RPLAN급(~34%). 부수 Ablation A=문/창 有無.
+
+## Ablation B 확정 — snap×pretrain 매트릭스 생성 결과 [2026-06-25]
+> ADR-0020 "미검증 — 생성 레벨"이 답을 받음. eval n=200·seed42·표준overlap, 탐색매트릭스(seed0·no-room-perm·dim_ff1408).
+
+| 구성 | 최종ep | clean | selfint=0 | overlap<.25 | single |
+|---|---|---|---|---|---|
+| 한국 target-only nosnap | 50 | 24% | 26% | 70% | 8% |
+| 한국 target-only snap   | 50 | 14% | 16% | 40% | **40%** |
+| 한국 RPLAN→FT nosnap    | 50 | **32%** | 36% | 72% | 6% |
+| 한국 RPLAN→FT snap      | 50 | 20% | 20% | 60% | **44%** |
+| RPLAN 단독 ep70(대조)   | 70 | 46% | 46% | 74% | 73% |
+
+### 판독 (단정 금지 — n=200 단일시드 탐색치)
+- **0% 탈출은 코덱 cref 복원 효과**: 한국 4구성 모두 14~32%로, 옛 "한국 clean 0%"는 코덱 회귀였음을 재확인. snap의 0→34 기대(ADR-0020)는 **코덱 수정이 이미 달성**.
+- **snap은 clean(overlap)을 깎지만 single-room 연결성은 8%→40%로 극적 상승**. → 두 지표가 다른 걸 측정. snap은 노린 목표(공유벽·연결 평면)를 달성하나 overlap-clean이 보상 안 함. **렌더 육안 비교 필요**(통계만으로 snap 폐기 금지).
+- **사전학습(RPLAN→FT)이 target-only보다 우위**(24→32, 14→20). 옛 "한국 단독만 유효" 결정과 상충하는 신증거. 단 탐색치라 Phase2(room-perm+seed42) 재확인 전엔 보류.
+- 한국 최고 clean=32%(RPLAN→FT nosnap). 방수 2배(노드~15 vs 7) 난이도 감안해도 "누가봐도 도면" 기준 미달.
+
+### 부수 — RPLAN room-perm+seed42 재현매트릭스
+ep80 clean 46% ↔ no-perm 대조 ep80 42%. room-perm이 수렴 안정성·피크 약우위, seed42 고정으로 재현가능. 정본(Phase2) 후보.
