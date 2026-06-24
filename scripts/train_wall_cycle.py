@@ -108,6 +108,8 @@ def main():
     ap.add_argument("--dim-ff", type=int, default=0, help="0=기본(4*d). 80M 재현은 1408")
     ap.add_argument("--grad-ckpt", action="store_true", help="gradient checkpointing(80M 필수)")
     ap.add_argument("--amp", action="store_true", help="혼합정밀(fp16) 학습")
+    ap.add_argument("--country", type=int, default=0,
+                    help="diagnose 생성 prefix country (0=KR 1=CN 2=EU). RPLAN 학습=1 (데이터 분포와 일치)")
     args = ap.parse_args()
 
     dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -179,13 +181,18 @@ def main():
             scaler.step(opt); scaler.update()
             tot += loss.item() * x.size(0)
         if ep % args.diag_every == 0 or ep == args.epochs:
-            d = diagnose(model, vocab, dev, mask_fn=mask_fn)
+            dpre = [wc.V.BOS, vocab["meta"] + args.country,
+                    vocab["meta"] + len(wc.COUNTRIES) + 0,
+                    vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 0,
+                    vocab["scope"] + 0, vocab["units"] + 1]   # 데이터 분포 country로 진단(RPLAN=CN)
+            d = diagnose(model, vocab, dev, meta_prefix=dpre, mask_fn=mask_fn)
             print(f"ep{ep:4d} loss {tot/len(ds):.4f} | valid {d['valid_rate']} "
                   f"uniq {d['uniq_rate']} rooms~{d['mean_rooms']}(max{d['max_rooms']})",
                   flush=True)
         if args.out and (ep % args.ckpt_every == 0 or ep == args.epochs):
-            torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "args": vars(args), "epoch": ep}, args.out)
-            print(f"  [ckpt] ep{ep} → {args.out}", flush=True)
+            ep_path = (args.out[:-3] if args.out.endswith(".pt") else args.out) + f"_ep{ep}.pt"
+            torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "args": vars(args), "epoch": ep}, ep_path)
+            print(f"  [ckpt] ep{ep} → {ep_path}", flush=True)
 
 
 if __name__ == "__main__":
