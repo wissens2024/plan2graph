@@ -29,18 +29,26 @@ from plan2graph.generators.wall_cycle import (  # noqa: E402
 
 
 class TokDS(Dataset):
-    def __init__(self, path, max_len):
+    def __init__(self, path, max_len, vocab=None, room_perm=False, perm_prob=0.5):
         self.recs = []
         for ln in open(path, encoding="utf-8"):
             r = json.loads(ln)
             if len(r["tokens"]) <= max_len:
                 self.recs.append(r["tokens"])
+        self.vocab = vocab
+        self.room_perm = bool(room_perm and vocab is not None)
+        self.perm_prob = perm_prob
 
     def __len__(self):
         return len(self.recs)
 
     def __getitem__(self, i):
-        return self.recs[i]
+        t = self.recs[i]
+        if self.room_perm:
+            import random as _r
+            if _r.random() < self.perm_prob:               # FMLM 방-permutation 증강(확률적, 내림차순 prior 일부 보존)
+                t = wc.permute_room_tokens(list(t), self.vocab)
+        return t
 
 
 def collate(batch, pad):
@@ -112,6 +120,10 @@ def main():
                     help="diagnose 생성 prefix country (0=KR 1=CN 2=EU). RPLAN 학습=1 (데이터 분포와 일치)")
     ap.add_argument("--seed", type=int, default=0,
                     help="재현성: >0이면 torch/cuda/numpy/random 시드 고정. 0=미설정(기존 동작). 논문 최종학습=고정 권장.")
+    ap.add_argument("--room-perm", action="store_true",
+                    help="방-permutation 증강(FMLM Table6) — 방 순서 무작위화로 일반화↑. 품질 레버.")
+    ap.add_argument("--room-perm-prob", type=float, default=0.5,
+                    help="permute 확률(0.5=절반은 면적내림차순 prior 보존, 절반은 셔플).")
     args = ap.parse_args()
 
     if args.seed > 0:                                # 재현성(같은 시드=같은 모델=같은 수치)
@@ -126,7 +138,10 @@ def main():
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     vocab = json.load(open(args.vocab, encoding="utf-8"))
     pad = wc.V.EOS                                   # pad=EOS, loss에서 무시
-    ds = TokDS(args.data, args.max_len)
+    ds = TokDS(args.data, args.max_len, vocab=vocab,
+               room_perm=args.room_perm, perm_prob=args.room_perm_prob)
+    if args.room_perm:
+        print(f"[room-perm] 방-permutation 증강 ON (p={args.room_perm_prob})", flush=True)
     dl = DataLoader(ds, batch_size=args.batch, shuffle=True,
                     collate_fn=lambda b: collate(b, pad))
     print(f"[data] {len(ds)} seqs, vocab={vocab['size']}, device={dev}")

@@ -669,6 +669,63 @@ def snap_split(canon: Canon, tol: float = 2.5) -> Canon:
     return out
 
 
+def permute_room_tokens(tokens, vocab, rng=None):
+    """방-permutation 증강(FMLM Table 6) — 방 블록 순서를 무작위 셔플 + opening의 방 ordinal 재매핑.
+
+    같은 도면의 *다른 직렬화*(방 순서만 다름) → 모델이 방 순서에 robust. 기하/연결 불변.
+    ⚠️ 우리 코덱은 방을 *위치(ordinal)로 식별* → opening의 room ordinal(`room` 구간 토큰)을 함께 remap해야 참조 보존.
+    면적-내림차순 prior는 호출측에서 확률적으로 적용(p<1)해 보존. tokens=flat int list 반환.
+    """
+    import random as _random
+    rng = rng or _random
+    room_off = vocab["room"]
+    maxrooms = vocab["maxrooms"]
+    try:
+        i_rooms = tokens.index(V.SEC_ROOMS)
+    except ValueError:
+        return tokens
+    # 방 섹션 경계 = SEC_OPEN(있으면) 아니면 EOS
+    try:
+        i_bound = tokens.index(V.SEC_OPEN, i_rooms)
+    except ValueError:
+        try:
+            i_bound = tokens.index(V.EOS, i_rooms)
+        except ValueError:
+            i_bound = len(tokens)
+    room_sec = tokens[i_rooms + 1:i_bound]
+    tail = tokens[i_bound:]                                  # SEC_OPEN..EOS 또는 EOS..
+    # 방 블록 분리(ROOM_END 기준)
+    blocks, cur = [], []
+    for t in room_sec:
+        if t == V.ROOM_END:
+            blocks.append(cur)
+            cur = []
+        else:
+            cur.append(t)
+    if cur:
+        blocks.append(cur)
+    n = len(blocks)
+    if n < 2:
+        return tokens
+    perm = list(range(n))
+    rng.shuffle(perm)                                       # perm[new] = old
+    inv = [0] * n
+    for new_pos, old_pos in enumerate(perm):
+        inv[old_pos] = new_pos                              # old_ord -> new_ord
+    new_room_sec = []
+    for new_pos in range(n):
+        new_room_sec.extend(blocks[perm[new_pos]])
+        new_room_sec.append(V.ROOM_END)
+    new_tail = []                                           # opening 섹션의 room ordinal remap
+    for t in tail:
+        if room_off <= t < room_off + maxrooms:
+            old_ord = t - room_off
+            if old_ord < n:
+                t = room_off + inv[old_ord]
+        new_tail.append(t)
+    return tokens[:i_rooms + 1] + new_room_sec + new_tail
+
+
 def encode(canon: Canon, vocab=None) -> list:
     vb = vocab or _vocab(canon.grid)
     t = [V.BOS]
