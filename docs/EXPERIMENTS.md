@@ -566,3 +566,36 @@ ep200 가중치에서 옵티마이저 복원(seamless)으로 연장 학습. **�
   | **clean + 법규 (combined)** | **6%** | **~17회에 1개** |
   → 창은 98% 그리나 **법규 통과 44%** = 창이 *적절한 방(거실·침실)*에 미배치. **verify→repair가 여기 효과**(phase1: 채광 50→98%, [[phase1-legal-compliance-metric-works]]) → 법규↑면 combined가 clean(14%)-한계로 → ~7회. **"법규 통과할 때까지 그려 달라" = 규제-인식 생성.**
 - ✅ **n=200 확정** (decoded ~100%, RPLAN clean 40%, 한국 clean벽 9~14%, 법규 44%, combined 6%). 앞선 n=40~80 출렁은 노이즈, n=200서 안정.
+
+# KorPlan-AR 80M RPLAN 재학습 — ★진범=코덱 cref 회귀(모델 정상, 재학습 불필요) [2026-06-24]
+
+> 핸드오프대로 RPLAN 80M 재학습 ep50 완료 후 생성물이 깨져 보였으나(삼각형·대각선·bowtie),
+> 근본원인 추적 결과 **모델·학습·파라미터는 정상**이고 **코덱(토큰↔기하)이 복구 과정에서 깨진 것**으로 확정.
+
+## 진단 경로 (추측 배제, 데이터→코덱→모델 순 격리)
+1. **실제 RPLAN 학습 데이터를 현재 코덱으로 디코드** → 전부 rooms=1·selfint=1 (실제는 5~8방). 모델 무관 = 코덱 의심.
+2. **token 구조 직독**: 방 cycle은 `cref`(코너참조, vocab 158~413)로 인코딩됨. vocab.json도 `cref:158` 보유.
+3. **진범**: 복구 커밋(`2a14e716c`,`8cb4a1663` "IndexError 수정")이 코덱에서 **cref 섹션을 제거**하고
+   코너참조를 `coord`(29~157)로 바꿈 → 세 곳 동시 회귀:
+   - `_vocab` 빌더에 cref 없음(role 414→158 밀림, size 520→264).
+   - `decode` 방cycle/opening을 coord로 읽음 → 모든 방 1개로 붕괴.
+   - `make_constraint_mask`가 coord만 허용 → 모델이 학습한 cref 토큰을 생성 시 금지 → OOD 붕괴.
+4. **cref로 재디코드**: 실데이터 20개 전부 n_rooms 정확일치·selfint 0·overlap 0. → 코덱이 진범 확정.
+
+## 수정 (cref-aware 복원) + 동일 체크포인트 재검증
+`wallcycle_codec.py`(_vocab/_corner_ref/decode×2) + `generators/wall_cycle.py`(make_constraint_mask) cref 복원.
+**재학습 없이 같은 ckpt `korplan_ar_r_fmlm80m_pretrain.pt` 재생성**(n=40, country=1·constrained·orthogonal):
+| 지표 | 수정 전(coord 버그) | 수정 후(cref) |
+|---|---|---|
+| decoded | 97% | 100% |
+| single(strict) | 8% | 70% |
+| selfint=0 | 0% | 30% |
+| clean(strict) | 0% | 30% |
+| rooms 중앙값 | 7(붕괴) | 6.7(RPLAN 정상) |
+- **눈검증**: 수정 후 몽타주 = 깨끗한 직사각·L자 다실 타일 도면(이전 정상 ep50 montage와 동질). 대각선·bowtie 소멸.
+
+## 교훈
+- "사전학습 ep50 회귀"라는 1차 결론은 **틀렸다**(코덱 회귀를 모델 회귀로 오인). 데이터→코덱→모델 격리로 정정.
+- in-training valid 0.36~0.66도 코덱/마스크 버그가 만든 허수(진단 자체가 깨진 코덱 경유). 모델은 정상 학습됨.
+- **코덱 회귀는 모델을 안 건드려도 모든 출력을 망친다.** 생성 검증 시 *실데이터 라운드트립*을 먼저 통과시킬 것.
+- ⚠️ 데이터(tokens_rplan)는 cref 포맷. 코덱은 vocab.json과 라운드트립 일치(_vocab(128)==vocab.json) 유지 필수.

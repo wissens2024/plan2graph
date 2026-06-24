@@ -138,6 +138,7 @@ def make_constraint_mask(vocab: dict, orthogonal: bool = False):
     nrole = len(wc.ROLES)
     meta, scope, units = vocab["meta"], vocab["scope"], vocab["units"]
     coord, role, pos, room = vocab["coord"], vocab["role"], vocab["pos"], vocab["room"]
+    cref = vocab.get("cref", vocab["coord"])    # 코너 참조(room cycle·opening) = cref 섹션, 좌표(coord)와 별개
     g, nbins, mu = vocab["grid"], vocab["nbins"], vocab["max_units"]
 
     def _corners(seq):                              # CORNERS 섹션 → [(qx,qy), ...]
@@ -195,18 +196,18 @@ def make_constraint_mask(vocab: dict, orthogonal: bool = False):
                 if tail.count(V.ROOM_END) >= 1:
                     a.add(V.SEC_OPEN)                                  # 전환(≥1 방 후)
                 return a
-            a = set(range(coord, coord + ncorners))                   # corner 참조(유효 범위)
+            a = set(range(cref, cref + ncorners))                     # corner 참조(유효 범위)
             if orthogonal:                                            # 직각 강제: 이전 corner와 x또는y 동일
                 lr = None
                 for t in reversed(tail):
                     if t == V.ROOM_END or role <= t < role + nrole:
                         break
-                    if coord <= t <= coord + g:
-                        lr = t - coord; break
+                    if cref <= t < cref + ncorners:
+                        lr = t - cref; break
                 cs = _corners(seq)
                 if lr is not None and lr < len(cs):
                     lx, ly = cs[lr]
-                    orth = {coord + ci for ci in range(min(ncorners, len(cs)))
+                    orth = {cref + ci for ci in range(min(ncorners, len(cs)))
                             if (cs[ci][0] == lx or cs[ci][1] == ly) and ci != lr}
                     if orth:
                         a = orth
@@ -219,8 +220,8 @@ def make_constraint_mask(vocab: dict, orthogonal: bool = False):
                     for t in reversed(tail):
                         if role <= t < role + nrole:
                             break
-                        if coord <= t < coord + len(cs):
-                            cur.append(t - coord)
+                        if cref <= t < cref + len(cs):
+                            cur.append(t - cref)
                     if len(cur) >= 2 and cur[0] < len(cs) and cur[-1] < len(cs):
                         lx2, ly2 = cs[cur[0]]                          # 마지막 ref(닫는 변 끝)
                         fx, fy = cs[cur[-1]]                           # 첫 ref(cycle 시작)
@@ -252,7 +253,7 @@ def make_constraint_mask(vocab: dict, orthogonal: bool = False):
         if st == "head":
             return {V.DOOR, V.WINDOW, V.OPEN, V.EOS}
         if st in ("dc1", "dc2", "wc1", "wc2"):
-            return set(range(coord, coord + ncorners))                # corner 참조
+            return set(range(cref, cref + ncorners))                  # corner 참조
         if st in ("dpos", "wpos"):
             return set(range(pos, pos + nbins + 1))
         return set(range(room, room + max(1, nrooms)))                # room ordinal(dr/or)

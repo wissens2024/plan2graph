@@ -517,18 +517,21 @@ class V:
     # 동적 구간: META(country|housing|schema), COORD(0..grid), ROLE, POS, ROOM(ordinal)
 
 
-def _vocab(grid: int, nbins: int = 16, maxrooms: int = 64, max_units: int = 8):
+def _vocab(grid: int, nbins: int = 16, maxrooms: int = 64, max_units: int = 8,
+           max_corners: int = 256):
     off = V._BASE
     meta_off = off;                 off += len(COUNTRIES) + len(HOUSING) + len(SCHEMAS)
     scope_off = off;                off += len(SCOPES)        # ADR-0016 plan_scope
     units_off = off;                off += (max_units + 1)    # ADR-0016 세대수(floor=1..n)
     coord_off = off;                off += (grid + 1)
+    cref_off = off;                 off += max_corners        # 방 cycle·opening의 corner 참조(인덱스)
     role_off = off;                 off += len(ROLES)
     pos_off = off;                  off += (nbins + 1)
     room_off = off;                 off += maxrooms          # open 토큰의 방 ordinal 참조
     return {"meta": meta_off, "scope": scope_off, "units": units_off,
-            "coord": coord_off, "role": role_off,
+            "coord": coord_off, "cref": cref_off, "role": role_off,
             "pos": pos_off, "room": room_off, "maxrooms": maxrooms, "max_units": max_units,
+            "max_corners": max_corners,
             "size": off, "grid": grid, "nbins": nbins}
 
 
@@ -582,8 +585,8 @@ def encode(canon: Canon, vocab=None) -> list:
 
 
 def _corner_ref(idx, vb):
-    """방 cycle·opening의 corner 참조는 인덱스(coord 구간 재사용)."""
-    return vb["coord"] + idx
+    """방 cycle·opening의 corner 참조 = cref 섹션(코너 인덱스). coord(좌표값)와 별개."""
+    return vb["cref"] + idx
 
 
 def decode(tokens: list, vocab) -> Canon:
@@ -674,11 +677,11 @@ def decode(tokens: list, vocab) -> Canon:
         role_id = max(0, tokens[i] - vb.get("role", 0)) if vb.get("role") else 0
         i += 1
         cyc = []
+        cref = vb.get("cref", vb["coord"])
         while i < len(tokens) and tokens[i] != V.ROOM_END:
-            if vb.get("coord") and vb["coord"] <= tokens[i] <= vb["coord"] + grid:
-                ci = tokens[i] - vb["coord"]
-                if 0 <= ci < len(canon.corners):   # 유효 코너 참조만(범위초과=IndexError 방지)
-                    cyc.append(ci)
+            ci = tokens[i] - cref                  # 방 cycle = cref(코너 인덱스) 토큰
+            if 0 <= ci < len(canon.corners):       # 유효 코너 참조만(범위초과=IndexError 방지)
+                cyc.append(ci)
             i += 1
         if i < len(tokens) and tokens[i] == V.ROOM_END:
             i += 1
@@ -708,7 +711,8 @@ def decode(tokens: list, vocab) -> Canon:
             continue
         kind = "door" if tokens[i] == V.DOOR else "window"; i += 1
         if i + 1 < len(tokens):
-            ca = tokens[i] - vb.get("coord", 0); cb = tokens[i + 1] - vb.get("coord", 0); i += 2
+            cref = vb.get("cref", vb["coord"])
+            ca = tokens[i] - cref; cb = tokens[i + 1] - cref; i += 2
             pos = (tokens[i] - vb.get("pos", 0)) if i < len(tokens) else 0; i += 1
             rooms = []
             if kind == "door" and i + 1 < len(tokens):
