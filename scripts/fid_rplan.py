@@ -79,7 +79,7 @@ def main():
     ck = torch.load(args.ckpt, map_location=dev)
     a = ck["args"]
     m = WallCycleLM(vocab["size"], d_model=a["d_model"], n_layer=a["n_layer"],
-                    n_head=a.get("n_head", 8), max_len=a["max_len"]).to(dev)
+                    n_head=a.get("n_head", 8), max_len=a["max_len"], dim_ff=a.get("dim_ff")).to(dev)
     m.load_state_dict(ck["model"]); m.eval()
     print(f"[gen] ckpt epoch {ck.get('epoch')} (누적 ep{30 + (ck.get('epoch') or 0)})", flush=True)
     mask = make_constraint_mask(vocab, orthogonal=True)
