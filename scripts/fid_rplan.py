@@ -56,7 +56,12 @@ def main():
     ap.add_argument("--batch", type=int, default=32)
     ap.add_argument("--real-dir", default="/tmp/fid_real")
     ap.add_argument("--gen-dir", default="/tmp/fid_gen")
+    ap.add_argument("--seed", type=int, default=0, help="재현성: >0이면 시드 고정")
     args = ap.parse_args()
+    ap2_seed = getattr(args, "seed", 0)
+    if ap2_seed > 0:
+        torch.manual_seed(ap2_seed); torch.cuda.manual_seed_all(ap2_seed)
+        print(f"[seed] {ap2_seed} 고정 — 재현 FID", flush=True)
 
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     vocab = json.load(open(args.vocab, encoding="utf-8"))
