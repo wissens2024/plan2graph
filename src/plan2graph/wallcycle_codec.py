@@ -535,6 +535,140 @@ def _vocab(grid: int, nbins: int = 16, maxrooms: int = 64, max_units: int = 8,
             "size": off, "grid": grid, "nbins": nbins}
 
 
+def _cluster_1d(vals, tol):
+    """정렬 unique 좌표 → tol 내 연쇄 병합, 원래값→클러스터 중심 매핑."""
+    uniq = sorted(set(vals))
+    mapping = {}
+    cl = [uniq[0]]
+
+    def flush():
+        c = round(sum(cl) / len(cl))
+        for v in cl:
+            mapping[v] = c
+    for v in uniq[1:]:
+        if v - cl[-1] <= tol:
+            cl.append(v)
+        else:
+            flush()
+            cl.clear()
+            cl.append(v)
+    flush()
+    return mapping
+
+
+def _on_seg(pa, pb, pc, inclusive=False):
+    """축정렬 세그먼트 pa-pb 위에 pc가 놓이는지(inclusive=False면 끝점 제외)."""
+    ax, ay = pa
+    bx, by = pb
+    cx, cy = pc
+    if ax == bx:                                    # 수직
+        if cx != ax:
+            return False
+        return (min(ay, by) <= cy <= max(ay, by)) if inclusive else (min(ay, by) < cy < max(ay, by))
+    if ay == by:                                    # 수평
+        if cy != ay:
+            return False
+        return (min(ax, bx) <= cx <= max(ax, bx)) if inclusive else (min(ax, bx) < cx < max(ax, bx))
+    return False
+
+
+def snap_split(canon: Canon, tol: float = 2.5) -> Canon:
+    """한국 벽두께 표현 → RPLAN식 공유벽 구조로 정규화 (벽-1급, ADR-0010 정합).
+
+    한국 도면은 인접 방이 벽두께만큼 떨어져 코너를 공유하지 않음 → 내부벽 미유도·생성 파편화.
+      ① 축좌표 1D 클러스터 스냅(벽두께 간격 닫기) → 인접 방이 같은 벽선 공유
+      ② edge-split: 벽 위에 놓인 (끝점 아닌) 코너 삽입(T자 접합) → 양 방 동일 sub-edge 공유 → 내부벽 정식유도
+      ③ openings(문/창) edge를 split된 sub-edge에 재매칭(위치 보존) → 문 부착 유지
+    RPLAN(벽두께0·코너공유)엔 불필요(무해하나 미적용 권장). 검증: scripts/_kor_edgesplit_proto.py.
+    """
+    cs = canon.corners
+    if len(cs) < 3:
+        return canon
+    nbins = 16
+    # ① 축 클러스터 스냅
+    xmap = _cluster_1d([c[0] for c in cs], tol)
+    ymap = _cluster_1d([c[1] for c in cs], tol)
+    newpos = [(xmap[c[0]], ymap[c[1]]) for c in cs]
+    pos2idx, newcorners, remap = {}, [], {}
+    for oi, p in enumerate(newpos):
+        if p not in pos2idx:
+            pos2idx[p] = len(newcorners)
+            newcorners.append(p)
+        remap[oi] = pos2idx[p]
+    # 방 cycle 리맵 + dedup
+    rooms = []
+    for rm in canon.rooms:
+        cyc = []
+        for c in rm["cycle"]:
+            ni = remap[c]
+            if not cyc or cyc[-1] != ni:
+                cyc.append(ni)
+        if len(cyc) >= 2 and cyc[0] == cyc[-1]:
+            cyc = cyc[:-1]
+        if len(cyc) >= 3:
+            rooms.append({"id": rm["id"], "role_id": rm["role_id"], "cycle": cyc})
+    # ② edge-split (벽 위 코너 삽입)
+    for rm in rooms:
+        cyc = rm["cycle"]
+        new = []
+        for k in range(len(cyc)):
+            a = cyc[k]
+            b = cyc[(k + 1) % len(cyc)]
+            new.append(a)
+            pa, pb = newcorners[a], newcorners[b]
+            mids = [ci for ci, pc in enumerate(newcorners)
+                    if ci not in (a, b) and _on_seg(pa, pb, pc)]
+            mids.sort(key=lambda ci: (newcorners[ci][0] - pa[0]) ** 2 + (newcorners[ci][1] - pa[1]) ** 2)
+            new.extend(mids)
+        d = []
+        for x in new:
+            if not d or d[-1] != x:
+                d.append(x)
+        if len(d) >= 2 and d[0] == d[-1]:
+            d = d[:-1]
+        rm["cycle"] = d
+    # ③ opening 재매칭: atomic edge(방 cycle 연속쌍) 중 door점 포함하는 sub-edge로
+    atomic = set()
+    for rm in rooms:
+        cyc = rm["cycle"]
+        L = len(cyc)
+        for k in range(L):
+            a, b = cyc[k], cyc[(k + 1) % L]
+            atomic.add((a, b))
+    openings = []
+    for op in canon.openings:
+        if op.get("kind") == "open" or op.get("edge") is None:
+            openings.append(op)
+            continue
+        ca, cb = op["edge"]
+        if not (0 <= ca < len(cs) and 0 <= cb < len(cs)):
+            continue
+        na, nb = remap[ca], remap[cb]
+        pa, pb = newcorners[na], newcorners[nb]
+        t0 = op.get("pos", nbins // 2) / nbins
+        dp = (pa[0] + (pb[0] - pa[0]) * t0, pa[1] + (pb[1] - pa[1]) * t0)
+        best = None
+        for (u, v) in atomic:
+            if _on_seg(newcorners[u], newcorners[v], dp, inclusive=True):
+                best = (u, v)
+                break
+        if not best:
+            continue                                # 부착 sub-edge 없음 → 문 버림
+        u, v = best
+        pu, pv = newcorners[u], newcorners[v]
+        seglen = ((pv[0] - pu[0]) ** 2 + (pv[1] - pu[1]) ** 2) ** 0.5
+        t = (((dp[0] - pu[0]) ** 2 + (dp[1] - pu[1]) ** 2) ** 0.5 / seglen) if seglen > 1e-6 else 0.5
+        op2 = dict(op)
+        op2["edge"] = [u, v]
+        op2["pos"] = max(0, min(nbins, round(t * nbins)))
+        openings.append(op2)
+    out = Canon(grid=canon.grid, bbox=canon.bbox, meta=canon.meta)
+    out.corners = newcorners
+    out.rooms = rooms
+    out.openings = openings
+    return out
+
+
 def encode(canon: Canon, vocab=None) -> list:
     vb = vocab or _vocab(canon.grid)
     t = [V.BOS]

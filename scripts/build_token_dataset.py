@@ -47,6 +47,9 @@ def main():
     ap.add_argument("--grid", type=int, default=128)
     ap.add_argument("--max-rooms", type=int, default=25)   # ADR-0011 Amendment
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--snap", action="store_true",
+                    help="벽두께 표현 정규화(축좌표 스냅+edge-split+문 재매칭). 한국(AI-Hub)용. RPLAN엔 불필요.")
+    ap.add_argument("--snap-tol", type=float, default=2.5, help="스냅 tolerance(grid 단위). 안전권 2.5~3.0.")
     args = ap.parse_args()
 
     vocab = wc._vocab(args.grid)
@@ -79,6 +82,8 @@ def main():
             continue
         try:
             canon = wc.canonicalize(g, grid=args.grid)
+            if args.snap:                                    # 한국 벽두께 → RPLAN식 공유벽 정규화
+                canon = wc.snap_split(canon, tol=args.snap_tol)
             toks = wc.encode(canon, vocab)
         except Exception as e:  # noqa: BLE001
             skip["encode_err"] += 1
