@@ -7,6 +7,7 @@ clean = selfint_rooms==0 ∧ overlap_frac<0.25(실폴리곤 겹침) ∧ span_rat
 from __future__ import annotations
 
 from shapely.geometry import Polygon
+from shapely.ops import unary_union
 from shapely.validation import make_valid
 
 
@@ -19,10 +20,13 @@ def _bbox_span(q):
 
 
 def metrics(g):
-    """g-0.4 그래프 → {n_rooms, selfint_rooms, overlap_frac, span_ratio}.
+    """g-0.4 그래프 → {n_rooms, selfint_rooms, overlap_frac, overlap_any, span_ratio}.
 
-    selfint_rooms : 자기교차(=shapely invalid) 방 수.
-    overlap_frac  : 방-쌍 겹침 면적합 / 전체 방 면적합 (실폴리곤 기준).
+    selfint_rooms : 자기교차(=shapely invalid) 방 수. (OGC Simple Features 유효성 = 표준)
+    overlap_frac  : **% Overlap 표준 정의** = (Σ방면적 − 합집합면적) / Σ방면적, 실폴리곤 기준.
+                    겹친 총면적 / 생성 총면적 (Lara et al. RLVR floorplan, arXiv:2605.14117).
+                    ⚠️ 이전 정의(방-쌍 겹침 *합*)는 3방 겹침 중복계산으로 과대-엄격이라 폐기.
+    overlap_any   : 임의 겹침 존재 여부(boolean) — RLVR의 binary overlap.
     span_ratio    : 가장 세장한 방의 bbox 종횡비(max/min).
     """
     rooms = g.get("rooms") or {}
@@ -51,14 +55,13 @@ def metrics(g):
         spans.append(_bbox_span(q))
 
     total = sum(p.area for p in valid)
-    inter = 0.0
-    for i in range(len(valid)):
-        for j in range(i + 1, len(valid)):
-            try:
-                inter += valid[i].intersection(valid[j]).area
-            except Exception:  # noqa: BLE001
-                pass
-    overlap_frac = round(inter / total, 4) if total > 0 else 1.0
+    try:
+        union_area = unary_union(valid).area if valid else 0.0
+    except Exception:  # noqa: BLE001
+        union_area = total                         # 합집합 실패 → 겹침 0 가정(보수적)
+    overlapped = max(0.0, total - union_area)      # 겹친 총면적(다중피복 초과분)
+    overlap_frac = round(overlapped / total, 4) if total > 0 else 1.0
+    overlap_any = overlapped > 1.0                 # 1px² 초과 겹침 = 실제 겹침
     span_ratio = round(max(spans), 2) if spans else 99.0
     return dict(n_rooms=n_rooms, selfint_rooms=selfint,
-                overlap_frac=overlap_frac, span_ratio=span_ratio)
+                overlap_frac=overlap_frac, overlap_any=overlap_any, span_ratio=span_ratio)
