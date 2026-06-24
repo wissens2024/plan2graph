@@ -51,7 +51,13 @@ def main():
     ap.add_argument("--orthogonal", action="store_true")
     ap.add_argument("--country", type=int, default=1)
     ap.add_argument("--out", default="docs/runs/ar_geom.png")
+    ap.add_argument("--seed", type=int, default=0,
+                    help="재현성: >0이면 시드 고정 → 같은 모델+같은 시드 = 같은 생성·같은 clean율. 0=미설정.")
     args = ap.parse_args()
+
+    if args.seed > 0:
+        torch.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
 
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     vocab = json.load(open(args.vocab, encoding="utf-8"))

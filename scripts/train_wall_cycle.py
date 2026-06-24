@@ -110,7 +110,18 @@ def main():
     ap.add_argument("--amp", action="store_true", help="혼합정밀(fp16) 학습")
     ap.add_argument("--country", type=int, default=0,
                     help="diagnose 생성 prefix country (0=KR 1=CN 2=EU). RPLAN 학습=1 (데이터 분포와 일치)")
+    ap.add_argument("--seed", type=int, default=0,
+                    help="재현성: >0이면 torch/cuda/numpy/random 시드 고정. 0=미설정(기존 동작). 논문 최종학습=고정 권장.")
     args = ap.parse_args()
+
+    if args.seed > 0:                                # 재현성(같은 시드=같은 모델=같은 수치)
+        import random as _random
+        import numpy as _np
+        torch.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
+        _np.random.seed(args.seed)
+        _random.seed(args.seed)
+        print(f"[seed] 고정 seed={args.seed} (torch/cuda/numpy/random) — 재현 가능 학습")
 
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     vocab = json.load(open(args.vocab, encoding="utf-8"))
