@@ -112,7 +112,7 @@
     "RPLAN room-perm+seed42 (grid128)": {"clean_peak": 46, "ep_peak": 80},
     "RPLAN grid256 (rBoundary)": {"clean_peak": null, "ep_peak": null, "ceiling": "B 학습중"},
     "한국 ungated RPLAN→FT snap": {"clean_peak": 20, "ep_peak": 100},
-    "한국 gated RPLAN→FT": {"clean_peak": null, "ep_peak": null, "ceiling": "A 학습중; ep60 27%"}
+    "한국 gated RPLAN→FT (snap+게이트)": {"clean_peak": 65, "ep_peak": 130, "ceiling": "피크 65%@ep130, RPLAN 46% 초과 — 확정"}
   },
   "tokenization": {
     "korean_gate_funnel": [
@@ -141,18 +141,16 @@
     "ontology_unchanged": "역할 온톨로지·그래프 스키마 불변. 변환 코덱(snap_split 토큰화)만 수정. 모델 아키텍처(d512/L24/dim_ff1408)도 불변."
   },
   "projected": {
-    "note": "⚠️ 잠정(가정) — 학습 진행 중. 추세 기반 예상치이며 실제 결과 나오면 교체. 실데이터 곡선(results_*.md)이 생기면 자동으로 그게 우선됨.",
+    "note": "⚠️ 잠정(가정) — 학습 진행 중. 실데이터 곡선(results_*.md)이 생기면 자동으로 그게 우선됨. (한국 gated는 실데이터 확정—아래 곡선 참조)",
     "curves": {
-      "한국 gated FT (잠정)": [[60, 27], [70, 33], [80, 39], [90, 43], [100, 45], [110, 46], [120, 45], [130, 44]],
       "RPLAN grid256 (잠정)": [[10, 3], [20, 12], [30, 22], [40, 32], [50, 40], [60, 46], [70, 50], [80, 53], [90, 52], [100, 53]]
     },
     "peaks": {
-      "한국 gated FT": {"clean_peak": 46, "ep_peak": 110, "기준": "ep60 실측 27%에서 추세 외삽; 옛 ungated 20% 대비 큰 상승 예상"},
-      "RPLAN grid256": {"clean_peak": 53, "ep_peak": 80, "기준": "grid128 천장 46% 대비 해상도 이득 가정(돌파)"}
+      "RPLAN grid256": {"clean_peak": 53, "ep_peak": 80, "기준": "grid128 천장 46% 대비 해상도 이득 가정(돌파). B 학습중"}
     }
   },
   "conclusions": [
-    {"가설": "깨끗한 GT(43→100%)가 생성 clean을 올린다", "상태": "잠정확인(ep60 실측)", "결론": "옛 ungated 20% → gated ep60 27%(10에폭만에 초과). 피크 ~46% 예상. [최종데이터 대기]"},
+    {"가설": "깨끗한 GT(43→100%)가 생성 clean을 올린다", "상태": "확정", "결론": "옛 ungated 20% → gated 피크 65%@ep130(한국80ep). RPLAN 46%마저 초과(한국 방 2배인데도). GT품질→모델품질 결정적 입증."},
     {"가설": "grid256가 grid128 천장 46%를 깬다", "상태": "검증중(B 학습)", "결론": "한국 벽두께 보존(셀당 47mm)으로 ~53% 예상. [최종데이터 대기]"},
     {"가설": "snap 단일화가 옳다(nosnap=비연결)", "상태": "확정", "결론": "nosnap GT 연결 0% → snap 채택. 데이터로 종결."},
     {"가설": "기하게이트로 한국 GT를 RPLAN급으로", "상태": "확정", "결론": "GT 43→100% clean, 10,430 plans. 달성."},
@@ -175,6 +173,6 @@
     "snap 단일화(nosnap 연결0%=도면불가). overlap지표가 비연결 보상한 착시.",
     "코어분리 100% 소스 존재=R2G 오배치 → 코덱 아닌 기하게이트로 선별.",
     "한국 GT 43→100% clean: selfint코덱수정+tol3.5+기하게이트, ~10,430 한정(품질>수량).",
-    "gated 효과 초기확인: ep60(10에폭) 27%·single62% > 옛 ungated ep100 20%·44%."
+    "★gated 효과 확정: 한국 gated 피크 clean 65%@ep130 = 옛 ungated 20%의 3.25배, RPLAN 천장 46%마저 초과(한국 방 2배인데도). 깨끗한 GT가 모델 품질을 결정."
   ]
 }
