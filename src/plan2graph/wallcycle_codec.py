@@ -79,6 +79,36 @@ def _dedup_cycle(idxs):
     return out
 
 
+def _clean_ring(cyc, corners):
+    """edge-split 후 cycle을 simple ring으로 정리.
+    ① 연속/폐합 중복 제거 ② collinear 왕복 스파이크 제거(A,B,C 공선 & (B-A)·(C-B)<=0 → B 제거).
+    T자 접합(forward 공선, dot>0)은 보존. 반환 [] = 퇴화(방 드롭)."""
+    def _dd(seq):
+        out = []
+        for i in seq:
+            if not out or out[-1] != i:
+                out.append(i)
+        if len(out) > 1 and out[0] == out[-1]:
+            out.pop()
+        return out
+    cyc = _dd(cyc)
+    changed = True
+    while changed and len(cyc) >= 3:
+        changed = False
+        n = len(cyc)
+        for k in range(n):
+            a = corners[cyc[(k - 1) % n]]
+            b = corners[cyc[k]]
+            c = corners[cyc[(k + 1) % n]]
+            cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+            dot = (b[0] - a[0]) * (c[0] - b[0]) + (b[1] - a[1]) * (c[1] - b[1])
+            if cross == 0 and dot <= 0:          # 공선 & 역방향/정지 = 스파이크 tip
+                cyc = _dd(cyc[:k] + cyc[k + 1:])
+                changed = True
+                break
+    return cyc if len(cyc) >= 3 else []
+
+
 def _edge_key(a, b):
     return (a, b) if a <= b else (b, a)
 
@@ -626,7 +656,8 @@ def snap_split(canon: Canon, tol: float = 2.5) -> Canon:
                 d.append(x)
         if len(d) >= 2 and d[0] == d[-1]:
             d = d[:-1]
-        rm["cycle"] = d
+        rm["cycle"] = _clean_ring(d, newcorners)
+    rooms = [rm for rm in rooms if len(rm["cycle"]) >= 3]   # 타일링 퍼진(퇴화) 방 드롭
     # ③ opening 재매칭: atomic edge(방 cycle 연속쌍) 중 door점 포함하는 sub-edge로
     atomic = set()
     for rm in rooms:
