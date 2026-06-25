@@ -1,30 +1,70 @@
 {
   "updated": "2026-06-25",
-  "note": "KorPlan-AR 성능/토큰화/학습 데이터 종합. 곡선(clean)은 results_*.md를 GUI가 라이브 파싱; 여기엔 정적 통계·파라미터·피크.",
+  "note": "KorPlan-AR 성능/토큰화/학습 데이터 + 실험 흐름. 곡선(clean)은 results_*.md 라이브 파싱.",
+  "framing": {
+    "headline": "온톨로지(역할·그래프 스키마)는 불변. 변환 코덱(토큰화 표현)만 변경.",
+    "points": [
+      "역할 온톨로지 검증=건강(안방 위계 7958/8000 보존, RPLAN rBoundary 실폴리곤). 우리가 온톨로지로 한계를 만든 게 아님.",
+      "RPLAN: GT 99% clean → 천장=모델(99→생성46% 격차는 모델이 못 따라그림).",
+      "한국(AI-Hub): GT 43~51%·연결0~48% → 천장=변환 코덱 표현 + 소스 오배치(우리가 고칠 수 있는 것).",
+      "처방=코덱(snap_split) 수정 + 기하 게이트 선별. 온톨로지·모델 아키텍처는 그대로."
+    ]
+  },
+  "experiments": [
+    {"id": 1, "title": "온톨로지 vs 코덱 진단", "question": "우리가 역할/그래프 온톨로지로 모델 한계를 만들었나?",
+     "before": "의심: 역할 붕괴(침실4→1)·기하 손실", "after": "데이터: 안방 위계 이미 보존(7958/8000)·rBoundary 실폴리곤(코너28 일치)",
+     "verdict": "의미있음", "note": "온톨로지는 건강 → 병목은 변환 코덱으로 방향 전환(코드추측 정정)"},
+    {"id": 2, "title": "GT-clean 측정 RPLAN vs 한국", "question": "깨끗한 도면이 안 나오는 게 모델 탓인가 데이터 탓인가?",
+     "before": "추정만 있었음", "after": "RPLAN GT 99% / 한국 GT 43~51%·연결 0~48%",
+     "verdict": "의미있음", "note": "결정적—RPLAN 천장=모델, 한국 천장=표현·소스로 확정"},
+    {"id": 3, "title": "snap vs nosnap", "question": "벽두께 정규화(snap)가 필요한가?",
+     "before": "nosnap GT 연결성 0% (떠다니는 박스=도면불가)", "after": "snap GT 연결성 48%",
+     "verdict": "의미있음", "note": "snap 단일화·nosnap 폐기. overlap지표가 비연결을 보상한 착시 해소"},
+    {"id": 4, "title": "코덱 수정 _clean_ring (selfint)", "question": "snap_split이 자기교차 폴리곤을 만드나?",
+     "before": "selfint=0 45% (Ring Self-int 80%)", "after": "selfint=0 88%",
+     "verdict": "의미있음", "note": "edge-split collinear 왕복 스파이크 제거. 커밋 150b4cdde. 재학습 0"},
+    {"id": 5, "title": "파라미터 snap_tol 2.5→3.5", "question": "틈닫기 tol을 올리면?",
+     "before": "clean 43% / core-single 48%", "after": "clean 72% / core-single 81% (방손실 0.3%)",
+     "verdict": "의미있음", "note": "tol 7.0은 방 25% 파괴 → 3.5가 균형점"},
+    {"id": 6, "title": "기하 게이트 선별", "question": "소스 오배치(코덱이 못 고침)를 어떻게?",
+     "before": "clean_ids 13,325 (GT 43%)", "after": "게이트 통과 10,430 (GT 100%)",
+     "verdict": "의미있음", "note": "코어분리 100%가 소스에 존재 → 걸러냄. RPLAN급(99%) 달성. 품질>수량"},
+    {"id": 7, "title": "사전학습 RPLAN→FT vs target-only", "question": "RPLAN 사전학습이 한국에 도움되나?",
+     "before": "target-only nosnap 24%", "after": "RPLAN→FT nosnap 32%",
+     "verdict": "의미있음", "note": "pretrain 채택(옛 '한국단독만 유효' 정정). 단 탐색치"},
+    {"id": 8, "title": "room-perm 증강", "question": "방순서 증강이 천장을 올리나?",
+     "before": "no-perm 피크 46%", "after": "room-perm 피크 46% (동일)",
+     "verdict": "부분적", "note": "천장 관점=의미없음. 연결성(single 74→80)·재현성=의미있음"},
+    {"id": 9, "title": "grid 128→256", "question": "해상도가 천장(46%)을 깨나?",
+     "before": "grid128 RPLAN 46% 천장", "after": "학습중(B)",
+     "verdict": "진행중", "note": "한국 벽두께 셀당 94→47mm 보존. rBoundary 토큰 빌드 완료"},
+    {"id": 10, "title": "한국 gated 재학습 (종합 검증)", "question": "GT 품질↑이 생성 clean↑로 이어지나?",
+     "before": "ungated RPLAN→FT snap 생성 clean 20%", "after": "gated ep60(10에폭) 27%·single 62% (상승중)",
+     "verdict": "진행중", "note": "초기 긍정. 옛 50에폭 20%를 10에폭에 넘음. A 학습중(→ep150)"}
+  ],
   "params": {
     "architecture": {"d_model": 512, "n_layer": 24, "n_head": 32, "dim_ff": 1408, "params_M": 77.6, "max_len": 1152},
     "training": {"lr": 1e-4, "batch": 32, "amp": true, "grad_ckpt": true, "decoding": "constrained+orthogonal", "seed": 42},
     "representation": {"grid": 128, "snap_tol": 3.5, "room_perm_prob": 0.5, "vocab_size": 520},
     "rationale": {
-      "dim_ff": "FMLM 정본 2048이나 10GB OOM → 1408(하드웨어 deviation, 논문 명시)",
-      "grid": "128 기본 / 256 천장돌파 검증중(한국 벽두께 보존 셀당 47mm)",
-      "snap_tol": "2.5=벽두께 틈 일부만 닫힘 / 3.5=clean 52→72%·방손실0 / 7.0=연결94%지만 방25%파괴 → 3.5 채택",
-      "seed": "42 고정 = 재현가능",
-      "room_perm": "방순서 robust 증강(기하불변), 천장 미상승이나 연결성·재현성 이득"
+      "dim_ff": "FMLM 정본 2048이나 10GB OOM → 1408(하드웨어 deviation)",
+      "grid": "128 기본 / 256 천장돌파 검증중(한국 벽두께 셀당 47mm)",
+      "snap_tol": "2.5=틈 일부만 / 3.5=clean 52→72%·방손실0 / 7.0=연결94%지만 방25%파괴 → 3.5 채택",
+      "seed": "42 고정=재현가능",
+      "room_perm": "방순서 robust 증강(기하불변). 천장 미상승, 연결성·재현성 이득"
     }
   },
   "peaks": {
-    "RPLAN no-perm (grid128)": {"clean_peak": 46, "ep_peak": 70, "ceiling": "ep70~80 평탄 46%"},
-    "RPLAN room-perm+seed42 (grid128)": {"clean_peak": 46, "ep_peak": 80, "ceiling": "no-perm과 동일 천장"},
-    "RPLAN grid256 (rBoundary)": {"clean_peak": null, "ep_peak": null, "ceiling": "B 학습중(천장 돌파 검증)"},
-    "한국 ungated RPLAN→FT nosnap": {"clean_peak": 32, "ep_peak": 100, "ceiling": "탐색 매트릭스"},
-    "한국 ungated RPLAN→FT snap": {"clean_peak": 20, "ep_peak": 100, "ceiling": "탐색 매트릭스"},
-    "한국 gated RPLAN→FT (snap+tol3.5)": {"clean_peak": null, "ep_peak": null, "ceiling": "A 학습중; ep60 이미 27%(>옛20%)"}
+    "RPLAN no-perm (grid128)": {"clean_peak": 46, "ep_peak": 70},
+    "RPLAN room-perm+seed42 (grid128)": {"clean_peak": 46, "ep_peak": 80},
+    "RPLAN grid256 (rBoundary)": {"clean_peak": null, "ep_peak": null, "ceiling": "B 학습중"},
+    "한국 ungated RPLAN→FT snap": {"clean_peak": 20, "ep_peak": 100},
+    "한국 gated RPLAN→FT": {"clean_peak": null, "ep_peak": null, "ceiling": "A 학습중; ep60 27%"}
   },
   "tokenization": {
     "korean_gate_funnel": [
       {"stage": "corrected/graphs (Parsed APT 전체)", "n": 39117},
-      {"stage": "clean_ids (1세대·APT·평면도 메타필터)", "n": 13325},
+      {"stage": "clean_ids (메타필터 1세대·APT·평면도)", "n": 13325},
       {"stage": "기하게이트 통과 (selfint0 & core-single & overlap<5%)", "n": 10485, "rate": "79%"},
       {"stage": "토큰화 완료 (tokens_korean_gated)", "n": 10430, "skip": {"too_many_rooms": 37, "not_passed": 17, "not_single_entrance": 1}}
     ],
@@ -44,13 +84,15 @@
       "tokens_korean_gated": {"total": 10430, "token_mean": 338, "token_max": 570, "rooms_median": 14},
       "tokens_rplan_rb (grid128)": {"corner_median": 22, "안방_preserved": "7958/8000 plans"}
     },
-    "selfint_diagnosis": {"무효방_사유": {"Ring Self-intersection": "80%", "Self-intersection": "20%"}, "원인": "edge-split이 방 cycle을 벽 따라 왕복시켜 collinear 스파이크 생성"}
+    "selfint_diagnosis": {"무효방_사유": {"Ring Self-intersection": "80%", "Self-intersection": "20%"}, "원인": "edge-split이 방 cycle을 벽 따라 왕복→collinear 스파이크"},
+    "ontology_unchanged": "역할 온톨로지·그래프 스키마 불변. 변환 코덱(snap_split 토큰화)만 수정. 모델 아키텍처(d512/L24/dim_ff1408)도 불변."
   },
   "key_findings": [
-    "RPLAN GT 99% clean → 천장은 모델(99→생성46% 격차=모델). 한국 GT 43~51%·연결0~48% → 한국 천장은 표현+소스(우리가 망친 것).",
-    "snap 결론=단일화. nosnap GT 연결성 0%(떠다니는 박스=도면불가). overlap지표가 비연결을 보상한 착시.",
-    "코어방 분리 100% 소스(raw)에 존재=R2G 오배치. 코덱이 아니라 기하게이트로 걸러냄.",
-    "한국 GT 43→100% clean화: selfint코덱수정 + tol3.5 + 기하게이트. ~10,430 plans 한정(품질>수량).",
-    "gated 효과 초기확인: ep60(10에폭) clean 27%·single 62% > 옛 ungated ep100 20%·44%."
+    "온톨로지 불변·변환코덱만 변경: 역할(안방 위계)·기하(rBoundary)는 건강, 병목은 코덱 표현이었음.",
+    "RPLAN GT 99%→천장=모델 / 한국 GT 43~51%·연결0~48%→천장=표현+소스(우리가 망친 것).",
+    "snap 단일화(nosnap 연결0%=도면불가). overlap지표가 비연결 보상한 착시.",
+    "코어분리 100% 소스 존재=R2G 오배치 → 코덱 아닌 기하게이트로 선별.",
+    "한국 GT 43→100% clean: selfint코덱수정+tol3.5+기하게이트, ~10,430 한정(품질>수량).",
+    "gated 효과 초기확인: ep60(10에폭) 27%·single62% > 옛 ungated ep100 20%·44%."
   ]
 }

@@ -60,6 +60,28 @@ def render(root="."):
         except Exception:
             stats = {}
 
+    # ════ 0. 실험 흐름 (데이터 중심) ════
+    fr = stats.get("framing", {})
+    if fr:
+        st.subheader("0. 실험 흐름 — 무엇을 바꿨고, 의미 있었나")
+        st.success("**" + fr.get("headline", "") + "**")
+        for pt in fr.get("points", []):
+            st.markdown("- " + pt)
+    exps = stats.get("experiments", [])
+    if exps:
+        badge = {"의미있음": "✅ 의미있음", "부분적": "🟡 부분적",
+                 "진행중": "🔄 진행중", "의미없음": "⚪ 의미없음"}
+        rows = []
+        for e in exps:
+            rows.append({"#": e.get("id"), "실험": e.get("title"),
+                         "질문(가설)": e.get("question"),
+                         "before": e.get("before"), "after": e.get("after"),
+                         "판정": badge.get(e.get("verdict"), e.get("verdict")),
+                         "메모": e.get("note")})
+        st.table(rows)
+        st.caption("판정: ✅의미있음 · 🟡부분적(천장X·연결/재현O) · 🔄진행중 · ⚪의미없음")
+        st.divider()
+
     # ── 곡선 수집 ──
     rep = _read(os.path.join(root, "results_report.md"))
     rperm = _read(os.path.join(root, "results_roomperm_rplan.md"))
