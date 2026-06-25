@@ -63,8 +63,11 @@ def render(root="."):
     # ════ 용어 설명 (표준 vs 우리정의) ════
     gl = stats.get("glossary", [])
     if gl:
-        with st.expander("📖 용어 설명 — 표준 용어인가, 우리 내부 정의인가 (먼저 읽기)", expanded=True):
-            st.caption("이 화면은 실험 비참여자(전문가)도 이해할 수 있도록 용어의 출처를 표시합니다.")
+        with st.expander("📖 용어 설명 — 표준 / 선행연구인용 / 우리정의 / 외부 (먼저 읽기)", expanded=True):
+            st.caption("실험 비참여 전문가도 이해하도록 용어 출처를 구분. ⚠️ 논문에 한 번 등장 ≠ 표준.")
+            leg = stats.get("glossary_legend")
+            if leg:
+                st.info(leg)
             st.table([{"용어": g["term"], "구분": g["type"], "뜻": g["def"]} for g in gl])
 
     # ════ 0. 실험 흐름 (데이터 중심) ════
