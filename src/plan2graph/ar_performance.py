@@ -112,6 +112,14 @@ def render(root="."):
     if c:
         curves["RPLAN grid256 (rBoundary)"] = c
 
+    # 잠정(가정) 곡선 — 실데이터 곡선이 아직 없을 때만 추가(점선 표시). 실데이터 생기면 자동 우선.
+    proj = stats.get("projected", {})
+    has_kor = any("gated" in k for k in curves)
+    has_g256 = any("grid256" in k for k in curves)
+    for pname, ppts in (proj.get("curves") or {}).items():
+        if ("gated" in pname and not has_kor) or ("grid256" in pname and not has_g256):
+            curves[pname] = [(int(a), int(b)) for a, b in ppts]
+
     # ════ 평가 방법론 ════
     mth = stats.get("methodology", {})
     if mth:
@@ -129,6 +137,16 @@ def render(root="."):
                       for r in mth["why_composite_clean"]])
             if mth.get("clean_evidence"):
                 st.warning(mth["clean_evidence"])
+        cf = mth.get("clean_formula")
+        if cf:
+            st.markdown("**clean 공식 (제안 지표 — 정식 기술)**")
+            st.markdown(cf.get("정의", ""))
+            for cond in cf.get("조건", []):
+                st.markdown("- " + cond)
+            if cf.get("한국확장"):
+                st.markdown("**한국 확장(연결-clean):** " + cf["한국확장"])
+            if cf.get("표기"):
+                st.caption(cf["표기"])
         if mth.get("comparison"):
             st.markdown("**기존 vs 우리 — 평가 설계 비교**")
             st.table(mth["comparison"])
@@ -149,7 +167,8 @@ def render(root="."):
             for name, pts in curves.items():
                 xs = [p[0] for p in pts]
                 ys = [p[1] for p in pts]
-                ax.plot(xs, ys, marker="o", label=name)
+                ls = "--" if "잠정" in name else "-"
+                ax.plot(xs, ys, marker="o", linestyle=ls, label=name)
                 pk = _peak(pts)
                 if pk:
                     ax.annotate(f"{pk[1]}%@ep{pk[0]}", xy=pk, xytext=(0, 8),
@@ -167,9 +186,12 @@ def render(root="."):
         rows = []
         for name, pts in curves.items():
             pk = _peak(pts)
-            rows.append({"모델": name, "피크 clean": f"{pk[1]}%", "피크 ep": pk[0],
+            tag = " (잠정)" if "잠정" in name else ""
+            rows.append({"모델": name, "피크 clean": f"{pk[1]}%{tag}", "피크 ep": pk[0],
                          "최종 ep": pts[-1][0], "최종 clean": f"{pts[-1][1]}%"})
         st.table(rows)
+        if any("잠정" in k for k in curves):
+            st.caption("⚠️ 점선=잠정(가정) 추세. " + stats.get("projected", {}).get("note", ""))
     else:
         st.info("아직 곡선 데이터 없음(학습/평가 진행 중). results_*.md 생성되면 표시됩니다.")
 
@@ -224,5 +246,22 @@ def render(root="."):
     st.subheader("5. 핵심 발견")
     for f in stats.get("key_findings", []):
         st.markdown(f"- {f}")
+
+    # ════ 6. 잠정 결론 & 최종 선정 ════
+    st.subheader("6. 가설별 결론 & 최종 선정")
+    conc = stats.get("conclusions", [])
+    if conc:
+        st.markdown("**가설 → 상태 → 결론** (확정 / 잠정 / 검증중)")
+        badge = {"확정": "✅ 확정"}
+        st.table([{"가설": c.get("가설"),
+                   "상태": badge.get(c.get("상태"), "🔄 " + str(c.get("상태"))),
+                   "결론": c.get("결론")} for c in conc])
+    prod = stats.get("production", {})
+    if prod:
+        st.success("**최종 선정 (도면 생성에 실제 사용)** — " + prod.get("원칙", ""))
+        st.json(prod.get("최종_선정_구성", {}))
+        if prod.get("비고"):
+            st.caption(prod["비고"])
+
     if stats.get("updated"):
-        st.caption(f"stats 갱신: {stats['updated']}")
+        st.caption(f"stats 갱신: {stats['updated']} · 잠정치는 최종 학습결과로 자동/수동 교체")

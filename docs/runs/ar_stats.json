@@ -27,6 +27,16 @@
   },
   "methodology": {
     "intro": "평가지표는 객관성이 최우선. 타 논문과 똑같이 안 가고 다르게 가져간 이유, overlap 단독이 아니라 clean 복합을 만든 이유를 데이터 근거로 기술.",
+    "clean_formula": {
+      "정의": "clean(g) = 1 (사용가능 도면) iff 세 조건 모두 만족, else 0. clean율 = (Σ_g clean(g)) / N (고정 N 생성, 무편향).",
+      "조건": [
+        "① 유효성: 모든 방 폴리곤 r에 대해 selfint(r)=0  (OGC/ISO 19125 Simple Features 유효, 자기교차 없음)",
+        "② 미겹침: overlap(g) = (Σ_r area(r) − area(∪_r r)) / Σ_r area(r) < 0.25",
+        "③ 형상정상: max_r 종횡비(r) < 8,  종횡비(r) = max(w,h)/min(w,h) of bbox(r)"
+      ],
+      "한국확장": "연결-clean = clean(g) ∧ core-single(g)=1.  core-single = 발코니·실외기실·테라스·기타 제외한 코어방들이 단일 연결성분(∪이 MultiPolygon 아님). 한국 발코니=외벽밖 분리 정상이라 코어만 연결 요구.",
+      "표기": "selfint=OGC validity, overlap=RLVR/FMLM 공식 인용, 종횡비·core-single=우리 정의. 모든 항 결정론·시드42·임계값 고정."
+    },
     "why_not_identical": [
       {"점": "FID는 raster(이미지) 분포 지표", "기존": "FMLM 등은 생성물을 이미지로 렌더→FID로 분포 realism 측정", "우리": "출력이 벡터/AR. 렌더 프로토콜이 다르면 FID가 '모델 품질'이 아니라 '렌더 스타일 차이'를 잼 → 동일 프로토콜 재현 시에만 1:1, 아니면 부적합 명시(억지 FID 금지)"},
       {"점": "기여 성격이 다름", "기존": "생성 분포 realism(전체가 도면 분포 같나)", "우리": "verify→repair가 *개별* 도면을 유효·합법하게 만듦 → per-sample 지표(overlap·clean·법규)가 본질, 분포지표(FID)는 부차"}
@@ -129,6 +139,35 @@
     },
     "selfint_diagnosis": {"무효방_사유": {"Ring Self-intersection": "80%", "Self-intersection": "20%"}, "원인": "edge-split이 방 cycle을 벽 따라 왕복→collinear 스파이크"},
     "ontology_unchanged": "역할 온톨로지·그래프 스키마 불변. 변환 코덱(snap_split 토큰화)만 수정. 모델 아키텍처(d512/L24/dim_ff1408)도 불변."
+  },
+  "projected": {
+    "note": "⚠️ 잠정(가정) — 학습 진행 중. 추세 기반 예상치이며 실제 결과 나오면 교체. 실데이터 곡선(results_*.md)이 생기면 자동으로 그게 우선됨.",
+    "curves": {
+      "한국 gated FT (잠정)": [[60, 27], [70, 33], [80, 39], [90, 43], [100, 45], [110, 46], [120, 45], [130, 44]],
+      "RPLAN grid256 (잠정)": [[10, 3], [20, 12], [30, 22], [40, 32], [50, 40], [60, 46], [70, 50], [80, 53], [90, 52], [100, 53]]
+    },
+    "peaks": {
+      "한국 gated FT": {"clean_peak": 46, "ep_peak": 110, "기준": "ep60 실측 27%에서 추세 외삽; 옛 ungated 20% 대비 큰 상승 예상"},
+      "RPLAN grid256": {"clean_peak": 53, "ep_peak": 80, "기준": "grid128 천장 46% 대비 해상도 이득 가정(돌파)"}
+    }
+  },
+  "conclusions": [
+    {"가설": "깨끗한 GT(43→100%)가 생성 clean을 올린다", "상태": "잠정확인(ep60 실측)", "결론": "옛 ungated 20% → gated ep60 27%(10에폭만에 초과). 피크 ~46% 예상. [최종데이터 대기]"},
+    {"가설": "grid256가 grid128 천장 46%를 깬다", "상태": "검증중(B 학습)", "결론": "한국 벽두께 보존(셀당 47mm)으로 ~53% 예상. [최종데이터 대기]"},
+    {"가설": "snap 단일화가 옳다(nosnap=비연결)", "상태": "확정", "결론": "nosnap GT 연결 0% → snap 채택. 데이터로 종결."},
+    {"가설": "기하게이트로 한국 GT를 RPLAN급으로", "상태": "확정", "결론": "GT 43→100% clean, 10,430 plans. 달성."},
+    {"가설": "온톨로지가 아니라 변환코덱이 병목", "상태": "확정", "결론": "역할(안방)·기하(rBoundary) 건강, 코덱(snap_split) 수정으로 해결. 방향 확정."}
+  ],
+  "production": {
+    "원칙": "성능비교 페이지=모델 만드는 과정의 가설·발견·실험 정리(흔적). 실제 도면생성에는 최종 선정된 1개 구성의 모델만 사용.",
+    "최종_선정_구성": {
+      "엔진": "KorPlan-AR (wall-cycle 자기회귀)",
+      "데이터": "한국 gated (snap+tol3.5, 기하게이트 10,430, GT 100% clean)",
+      "학습": "RPLAN 사전학습 → 한국 FT, room-perm+seed42, d512/L24/dim_ff1408",
+      "grid": "128 (grid256 천장돌파 확인되면 256으로 승격 — B 결과 대기)",
+      "ep": "천장 ep(피크) 채택 (한국 잠정 ~ep110, 최종 곡선으로 확정)"
+    },
+    "비고": "RPLAN-only·nosnap·ungated·target-only 등은 실험 대조군일 뿐 생성엔 미사용."
   },
   "key_findings": [
     "온톨로지 불변·변환코덱만 변경: 역할(안방 위계)·기하(rBoundary)는 건강, 병목은 코덱 표현이었음.",

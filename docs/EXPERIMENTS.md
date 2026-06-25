@@ -677,3 +677,22 @@ ep80 clean 46% ↔ no-perm 대조 ep80 42%. room-perm이 수렴 안정성·피�
 
 ## 학습 과정 데이터
 per-epoch clean 곡선(results_*.md) + loss(logs_*.log) = GUI ⚖️ 성능비교 §4. RPLAN ep10~80 단조상승→46% 천장 / 한국 gated ep60(27%)부터 상승중.
+
+## 평가 방법론 & clean 공식 (논문 Methods 초안) [2026-06-25]
+> GUI ⚖️ 성능비교 §평가방법론과 동일. 성능비교 페이지=모델 제작 과정의 가설·실험 정리. 도면생성엔 최종 선정 모델만 사용.
+
+### clean 공식 (제안 지표)
+clean(g)=1 (사용가능) iff 셋 모두, else 0. clean율=(Σ_g clean(g))/N (고정 N, 무편향):
+- ① 유효성: ∀ 방 r, selfint(r)=0 (OGC/ISO 19125 Simple Features 유효)
+- ② 미겹침: overlap(g)=(Σ_r area(r)−area(∪_r r))/Σ_r area(r) < 0.25 (RLVR/FMLM 공식 인용)
+- ③ 형상: max_r 종횡비(r) < 8, 종횡비=max(w,h)/min(w,h) of bbox
+- 한국확장(연결-clean): clean(g) ∧ core-single(g)=1 (발코니·실외기실·기타 제외 코어방이 단일 연결성분; 한국 발코니=외벽밖 분리 정상)
+
+### 왜 타 논문과 다른가 (기존→우리)
+- FID(raster 분포): FMLM 등은 렌더→FID. **우리=벡터/AR이라 렌더 프로토콜 차이가 점수 교란 → 동일 재현 시만 1:1, 아니면 부적합 명시(억지 FID 금지).** 기여가 per-sample(repair) 성격이라 분포지표는 부차.
+- **overlap 단독 한계**: 겹침만 봄. 자기교차·과세장·**비연결(틈을 보상→오히려 통과, 맹점)**을 못 잡음. 실증: nosnap GT 연결0%인데 overlap 100% 통과. → 독립 실패모드를 묶은 clean 필요.
+
+### 객관성 (5원칙)
+결정론(OGC/ISO 19125·면적공식) · seed42+고정N+조기종료없음(재현) · 공식·임계값 사전공개+민감도표 · 표준 overlap 병기(1:1 앵커) · repair는 같은 공식 before→after(지표 갈아끼우기 금지).
+
+### 헤드라인 = 법규 준수율(신규축, 채광 50→98%) + repair before→after. overlap·clean·FID는 보조.
