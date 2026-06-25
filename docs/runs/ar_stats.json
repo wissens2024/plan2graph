@@ -1,0 +1,56 @@
+{
+  "updated": "2026-06-25",
+  "note": "KorPlan-AR 성능/토큰화/학습 데이터 종합. 곡선(clean)은 results_*.md를 GUI가 라이브 파싱; 여기엔 정적 통계·파라미터·피크.",
+  "params": {
+    "architecture": {"d_model": 512, "n_layer": 24, "n_head": 32, "dim_ff": 1408, "params_M": 77.6, "max_len": 1152},
+    "training": {"lr": 1e-4, "batch": 32, "amp": true, "grad_ckpt": true, "decoding": "constrained+orthogonal", "seed": 42},
+    "representation": {"grid": 128, "snap_tol": 3.5, "room_perm_prob": 0.5, "vocab_size": 520},
+    "rationale": {
+      "dim_ff": "FMLM 정본 2048이나 10GB OOM → 1408(하드웨어 deviation, 논문 명시)",
+      "grid": "128 기본 / 256 천장돌파 검증중(한국 벽두께 보존 셀당 47mm)",
+      "snap_tol": "2.5=벽두께 틈 일부만 닫힘 / 3.5=clean 52→72%·방손실0 / 7.0=연결94%지만 방25%파괴 → 3.5 채택",
+      "seed": "42 고정 = 재현가능",
+      "room_perm": "방순서 robust 증강(기하불변), 천장 미상승이나 연결성·재현성 이득"
+    }
+  },
+  "peaks": {
+    "RPLAN no-perm (grid128)": {"clean_peak": 46, "ep_peak": 70, "ceiling": "ep70~80 평탄 46%"},
+    "RPLAN room-perm+seed42 (grid128)": {"clean_peak": 46, "ep_peak": 80, "ceiling": "no-perm과 동일 천장"},
+    "RPLAN grid256 (rBoundary)": {"clean_peak": null, "ep_peak": null, "ceiling": "B 학습중(천장 돌파 검증)"},
+    "한국 ungated RPLAN→FT nosnap": {"clean_peak": 32, "ep_peak": 100, "ceiling": "탐색 매트릭스"},
+    "한국 ungated RPLAN→FT snap": {"clean_peak": 20, "ep_peak": 100, "ceiling": "탐색 매트릭스"},
+    "한국 gated RPLAN→FT (snap+tol3.5)": {"clean_peak": null, "ep_peak": null, "ceiling": "A 학습중; ep60 이미 27%(>옛20%)"}
+  },
+  "tokenization": {
+    "korean_gate_funnel": [
+      {"stage": "corrected/graphs (Parsed APT 전체)", "n": 39117},
+      {"stage": "clean_ids (1세대·APT·평면도 메타필터)", "n": 13325},
+      {"stage": "기하게이트 통과 (selfint0 & core-single & overlap<5%)", "n": 10485, "rate": "79%"},
+      {"stage": "토큰화 완료 (tokens_korean_gated)", "n": 10430, "skip": {"too_many_rooms": 37, "not_passed": 17, "not_single_entrance": 1}}
+    ],
+    "korean_gt_clean": [
+      {"metric": "selfint=0", "ungated_snap": 45, "after_selfint_fix": 88, "gated": 100},
+      {"metric": "core-single(연결)", "ungated_snap": 48, "after_tol3.5": 81, "gated": 100},
+      {"metric": "all-single", "ungated_snap": 48, "gated": 87},
+      {"metric": "GT clean", "ungated_snap": 43, "after_tol3.5": 72, "gated": 100}
+    ],
+    "gt_clean_reference": {"RPLAN_GT": 99, "한국_nosnap_GT": 51, "한국_snap_GT": 43},
+    "codec_fixes": [
+      {"fix": "snap_split _clean_ring (collinear 왕복 스파이크 제거)", "effect": "selfint 45→88%", "commit": "150b4cdde"},
+      {"fix": "snap_tol 2.5→3.5", "effect": "core-single 48→81%, clean 43→72%, 방손실 0.3%"},
+      {"fix": "기하게이트 선별", "effect": "통과분 GT 100% clean(RPLAN급), 13,325→10,430"}
+    ],
+    "token_stats": {
+      "tokens_korean_gated": {"total": 10430, "token_mean": 338, "token_max": 570, "rooms_median": 14},
+      "tokens_rplan_rb (grid128)": {"corner_median": 22, "안방_preserved": "7958/8000 plans"}
+    },
+    "selfint_diagnosis": {"무효방_사유": {"Ring Self-intersection": "80%", "Self-intersection": "20%"}, "원인": "edge-split이 방 cycle을 벽 따라 왕복시켜 collinear 스파이크 생성"}
+  },
+  "key_findings": [
+    "RPLAN GT 99% clean → 천장은 모델(99→생성46% 격차=모델). 한국 GT 43~51%·연결0~48% → 한국 천장은 표현+소스(우리가 망친 것).",
+    "snap 결론=단일화. nosnap GT 연결성 0%(떠다니는 박스=도면불가). overlap지표가 비연결을 보상한 착시.",
+    "코어방 분리 100% 소스(raw)에 존재=R2G 오배치. 코덱이 아니라 기하게이트로 걸러냄.",
+    "한국 GT 43→100% clean화: selfint코덱수정 + tol3.5 + 기하게이트. ~10,430 plans 한정(품질>수량).",
+    "gated 효과 초기확인: ep60(10에폭) clean 27%·single 62% > 옛 ungated ep100 20%·44%."
+  ]
+}

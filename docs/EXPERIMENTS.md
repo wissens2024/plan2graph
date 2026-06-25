@@ -644,3 +644,36 @@ ep200 가중치에서 옵티마이저 복원(seamless)으로 연장 학습. **�
 
 ### 부수 — RPLAN room-perm+seed42 재현매트릭스
 ep80 clean 46% ↔ no-perm 대조 ep80 42%. room-perm이 수렴 안정성·피크 약우위, seed42 고정으로 재현가능. 정본(Phase2) 후보.
+
+# KorPlan-AR 성능 종합 — 파라미터 선정·천장·토큰화 데이터 [2026-06-25]
+> GUI: admin.py **⚖️ 성능 비교**(라이브 곡선·피크·토큰화 퍼널·학습데이터). 정적데이터 `docs/runs/ar_stats.json`. 곡선은 results_*.md 라이브 파싱.
+
+## 파라미터 선정 (데이터 근거)
+| 항목 | 값 | 근거 |
+|---|---|---|
+| d_model/n_layer/n_head | 512/24/32 (77.6M) | SOTA급 용량(5.1M plateau 탈출) |
+| dim_ff | 1408 | FMLM 정본 2048=10GB OOM → deviation |
+| lr/batch | 1e-4/32 | 안정 수렴 |
+| grid | 128 (256 검증중) | 256=한국 벽두께 셀당47mm 보존 |
+| **snap_tol** | **3.5** | 2.5=틈 일부만 / 3.5=clean 52→72%·방손실0 / 7.0=연결94%지만 방25%파괴 |
+| seed | 42 | 재현가능 |
+| room_perm | p0.5 | 기하불변 증강(천장 미상승, 연결성·재현성 이득) |
+
+## ep 최대치 (천장, eval n200·seed42)
+| 모델 | 피크 clean | 피크 ep | 천장 |
+|---|---|---|---|
+| RPLAN no-perm grid128 | 46% | ep70 | ep70~80 평탄 |
+| RPLAN room-perm+seed42 | 46% | ep80 | no-perm과 동일 천장 |
+| RPLAN grid256(rBoundary) | 학습중(B) | — | 천장돌파 검증 |
+| 한국 ungated RPLAN→FT snap | 20% | ep100 | (탐색) |
+| 한국 **gated** RPLAN→FT | 학습중(A) | — | ep60 이미 27%>옛20% |
+
+## 토큰화 과정 데이터
+**한국 게이트 퍼널**: Parsed APT 39,117 → clean_ids 13,325(메타) → 기하게이트 통과 **10,485(79%)** → 토큰화 **10,430**(skip 55).
+**한국 GT clean 개선**: ungated snap 43%(selfint45·single48) → +selfint코덱수정 88% → +tol3.5 clean72%·core-single81% → **gated 100%**(RPLAN GT 99% 동급).
+**코덱 수정**: snap_split `_clean_ring`(collinear 왕복 스파이크 제거, selfint45→88%, 커밋150b4cdde) + tol3.5 + 기하게이트.
+**selfint 원인**: edge-split이 방 cycle을 벽 따라 왕복→collinear 스파이크(Ring Self-int 80%).
+**RPLAN 소스**: .mat **rBoundary**(방별 실폴리곤, box아님). 안방 위계 보존(7958/8000). 코너 중앙값 22.
+
+## 학습 과정 데이터
+per-epoch clean 곡선(results_*.md) + loss(logs_*.log) = GUI ⚖️ 성능비교 §4. RPLAN ep10~80 단조상승→46% 천장 / 한국 gated ep60(27%)부터 상승중.
