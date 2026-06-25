@@ -142,6 +142,15 @@
     "selfint_diagnosis": {"무효방_사유": {"Ring Self-intersection": "80%", "Self-intersection": "20%"}, "원인": "edge-split이 방 cycle을 벽 따라 왕복→collinear 스파이크"},
     "ontology_unchanged": "역할 온톨로지·그래프 스키마 불변. 변환 코덱(snap_split 토큰화)만 수정. 모델 아키텍처(d512/L24/dim_ff1408)도 불변."
   },
+  "gt_vs_gen": {
+    "note": "GT clean = 학습 타깃(원본 도면)의 품질 = 모델이 못 넘는 천장. 생성 clean = 모델 피크. 회복률 = 생성/GT. 모델은 깨진 GT를 못 넘고, 깨끗한 GT일수록 더 높이 회복.",
+    "rows": [
+      {"모델": "RPLAN (grid128)", "GT clean": "99%", "생성 clean(피크)": "46%", "회복률": "46%"},
+      {"모델": "★ AI-Hub gated (snap+게이트)", "GT clean": "100%", "생성 clean(피크)": "65%", "회복률": "65%"},
+      {"모델": "AI-Hub ungated nosnap", "GT clean": "51%", "생성 clean(피크)": "32%", "회복률": "63%"},
+      {"모델": "AI-Hub ungated snap", "GT clean": "43%", "생성 clean(피크)": "20%", "회복률": "47%"}
+    ]
+  },
   "projected": {
     "note": "⚠️ 잠정(가정) — 학습 진행 중. 실데이터 곡선(results_*.md)이 생기면 자동으로 그게 우선됨. (한국 gated는 실데이터 확정—아래 곡선 참조)",
     "curves": {

@@ -195,6 +195,14 @@ def render(root="."):
     else:
         st.info("아직 곡선 데이터 없음(학습/평가 진행 중). results_*.md 생성되면 표시됩니다.")
 
+    # ── GT clean(데이터 천장) vs 생성 clean(모델 피크) ──
+    gvg = stats.get("gt_vs_gen", {})
+    if gvg.get("rows"):
+        st.markdown("**GT clean(데이터 천장) vs 생성 clean(모델 피크)**")
+        st.table(gvg["rows"])
+        if gvg.get("note"):
+            st.caption(gvg["note"])
+
     # ════ 2. 파라미터 선정 (데이터 근거) ════
     st.subheader("2. 파라미터 선정 (데이터 근거)")
     p = stats.get("params", {})
