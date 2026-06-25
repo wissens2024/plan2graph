@@ -112,6 +112,32 @@ def render(root="."):
     if c:
         curves["RPLAN grid256 (rBoundary)"] = c
 
+    # ════ 평가 방법론 ════
+    mth = stats.get("methodology", {})
+    if mth:
+        st.subheader("📐 평가 방법론 — 왜 지표를 다르게 가져갔나 (객관성)")
+        if mth.get("intro"):
+            st.caption(mth["intro"])
+        if mth.get("why_not_identical"):
+            st.markdown("**왜 타 논문과 동일 지표를 안 쓰나** (기존 → 우리)")
+            st.table([{"쟁점": r["점"], "기존(FMLM 등)": r["기존"], "우리": r["우리"]}
+                      for r in mth["why_not_identical"]])
+        if mth.get("why_composite_clean"):
+            st.markdown("**왜 overlap 단독이 아니라 clean 복합인가** (독립 실패모드별)")
+            st.table([{"실패 모드": r["실패모드"], "clean이 잡는 항": r["잡는 항"],
+                       "overlap 단독 한계": r["overlap단독_한계"]}
+                      for r in mth["why_composite_clean"]])
+            if mth.get("clean_evidence"):
+                st.warning(mth["clean_evidence"])
+        if mth.get("comparison"):
+            st.markdown("**기존 vs 우리 — 평가 설계 비교**")
+            st.table(mth["comparison"])
+        if mth.get("objectivity"):
+            st.markdown("**객관성 확보 방법**")
+            for o in mth["objectivity"]:
+                st.markdown("- " + o)
+        st.divider()
+
     # ════ 1. 성능 곡선 + 피크 ════
     st.subheader("1. clean 곡선 & 천장(피크)")
     if curves:
