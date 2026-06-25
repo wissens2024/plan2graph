@@ -1,6 +1,20 @@
 {
   "updated": "2026-06-25",
   "note": "KorPlan-AR 성능/토큰화/학습 데이터 + 실험 흐름. 곡선(clean)은 results_*.md 라이브 파싱.",
+  "glossary": [
+    {"term": "GT (Ground Truth)", "type": "표준(ML)", "def": "학습 타깃=정답 도면. 여기선 토큰을 디코드한 원본 도면(모델이 모방해야 할 것). 'GT clean 43%'=학습 타깃의 43%만 기하적으로 멀쩡."},
+    {"term": "clean", "type": "우리정의", "def": "도면이 쓸만한가 복합 판정 = self-intersection 0 ∧ overlap<0.25 ∧ 종횡비<8. 개별항목은 표준이나 묶음 기준은 우리 것."},
+    {"term": "self-intersection (selfint)", "type": "표준(OGC Simple Features)", "def": "방 폴리곤이 자기 자신과 교차 = 기하적으로 무효한 다각형. selfint=0이면 모든 방이 유효."},
+    {"term": "overlap", "type": "표준(도면생성 문헌, RLVR/DiffPlanner)", "def": "방들이 서로 겹친 면적 비율 = (Σ방면적−합집합)/Σ방면적."},
+    {"term": "single-piece / core-single", "type": "우리정의(연결성분은 표준)", "def": "모든 방(또는 코어방)을 합치면 한 덩어리로 연결되나. core=발코니·실외기실·기타 제외(이들은 외벽밖이라 분리 정상)."},
+    {"term": "snap / snap_split", "type": "우리정의(snap-to-grid은 CAD 표준)", "def": "한국 도면이 벽두께만큼 떨어진 방들을 축좌표 스냅+벽분할로 RPLAN식 '공유벽' 구조로 정규화하는 코덱 연산. 구현은 우리 것."},
+    {"term": "gate / 기하 게이트", "type": "우리정의", "def": "기하적으로 깨끗한(selfint0·연결·미겹침) 소스 그래프만 통과시키는 품질 필터. gated=통과셋."},
+    {"term": "room-perm", "type": "표준(FMLM 논문)", "def": "방 순서를 무작위로 섞어 학습 = 방 순서에 robust해지는 증강(기하 불변)."},
+    {"term": "pretrain / FT(fine-tune)", "type": "표준(ML)", "def": "RPLAN으로 사전학습 → 한국으로 파인튜닝. 'RPLAN→FT'=이 경로."},
+    {"term": "grid", "type": "표준(HouseDiffusion 등)", "def": "좌표를 N×N 격자로 양자화. grid128=128단계 해상도, grid256=2배 정밀(한국 벽두께 보존)."},
+    {"term": "rBoundary", "type": "외부(RPLAN .mat 필드)", "def": "RPLAN 원본 데이터의 방별 실제 폴리곤 필드. 우리가 box 대신 이걸 토큰 소스로 씀."},
+    {"term": "wall-cycle / cref", "type": "우리정의(코덱)", "def": "방=코너 순환(cycle)으로 인코딩하는 코덱 표현. cref=코너참조 토큰."}
+  ],
   "framing": {
     "headline": "온톨로지(역할·그래프 스키마)는 불변. 변환 코덱(토큰화 표현)만 변경.",
     "points": [

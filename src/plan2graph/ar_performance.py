@@ -60,6 +60,13 @@ def render(root="."):
         except Exception:
             stats = {}
 
+    # ════ 용어 설명 (표준 vs 우리정의) ════
+    gl = stats.get("glossary", [])
+    if gl:
+        with st.expander("📖 용어 설명 — 표준 용어인가, 우리 내부 정의인가 (먼저 읽기)", expanded=True):
+            st.caption("이 화면은 실험 비참여자(전문가)도 이해할 수 있도록 용어의 출처를 표시합니다.")
+            st.table([{"용어": g["term"], "구분": g["type"], "뜻": g["def"]} for g in gl])
+
     # ════ 0. 실험 흐름 (데이터 중심) ════
     fr = stats.get("framing", {})
     if fr:
