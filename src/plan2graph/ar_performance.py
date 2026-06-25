@@ -272,6 +272,11 @@ def render(root="."):
         st.json(prod.get("최종_선정_구성", {}))
         if prod.get("비고"):
             st.caption(prod["비고"])
+    nxt = stats.get("next_plan", {})
+    if nxt:
+        st.info("**다음 학습 계획 — " + nxt.get("목표", "") + "**  (" + nxt.get("상태", "") + ")")
+        for r in nxt.get("권장", []):
+            st.markdown("- " + r)
 
     if stats.get("updated"):
         st.caption(f"stats 갱신: {stats['updated']} · 잠정치는 최종 학습결과로 자동/수동 교체")
