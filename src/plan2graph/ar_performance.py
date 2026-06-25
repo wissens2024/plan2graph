@@ -210,8 +210,10 @@ def render(root="."):
     st.subheader("3. 토큰화 과정 데이터")
     tk = stats.get("tokenization", {})
     if tk.get("korean_gate_funnel"):
-        st.markdown("**한국 게이트 퍼널** (Parsed 40k → 토큰화 한정)")
+        st.markdown("**한국 게이트 퍼널** (Parsed → 토큰화 한정)")
         st.table(tk["korean_gate_funnel"])
+        if tk.get("line_note"):
+            st.warning(tk["line_note"])
     if tk.get("korean_gt_clean"):
         st.markdown("**한국 GT clean 개선** (ungated → 코덱수정 → gated)")
         st.table(tk["korean_gt_clean"])

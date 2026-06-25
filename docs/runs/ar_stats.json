@@ -116,11 +116,13 @@
   },
   "tokenization": {
     "korean_gate_funnel": [
-      {"stage": "corrected/graphs (Parsed APT 전체)", "n": 39117},
-      {"stage": "clean_ids (메타필터 1세대·APT·평면도)", "n": 13325},
+      {"stage": "Parsed 전체 json (APT+DEH+ROW)", "n": 41409},
+      {"stage": "Parsed APT 전체 (자동 R2G, corrected:false)", "n": 39117},
+      {"stage": "clean_ids (메타필터: 1세대·APT·평면도)", "n": 13325},
       {"stage": "기하게이트 통과 (selfint0 & core-single & overlap<5%)", "n": 10485, "rate": "79%"},
-      {"stage": "토큰화 완료 (tokens_korean_gated)", "n": 10430, "skip": {"too_many_rooms": 37, "not_passed": 17, "not_single_entrance": 1}}
+      {"stage": "토큰화 완료 (tokens_korean_gated, line=parsed)", "n": 10430}
     ],
+    "line_note": "⚠️ 데이터 계보: 폴더 data/staging/corrected/ 는 레거시 오칭. 전 데이터 corrected:false = Parsed(자동 R2G)이고 사람보정(Corrected:true) ≈ 0 (3000샘플 0개, manifest line=parsed). 즉 위 퍼널 전부 Parsed 라인. Parsed↔Corrected 보정효과 비교(논문2)는 사람보정 데이터 없어 아직 미실행 — 별개 축. 토큰화 스킵 55(too_many_rooms 37·not_passed 17·not_single_entrance 1).",
     "korean_gt_clean": [
       {"metric": "selfint=0", "ungated_snap": 45, "after_selfint_fix": 88, "gated": 100},
       {"metric": "core-single(연결)", "ungated_snap": 48, "after_tol3.5": 81, "gated": 100},
