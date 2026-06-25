@@ -930,8 +930,16 @@ if which.startswith("🗂"):
         except Exception:  # noqa: BLE001
             return None
 
+    _IDX_CACHE = config.DATA_DIR / "staging" / "corrected" / "_dsv_index.json"
+
     @st.cache_data(show_spinner="데이터셋 인덱스 빌드(최초 1회)...")
     def _ds_index(gdir, _bust):
+        try:
+            _c = _json.load(open(_IDX_CACHE, encoding="utf-8"))
+            if _c.get("dir") == gdir:
+                return _c["rows"]
+        except Exception:
+            pass
         out = []
         for f in _glob.glob(_os.path.join(gdir, "*.json")):
             try:
@@ -952,10 +960,14 @@ if which.startswith("🗂"):
                 "scope": _scope,
                 "disp": "제외" if not v.get("passed") else ("보정필요" if v.get("warnings") else "사용"),
             })
+        try:
+            _IDX_CACHE.write_text(_json.dumps({"dir": gdir, "rows": out}, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
         return out
 
-    _bust = str(int(_os.path.getmtime(_info["dir"]))) if _os.path.isdir(_info["dir"]) else "0"
-    idx = _ds_index(_info["dir"], _bust)
+    idx = _ds_index(_info["dir"], "sticky")   # 디스크 캐시 영속 — 재시작에도 안 돎. 갱신은 🔄
+
     if not idx:
         st.warning("그래프가 없습니다(재빌드 중일 수 있음). 잠시 후 새로고침.")
         st.stop()
@@ -983,8 +995,12 @@ if which.startswith("🗂"):
     _hits = sorted((r for r in idx if _ok(r)), key=lambda r: r["gid"])
     _cnt, _ref = st.columns([6, 1])
     _cnt.write("**" + format(len(_hits), ",") + "개** 일치 (전체 " + format(len(idx), ",") + ")")
-    if _ref.button("🔄 새로고침", use_container_width=True):
+    if _ref.button("🔄 다시 읽기", use_container_width=True, help="데이터셋 재스캔(숫자 갱신)"):
         _ds_index.clear()
+        try:
+            _IDX_CACHE.unlink()
+        except Exception:
+            pass
         st.rerun()
     if not _hits:
         st.info("조건에 맞는 도면이 없습니다. 필터를 완화하세요.")
@@ -1065,6 +1081,25 @@ if which.startswith("📗"):
     from plan2graph import cadrender as _cr, engine_render as _er
     st.title("📗 도면 생성")
     st.caption("Track A/B/C 병렬 엔진 (ADR-0019) · 한국 정제 데이터(Parsed) 기반 · 조건 입력으로 아파트 도면 생성")
+
+    with st.expander("🗺 전체 파이프라인 한눈에 (Track A/B/C)", expanded=True):
+        st.graphviz_chart(r'''digraph P {
+  rankdir=LR; bgcolor="transparent";
+  node [shape=box style="rounded,filled" fillcolor="#eef2ff" fontsize=11];
+  edge [color="#6366f1"];
+  subgraph cluster_d { label="① 데이터(코퍼스)"; style=dashed; color="#94a3b8";
+    R [label="RPLAN\n사전학습"]; K [label="한국 AI-Hub\ngated 10,430"]; C [label="CubiCasa"]; }
+  T [label="② 토큰화·표현\nwall-cycle 코덱\n+snap_split·grid"];
+  subgraph cluster_g { label="③ 생성 3-track 헤지(ADR-0019)"; style=dashed; color="#94a3b8";
+    A [label="Track A\nKorPlan-Diff\n코너확산+정렬"];
+    B [label="Track B  ★현재\nKorPlan-AR\nwall-cycle AR" fillcolor="#c7d2fe" penwidth=2];
+    Cc [label="Track C\nRaster(대기)" fillcolor="#f1f5f9"]; }
+  V [label="④ 규제 공통 뒤단\nverify→repair→rerank\n(법규 준수)" fillcolor="#dcfce7"];
+  O [label="⑤ 출력\n렌더(SVG/PNG)\n+DXF(AutoCAD)" fillcolor="#fef9c3"];
+  R->T; K->T; C->T; T->A; T->B; T->Cc; A->V; B->V; Cc->V; V->O;
+}''', use_container_width=True)
+        st.caption("① 데이터 → ② 토큰화 → ③ 3-track 생성(A/B/C) → ④ 규제 verify·repair → ⑤ 렌더+DXF. "
+                   "★ Track B(KorPlan-AR) = 현재 완성형. A=Diff·C=Raster는 헤지.")
 
     # ── 생성형 AI 모델 레지스트리 — 엔진 2종 × 학습 데이터셋 조합. 이름 = 엔진코드(AL/WC)+데이터코드(R/P/C). ──
     #   프레임워크 = KorPlan(KOR=한국 ISO코드, regulation-aware vector floor-plan). 엔진 2종 × 코퍼스(R/K/C).
