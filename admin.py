@@ -1351,7 +1351,8 @@ if which.startswith("📗"):
                         language="python")
                 final_g, best_g, best_score = None, None, -1e9
                 best_meta = final_meta = None
-                _NCAND = 10   # 반복마다 백그라운드로 생성할 후보 수(이 중 가장 깨끗한 1장 선택)
+                _NCAND = 20   # 반복마다 백그라운드로 생성할 후보 수(이 중 가장 깨끗한 1장 선택)
+                _mask_pick = make_constraint_mask(vocab, orthogonal=True)   # ★후보 생성은 무가이드(guide는 기하 악화)
                 for _it in range(1, _max_it + 1):
                     st.markdown(f"#### 🔁 반복 {_it}/{_max_it}")
                     st.write(f"**1~2단계 · 생성·선별 (백그라운드)** — `{_msel}` 로 후보 {_NCAND}장 생성 → 가장 깨끗한 1장 선택")
@@ -1359,7 +1360,7 @@ if which.startswith("📗"):
                     with st.spinner(f"반복 {_it}: 후보 {_NCAND}장 중 가장 깨끗한 1장 선택 중…"):
                         for _c in range(_NCAND):
                             _out = model.generate(torch.tensor([pre], device=dev), max_new=min(a.get("max_len", 1152) - len(pre) - 2, 1100), eos=wc.V.EOS,
-                                                  temperature=1.0, top_k=40, mask_fn=mask_fn)
+                                                  temperature=1.0, top_k=40, mask_fn=_mask_pick)
                             _row = _out[0].tolist(); _row = _row[:_row.index(wc.V.EOS) + 1] if wc.V.EOS in _row else _row
                             try:
                                 _cg = wc.canon_to_graph(wc.decode(_row, vocab))
