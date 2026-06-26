@@ -1351,28 +1351,43 @@ if which.startswith("📗"):
                         language="python")
                 final_g, best_g, best_score = None, None, -1e9
                 best_meta = final_meta = None
+                _NCAND = 10   # 반복마다 백그라운드로 생성할 후보 수(이 중 가장 깨끗한 1장 선택)
                 for _it in range(1, _max_it + 1):
                     st.markdown(f"#### 🔁 반복 {_it}/{_max_it}")
-                    st.write(f"**1단계 · 생성** — `{_msel}` 에 위 조건(①프리픽스 + ②③guided)을 적용해 자기회귀 샘플링"
-                             + (" · 재생성(동일 조건)" if _it > 1 else ""))
-                    out = model.generate(torch.tensor([pre], device=dev), max_new=min(a.get("max_len", 1152) - len(pre) - 2, 1100), eos=wc.V.EOS,
-                                         temperature=1.0, top_k=40, mask_fn=mask_fn)
-                    row = out[0].tolist(); row = row[:row.index(wc.V.EOS) + 1] if wc.V.EOS in row else row
-                    g = wc.canon_to_graph(wc.decode(row, vocab))
-                    if not g or not g.get("rooms"):
-                        st.write("　⚠️ 디코드 실패 → 다음 생성"); continue
+                    st.write(f"**1~2단계 · 생성·선별 (백그라운드)** — `{_msel}` 로 후보 {_NCAND}장 생성 → 가장 깨끗한 1장 선택")
+                    g = None; png0 = None; _ibq = -1e9
+                    with st.spinner(f"반복 {_it}: 후보 {_NCAND}장 중 가장 깨끗한 1장 선택 중…"):
+                        for _c in range(_NCAND):
+                            _out = model.generate(torch.tensor([pre], device=dev), max_new=min(a.get("max_len", 1152) - len(pre) - 2, 1100), eos=wc.V.EOS,
+                                                  temperature=1.0, top_k=40, mask_fn=mask_fn)
+                            _row = _out[0].tolist(); _row = _row[:_row.index(wc.V.EOS) + 1] if wc.V.EOS in _row else _row
+                            try:
+                                _cg = wc.canon_to_graph(wc.decode(_row, vocab))
+                            except Exception:
+                                _cg = None
+                            if not _cg or not _cg.get("rooms"):
+                                continue
+                            try:
+                                _craw = _cr.render_png(_cr.from_geomgraph(_cg))
+                            except Exception:
+                                _craw = None
+                            if _use_repair:
+                                repair_graph(_cg, drop_bad=True, declash="wall"); snap_windows(_cg)
+                            try:
+                                _cgok, _cgd = _RG.is_clean(_cg) if _RG else (False, {})
+                            except Exception:
+                                _cgok, _cgd = False, {}
+                            _ciq = 100 * int(_cgok) - 30 * float(_cgd.get('overlap_frac', 1.0)) - 2 * max(0.0, float(_cgd.get('span_ratio', 99)) - 4.0)
+                            if _ciq > _ibq:
+                                _ibq, g, png0 = _ciq, _cg, _craw
+                    if not g:
+                        st.write("　⚠️ 후보 디코드 실패 → 다음 반복"); continue
                     roles = [r.get("role") for r in g["rooms"].values()]
                     nbed = sum(1 for x in roles if x in BED); nbath = sum(1 for x in roles if x in BATH)
-                    # 🤖 AI 원본 + 🔧 보정 도면을 한 줄에 나란히
-                    try:
-                        png0 = _cr.render_png(_cr.from_geomgraph(g))
-                    except Exception:
-                        png0 = None
+                    st.write(f"　✅ {_NCAND}장 중 가장 깨끗한 1장 선택 (방 {len(roles)}개)")
                     pngR = None
                     if _use_repair:
-                        repair_graph(g, drop_bad=True, declash="wall")
-                        snap_windows(g)            # 창을 외벽으로 재배치(중간 뜸 교정)+내부방 창 드롭
-                        st.write("**2단계 · 기하 repair** — 자기교차·겹침 제거 + 직각화 + 벽 재생성")
+                        st.write("**2단계 · (선택된 1장) 기하 보정 완료** — 자기교차·겹침 제거 + 직각화 + 창 외벽 스냅")
                         try:
                             geomR = _cr.autocorrect(_cr.from_geomgraph(g)); pngR = _cr.render_png(geomR)
                         except Exception:
