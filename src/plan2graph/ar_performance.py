@@ -314,12 +314,28 @@ def render(root="."):
         st.markdown("**selfint 원인 진단**")
         st.json(tk["selfint_diagnosis"])
 
-    # ════ 4. 학습 과정 데이터 (per-epoch 곡선 표 + loss) ════
-    st.subheader("4. 학습 과정 데이터")
+    # ════ 4. 학습 과정 데이터 (한 표: ep × 모델 strict clean + loss) ════
+    st.subheader("4. 학습 과정 데이터 — 전 모델 한 표 (ep별 strict clean)")
     if curves:
-        for name, pts in curves.items():
-            with st.expander(f"{name} — per-epoch clean ({len(pts)} pts)"):
-                st.table([{"ep": ep, "clean": f"{cl}%"} for ep, cl in pts])
+        def _short(n):
+            return (n.replace(" ✦strict", "").replace(" (loose)", "")
+                    .replace("한국 ", "").replace("RPLAN ", "R-").replace("grid", "g")
+                    .replace(" FT base ", " base").replace("·플래토", "").replace("·피크", ""))
+        names = list(curves.keys())
+        dmap = {n: dict(pts) for n, pts in curves.items()}
+        all_eps = sorted({ep for pts in curves.values() for ep, _ in pts})
+        rows = []
+        for ep in all_eps:
+            row = {"ep": ep}
+            for n in names:
+                v = dmap[n].get(ep)
+                row[_short(n)] = (f"{v}%" if v is not None else "·")
+            rows.append(row)
+        st.table(rows)
+        st.caption("빈칸(·)=해당 ep 미학습. 한국 FT=korean-ep, RPLAN=자체 ep. strict clean(도면답게). 모델별 그래프는 §1 곡선.")
+        st.info("**한국 grid256 FT는 3종 모두 학습·표시**(base ep90·100·110). ★선택=**base ep90**(strict 56% 최고 > base110 50% > base100 48%) — "
+                "RPLAN 피크(ep110)에서 FT하면 과특화로 전이 천장 낮아짐(§0 실험11). 도면생성 콤보엔 우승 base90만 넣음. "
+                "⚠️ '한국 단독(옛 ungated)'은 ep50 단일 ckpt라 학습곡선 없음(단일점, §1.5 표의 측정값 참조).")
     # loss 곡선(로그 파싱)
     for logf, lab in [("logs_ar_k_gated_ft.log", "한국 gated"),
                       ("logs_ar_r_rb256.log", "RPLAN grid256"),

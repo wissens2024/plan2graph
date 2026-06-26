@@ -66,8 +66,9 @@ def main():
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     vocab = json.load(open(args.vocab, encoding="utf-8"))
     ck = torch.load(args.ckpt, map_location=dev); a = ck["args"]
+    _dimff = ck["model"]["blocks.0.mlp.w1.weight"].shape[0]  # 가중치가 진실(일부 ckpt는 args.dim_ff 손상)
     model = WallCycleLM(vocab["size"], d_model=a["d_model"], n_layer=a["n_layer"],
-                        n_head=a.get("n_head", 8), max_len=a["max_len"], dim_ff=a.get("dim_ff")).to(dev)
+                        n_head=a.get("n_head", 8), max_len=a["max_len"], dim_ff=_dimff).to(dev)
     model.load_state_dict(ck["model"]); model.eval()
     print(f"[ckpt] {args.ckpt} (epoch {ck.get('epoch')}) params={sum(p.numel() for p in model.parameters())/1e6:.1f}M on {dev}", flush=True)
 
