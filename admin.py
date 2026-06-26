@@ -1237,16 +1237,14 @@ if which.startswith("📗"):
         # 자연어 프롬프트 입력 (기본값: 테스트용)
         _prompt = st.text_area(
             "자연어 프롬프트 (선택)",
-            value="4인 가족, 룸 3개, 화장실 2개, 드레스룸과 파우더룸이 있는 아파트 도면을 그려줘",
-            placeholder="예: 4인 가족, 룸 3개, 화장실 2개, 드레스룸과 파우더룸이 있는 아파트 도면을 그려줘",
+            value="4인 가족, 룸 3개, 화장실 2개, 전용 84㎡ 아파트 도면을 그려줘",
+            placeholder="예: 4인 가족, 룸 3개, 화장실 2개, 전용 84㎡ 아파트 도면을 그려줘",
             height=80,
             help="테스트용 기본값 포함 (실제 오픈 시 제거). 자연어로 입력하면 자동으로 파싱됩니다.")
 
         # 프롬프트 파싱 (간단한 정규식)
         _bedrooms_default = 3
         _bathrooms_default = 2
-        _dressingroom_default = True
-        _powderroom_default = True
         _area_default = 84.0     # 전용면적(㎡) 가정 — 면적 규제(L4·L5·L6)용 척도
 
         if _prompt.strip():
@@ -1260,12 +1258,6 @@ if which.startswith("📗"):
             bath_match = re.search(r'(?:욕실|화장실|화장실|반욕실)\s*(\d+)', _prompt)
             if bath_match:
                 _bathrooms_default = int(bath_match.group(1))
-
-            # 드레스룸 여부
-            _dressingroom_default = bool(re.search(r'드레스룸|드레싱룸|walk.?in', _prompt))
-
-            # 파우더룸 여부
-            _powderroom_default = bool(re.search(r'파우더룸|분장실', _prompt))
 
             # 전용면적: "84㎡/84제곱/전용 84/84타입/84형" 또는 "33평"
             _am = re.search(r'(\d{2,3})\s*(?:㎡|m2|제곱|평형|타입|형)', _prompt) or re.search(r'전용\s*(\d{2,3})', _prompt)
@@ -1283,17 +1275,10 @@ if which.startswith("📗"):
         _bedrooms = _c2.slider("침실 수", 1, 5, _bedrooms_default, help="침실 개수(안방 포함)")
         _bathrooms = _c3.slider("욕실 수", 1, 3, _bathrooms_default, help="욕실/화장실 개수")
 
-        _d1, _d2 = st.columns(2)
-        _has_dressingroom = _d1.checkbox("드레스룸 추가", value=_dressingroom_default)
-        _has_powderroom = _d2.checkbox("파우더룸 추가", value=_powderroom_default)
-
         _area_m2 = st.slider("전용면적 가정 (㎡) — 면적 규제 L4·L5·L6 척도", 30.0, 150.0, float(_area_default), step=1.0,
                              help="생성물은 무척도(normalized)라 면적 규제는 이 가정 전용면적으로 환산해 검사합니다. 국민주택규모=84㎡.")
 
-        st.caption(f"**생성 예정:** {_bedrooms}침실 {_bathrooms}욕실 APT" +
-                  (" + 드레스룸" if _has_dressingroom else "") +
-                  (" + 파우더룸" if _has_powderroom else "") +
-                  f" · 전용 {_area_m2:.0f}㎡ 가정")
+        st.caption(f"**생성 예정:** {_bedrooms}침실 {_bathrooms}욕실 APT · 전용 {_area_m2:.0f}㎡ 가정")
 
         # 출력 repair 토글 (자기교차·겹침 제거+직각화+벽재생성) — 끄고 켜보며 차이 체감
         _use_repair = st.checkbox("✨ 출력 repair 적용 (자기교차·겹침 제거 + 직각화 + 벽 재생성)", value=True,
@@ -1339,11 +1324,9 @@ if which.startswith("📗"):
                 want_bed, want_bath = _bedrooms, _bathrooms
                 # ── AI에 전달되는 조건 (프리픽스 + 스펙·규제 guided + 규제 검증) ──
                 st.markdown("**📋 생성 AI에 전달되는 조건 (= 우리의 '프롬프트' 역할)**")
-                _sp_extra = ((" · 드레스룸" if _has_dressingroom else "") + (" · 파우더룸" if _has_powderroom else ""))
                 st.table([
                     {"구분": "① 모델 프리픽스 (native 학습 조건)", "전달 방식": "토큰 프리픽스", "내용": f"country={_ctry} · housing=APT · scope=unit · units=1"},
                     {"구분": "② 스펙 유도", "전달 방식": "guided decoding (생성 중)", "내용": f"침실 {_bedrooms} · 욕실 {_bathrooms}"},
-                    {"구분": "②' 특수방 (검증만)", "전달 방식": "verify·재생성 (강제 유도 X)", "내용": ("없음" if not _sp_extra else _sp_extra.lstrip(" ·")) + " — 강제 유도하면 기하 악화라 검증·선택으로만"},
                     {"구분": "③ 규제 유도 — 채광·환기(L1·L2)", "전달 방식": "guided decoding (생성 중)", "내용": "거실·침실에 창 토큰 유도 (채광창=환기창 겸용)"},
                     {"구분": "④ 규제 검증·보정", "전달 방식": "생성 후 verify→repair", "내용": "채광·환기(창)·동선(문 연결)·침실/세대 면적·대피공간 — 전量 활성"},
                     {"구분": "⑤ 면적 척도", "전달 방식": f"가정 척도(전용 {_area_m2:.0f}㎡)", "내용": "무척도 생성물에 전용면적 가정해 ㎡ 환산 → L4 침실≥7·L5 세대≥14·L6 대피≥2㎡ 검사"},
