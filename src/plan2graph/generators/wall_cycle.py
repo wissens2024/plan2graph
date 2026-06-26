@@ -127,11 +127,16 @@ def causal_lm_loss(logits: torch.Tensor, tokens: torch.Tensor, ignore_index: int
         ignore_index=ignore_index)
 
 
-def make_constraint_mask(vocab: dict, orthogonal: bool = False):
+def make_constraint_mask(vocab: dict, orthogonal: bool = False, guide: dict = None):
     """ADR-0012 §3 constrained decoding — 문법 구조 + corner/room 참조 유효성을 생성 시점 강제.
     무효 토큰을 -inf로 마스킹(닫힘·문법순서·참조범위·cycle≥4=삼각형 차단). 생성 전용(학습 무관).
     orthogonal=True: room cycle 변을 직각 강제(다음 corner는 이전과 x또는y 동일) → 대각선 차단.
+    ★guide(규제/스펙 guided decoding, 선택): 하드마스크 위에 *소프트 bias*(logit +)로 유도.
+      guide={"bedrooms":N, "bathrooms":M, "daylight":True, "bias":6.0}.
+      - 스펙: role 선택 시 부족한 침실/욕실 타입 부스트  - 채광: 창 없는 거실/침실 벽으로 WINDOW 유도(+EOS 억제).
+      None이면 현행 동작과 100% 동일.
     반환: mask_fn(x, logits) → 마스킹된 logits."""
+    import torch
     from plan2graph import wallcycle_codec as wc
     V = wc.V
     nC, nH, nS, nSC = (len(wc.COUNTRIES), len(wc.HOUSING), len(wc.SCHEMAS), len(wc.SCOPES))
@@ -140,6 +145,52 @@ def make_constraint_mask(vocab: dict, orthogonal: bool = False):
     coord, role, pos, room = vocab["coord"], vocab["role"], vocab["pos"], vocab["room"]
     cref = vocab.get("cref", vocab["coord"])    # 코너 참조(room cycle·opening) = cref 섹션, 좌표(coord)와 별개
     g, nbins, mu = vocab["grid"], vocab["nbins"], vocab["max_units"]
+
+    # ── guided decoding 설정 (규제/스펙 유도) ──
+    _gb = float((guide or {}).get("bias", 6.0))
+    _g_bed = (guide or {}).get("bedrooms"); _g_bath = (guide or {}).get("bathrooms")
+    _g_day = bool((guide or {}).get("daylight", True))
+    HAB_R, BED_R, BATH_R = {0, 1, 2}, {1, 2}, {4, 5}    # 거실·안방·침실 / 안방·침실 / 화장실·욕실
+
+    def _guide_state(seq):
+        """rooms=[(role,corner set)], 창없는 habitable 코너 union, 침실수, 욕실수, 창수."""
+        rooms = []
+        if V.SEC_ROOMS not in seq:
+            return [], set(), 0, 0, 0
+        ri = seq.index(V.SEC_ROOMS)
+        oi = seq.index(V.SEC_OPEN) if V.SEC_OPEN in seq else len(seq)
+        i = ri + 1
+        while i < oi:
+            t = seq[i]
+            if role <= t < role + nrole:
+                rl = t - role; cs = set(); i += 1
+                while i < oi and seq[i] != V.ROOM_END:
+                    if cref <= seq[i] < cref + 4096:
+                        cs.add(seq[i] - cref)
+                    i += 1
+                rooms.append((rl, cs)); i += 1
+            else:
+                i += 1
+        wins = []; j = oi + 1
+        while j < len(seq):
+            t = seq[j]
+            if t == V.DOOR:
+                j += 5
+            elif t == V.WINDOW:
+                if j + 2 < len(seq):
+                    wins.append({seq[j + 1] - cref, seq[j + 2] - cref})
+                j += 4
+            elif t == V.OPEN:
+                j += 3
+            else:
+                j += 1
+        nbed = sum(1 for rl, _ in rooms if rl in BED_R)
+        nbath = sum(1 for rl, _ in rooms if rl in BATH_R)
+        uncov = set()
+        for rl, cs in rooms:
+            if rl in HAB_R and not any(w <= cs for w in wins if w):
+                uncov |= cs
+        return rooms, uncov, nbed, nbath, len(wins)
 
     def _corners(seq):                              # CORNERS 섹션 → [(qx,qy), ...]
         out = []
@@ -260,13 +311,45 @@ def make_constraint_mask(vocab: dict, orthogonal: bool = False):
 
     def mask_fn(x, logits):
         for b in range(x.size(0)):
-            a = allowed(x[b].tolist())
+            seq = x[b].tolist()
+            a = allowed(seq)
             if not a:
                 continue
             idx = torch.tensor(sorted(a), device=logits.device)
             m = torch.full_like(logits[b], float("-inf"))
             m[idx] = 0.0
             logits[b] = logits[b] + m
+            # ── guided bias (규제/스펙) — 하드마스크 통과 토큰 안에서만 ──
+            if guide:
+                rooms, uncov, nbed, nbath, nwin = _guide_state(seq)
+                boost = []
+                if role in a:                                       # 새 방 role 선택 위치
+                    if _g_bed is not None and nbed < _g_bed:
+                        boost += [role + r for r in BED_R]
+                    if _g_bath is not None and nbath < _g_bath:
+                        boost += [role + r for r in BATH_R]
+                _hard = bool((guide or {}).get("hard_daylight"))
+                if _g_day and uncov and V.SEC_OPEN in seq:          # OPEN phase, 창없는 habitable 존재
+                    if V.WINDOW in a:                               # head
+                        boost.append(V.WINDOW)
+                        if _hard and nwin < 24:                     # 강제: 미덮 있으면 WINDOW만(EOS/DOOR/OPEN 차단)
+                            for tok in (V.EOS, V.DOOR, V.OPEN):
+                                if tok in a:
+                                    logits[b][tok] = float("-inf")
+                        elif V.EOS in a and nwin < 16:
+                            logits[b][V.EOS] -= _gb
+                    if cref in a:                                   # 창 코너 ref: 미덮 habitable 코너로
+                        if _hard:
+                            keep = [cref + c for c in uncov if (cref + c) in a]
+                            if keep:
+                                mm = torch.full_like(logits[b], float("-inf"))
+                                mm[torch.tensor(keep, device=logits.device)] = 0.0
+                                logits[b] = logits[b] + mm
+                        else:
+                            boost += [cref + c for c in uncov]
+                boost = [t for t in set(boost) if t in a]
+                if boost:
+                    logits[b][torch.tensor(boost, device=logits.device)] += _gb
         return logits
 
     return mask_fn
