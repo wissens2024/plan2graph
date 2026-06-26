@@ -114,13 +114,14 @@
     }
   },
   "peaks": {
-    "RPLAN no-perm (grid128)": {"clean_peak": 46, "ep_peak": 70},
-    "RPLAN room-perm+seed42 (grid128)": {"clean_peak": 46, "ep_peak": 80},
-    "RPLAN grid256 (rBoundary)": {"clean_peak": 66, "ep_peak": 110, "ceiling": "grid128 천장 46% 돌파 — 확정. ep120 62%로 꺾임(과학습)"},
-    "한국 ungated RPLAN→FT snap": {"clean_peak": 20, "ep_peak": 100},
-    "한국 gated RPLAN→FT (snap+게이트, grid128)": {"clean_peak": 65, "ep_peak": 130, "ceiling": "피크 65%@ep130, RPLAN 46% 초과 — 확정 ★production"},
-    "한국 gated grid256 FT (base ep90·플래토)": {"clean_peak": 63, "ep_peak": 80, "ceiling": "grid256 ablation 우승. 단 grid128 65%와 동등(해상도 미전이)"},
-    "한국 gated grid256 FT (base ep110·피크)": {"clean_peak": 57, "ep_peak": 80, "ceiling": "피크 베이스가 플래토(63%)보다 낮음=과특화 전이손실"}
+    "_note": "strict_peak=도면답게(현행 헤드라인, n200 seed42). loose_peak=옛 정의. ★RPLAN은 strict≈loose(단순,사선적음), 한국은 strict<<loose(복잡=사선/외곽 많음). repair 적용시 한국 drawable 58%.",
+    "RPLAN no-perm (grid128)": {"strict_peak": 44, "loose_peak": 46, "ep_peak": 70},
+    "RPLAN room-perm+seed42 (grid128)": {"strict_peak": 44, "loose_peak": 46, "ep_peak": 80},
+    "RPLAN grid256 (rBoundary)": {"strict_peak": 64, "loose_peak": 66, "ep_peak": 110, "ceiling": "grid128 천장 44→64% 돌파 확정. ep120 꺾임(과학습)"},
+    "한국 ungated RPLAN→FT snap": {"loose_peak": 20, "ep_peak": 100},
+    "★한국 gated grid128 (production)": {"strict_peak": 56, "loose_peak": 65, "ep_peak": "korean100 (production ckpt ep130=korean80 strict 54%)", "ceiling": "도면답게 54~56%. +repair drawable 58%. RPLAN strict 44% 초과"},
+    "한국 gated grid256 FT (base ep90·플래토)": {"strict_peak": 56, "loose_peak": 63, "ep_peak": 80, "ceiling": "grid128과 동등(해상도 미전이)"},
+    "한국 gated grid256 FT (base ep110·피크)": {"strict_peak": 50, "loose_peak": 57, "ep_peak": 80, "ceiling": "피크<플래토=과특화 전이손실"}
   },
   "tokenization": {
     "korean_gate_funnel": [
@@ -210,10 +211,11 @@
     "★FT 베이스 ablation: 피크 베이스(ep110,66%)가 플래토(ep90,56%)보다 한국 전이 더 낮음(57%<63%). 피크=RPLAN 과특화→전이 천장↓. '피크 clean=최고 전이베이스'는 자동 아님(추측 대신 비교로 확증)."
   ],
   "montages": [
-    {"path": "docs/runs/montage_loose_vs_strict_g128.png", "caption": "★loose vs strict (production g128): 왼쪽=loose 통과∧strict 탈락(헤드라인 65%가 셈, 사선·뭉개짐), 오른쪽=strict 통과(진짜 도면). 같은 모델·같은 렌더, 차이는 '통과 기준'뿐."},
-    {"path": "docs/runs/montage_g128_gated_kep80.png", "caption": "grid128 gated FT ep130 (loose 산출 — 사선 포함, 옛 montage)"},
-    {"path": "docs/runs/montage_g256_b90_kep80.png", "caption": "grid256 FT base ep90·플래토 (loose 산출)"},
-    {"path": "docs/runs/montage_g256_b110_kep80.png", "caption": "grid256 FT base ep110·피크 (loose 산출, 외곽 더 들쭉=과특화)"}
+    {"path": "docs/runs/montage_g128_repair.png", "caption": "★production 최종: grid128 gated ep130 + repair(--repair) + 벽재생성 + 창문 벽방향정렬. 직각 아파트·사선0·창문 정확. drawable 58~62%."},
+    {"path": "docs/runs/repair_before_after.png", "caption": "★repair 효과(같은 샘플 전/후): 왼쪽=raw(엉킨 난장판), 오른쪽=repaired. overlap 54~59% 깨진 생성물도 깔끔한 도면으로. 벽재생성이 핵심."},
+    {"path": "docs/runs/montage_loose_vs_strict_g128.png", "caption": "loose vs strict: 왼쪽=loose 통과∧strict 탈락(헤드라인 65%가 셈, 사선·뭉개짐), 오른쪽=strict 통과(진짜 도면)."},
+    {"path": "docs/runs/repair_fresh_convex_check.png", "caption": "convex<0.75 탈락(왼,빗모양 뭉개짐) vs strict 통과(오,깔끔) — convex 완화 금지 근거."},
+    {"path": "docs/runs/montage_g128_gated_kep80.png", "caption": "grid128 gated FT ep130 (repair 전·loose 산출 — 옛 montage)"}
   ],
-  "montage_note": "★사용자 육안 지적(정확): loose montage에 사선·뭉개진 도면 다수. loose clean은 selfint·overlap·span만 봐서 사선·틈·외곽붕괴를 통과시킴. strict clean(+대각선0+꼭짓점≥4+외곽 1덩어리·채움·볼록)이 '도면답게'의 진짜 비율. 비교 이미지가 그 격차(loose 65%가 세지만 strict 탈락)를 직접 보여줌."
+  "montage_note": "★사용자 육안 지적(정확): loose montage에 사선·뭉개진 도면 다수. loose clean은 selfint·overlap·span만 봐서 사선·틈·외곽붕괴를 통과시킴. strict clean(+대각선0+꼭짓점≥4+외곽 1덩어리·채움·볼록)이 '도면답게'의 진짜 비율. ★출력 repair(graph_repair) 적용 후 raw 엉킴이 깔끔한 도면으로(repair_before_after) — 벽재생성이 결정적. production montage는 --repair 적용본."
 }
