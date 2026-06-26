@@ -93,15 +93,29 @@ def render(root="."):
     if exps:
         badge = {"의미있음": "✅ 의미있음", "부분적": "🟡 부분적",
                  "진행중": "🔄 진행중", "의미없음": "⚪ 의미없음"}
-        rows = []
-        for e in exps:
-            rows.append({"#": e.get("id"), "실험": e.get("title"),
-                         "질문(가설)": e.get("question"),
-                         "before": e.get("before"), "after": e.get("after"),
-                         "판정": badge.get(e.get("verdict"), e.get("verdict")),
-                         "메모": e.get("note")})
-        st.table(rows)
+        # 요약 표 (한눈에)
+        st.markdown("**실험 요약** — 12개 실험의 질문·결과·판정 (상세는 아래 펼침)")
+        st.table([{"#": e.get("id"), "실험": e.get("title"),
+                   "질문(가설)": e.get("question"),
+                   "판정": badge.get(e.get("verdict"), e.get("verdict"))} for e in exps])
         st.caption("판정: ✅의미있음 · 🟡부분적(천장X·연결/재현O) · 🔄진행중 · ⚪의미없음")
+        # 실험별 상세 (동기·방법·before→after·함의)
+        st.markdown("**실험 상세** — 각 실험을 펼쳐 동기·방법·결과·함의 확인")
+        for e in exps:
+            bd = badge.get(e.get("verdict"), e.get("verdict"))
+            with st.expander(f"#{e.get('id')} {e.get('title')}  —  {bd}"):
+                st.markdown(f"**질문(가설):** {e.get('question', '')}")
+                if e.get("동기"):
+                    st.markdown(f"**🎯 동기 (왜 했나):** {e['동기']}")
+                if e.get("방법"):
+                    st.markdown(f"**🔬 방법 (어떻게):** {e['방법']}")
+                cba, caf = st.columns(2)
+                cba.markdown(f"**before**\n\n{e.get('before', '')}")
+                caf.markdown(f"**after**\n\n{e.get('after', '')}")
+                if e.get("함의"):
+                    st.success(f"**💡 함의 (무엇을 결정했나):** {e['함의']}")
+                if e.get("note"):
+                    st.caption("메모: " + e["note"])
         st.divider()
 
     # ── 곡선 수집 (strict=도면답게 우선, 없으면 loose 폴백) ──
