@@ -1286,174 +1286,19 @@ if which.startswith("📗"):
         _use_repair = st.checkbox("✨ 출력 repair 적용 (자기교차·겹침 제거 + 직각화 + 벽 재생성)", value=True,
                                   help="생성 그래프를 추론 시점에 보정. 끄면 모델 raw 출력 그대로(차이 비교용).")
 
-        # 생성 버튼
-        _g_col = st.columns([1, 5])
-        _go = _g_col[0].button("🏗 도면 생성", type="primary", use_container_width=True)
+        # 최대 반복 + 생성 버튼 (한 버튼 = 자동 검증 반복 루프)
+        _max_it = st.slider("최대 반복 횟수 (통과까지)", 2, 12, 6,
+                            help="통과할 때까지 자동 반복할 최대 횟수. 실패 시 새로 생성·재검증.")
+        _go = st.button("🏗 도면 생성", type="primary", use_container_width=True,
+                        help="누르면 자동으로 생성 → 검증(스펙·기하·법규) → 규제 반영 → 재생성을 반복하고, 통과 도면 + 최종 DXF를 냅니다.")
 
-        if _go:
-            with st.spinner("도면 생성 중... (모델 추론 → 그래프 → 렌더)"):
-                try:
-                    import torch
-                    from pathlib import Path
-                    from plan2graph import wallcycle_codec as wc
-                    from plan2graph.generators.wall_cycle import WallCycleLM, make_constraint_mask
-
-                    # 1️⃣ 모델 로드
-                    dev = "cuda" if torch.cuda.is_available() else "cpu"
-                    ckpt_path = Path(config.PROJECT_ROOT) / _mrow["ckpt"]
-                    vocab_path = Path(config.DATA_DIR) / "staging" / _mrow.get("vocab", "tokens_korean_gated") / "vocab.json"
-
-                    # vocab 자동 생성 (없으면) — 모델 grid에 맞춤
-                    if not vocab_path.exists():
-                        st.info("vocab.json 자동 생성 중...")
-                        vocab_path.parent.mkdir(parents=True, exist_ok=True)
-                        auto_vocab = wc._vocab(grid=_mrow.get("grid", 128))
-                        _json.dump(auto_vocab, open(vocab_path, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
-                        st.success(f"✅ vocab 생성 완료: {vocab_path}")
-
-                    if not ckpt_path.exists():
-                        st.error(f"❌ 모델 체크포인트 없음: {ckpt_path}\n\n"
-                                f"해결책:\n"
-                                f"1. 서버 115에서 모델을 받아옵니다: `scp ju@sse.aines.kr:plan2graph/{ckpt_path} {ckpt_path}`\n"
-                                f"2. 또는 학습을 완료한 후 모델 파일을 로컬에 복사합니다.")
-                        st.stop()
-
-                    vocab = _json.load(open(vocab_path, encoding="utf-8"))
-                    ckpt = torch.load(str(ckpt_path), map_location=dev, weights_only=False)
-                    a = ckpt["args"]
-
-                    # checkpoint의 mlp 크기에서 dim_ff 계산
-                    mlp_w1_shape = ckpt["model"]["blocks.0.mlp.w1.weight"].shape
-                    dim_ff = mlp_w1_shape[0]  # (dim_ff, d_model)
-
-                    model = WallCycleLM(vocab["size"], d_model=a["d_model"], n_layer=a["n_layer"],
-                                       n_head=a.get("n_head", 8), max_len=a["max_len"],
-                                       dim_ff=dim_ff).to(dev)
-
-                    # checkpoint 로드
-                    model.load_state_dict(ckpt["model"])
-                    model.eval()
-
-                    # 2️⃣ 프리픽스 토큰 구성 (5개 메타 토큰만 — n_bedrooms/n_bathrooms는 검증용으로만)
-                    prefix_tokens = [
-                        wc.V.BOS,
-                        vocab["meta"] + _mrow.get("country", 0),  # country: 0=KR, 1=RPLAN/CN
-                        vocab["meta"] + len(wc.COUNTRIES) + 0,  # housing: 0=apartment
-                        vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 0,  # scope: 0=unit
-                        vocab["units"] + 1,  # units: 1 (단위세대)
-                    ]
-                    prefix = torch.tensor([prefix_tokens], device=dev)
-
-                    # 3️⃣ 도면 생성 (제약 약화 — 모델 완성 전까지)
-                    mask_fn = make_constraint_mask(vocab, orthogonal=True)
-                    eos = wc.V.EOS
-                    with torch.no_grad():
-                        out = model.generate(prefix, max_new=650, eos=eos,
-                                           temperature=1.0, top_k=40, mask_fn=mask_fn)
-
-                    # 4️⃣ 토큰 후처리
-                    row = out[0].tolist()
-                    if eos in row:
-                        row = row[:row.index(eos) + 1]
-                    
-                    # 최소 길이 보장
-                    if len(row) < 10:
-                        # 불완전 토큰: 기본 구조 생성
-                        row = [wc.V.BOS, 
-                               max(0, vocab.get("meta", 50)), 
-                               max(0, vocab.get("meta", 50) + len(wc.COUNTRIES)), 
-                               max(0, vocab.get("meta", 50) + len(wc.COUNTRIES) + len(wc.HOUSING)), 
-                               vocab.get("units", 200), 
-                               wc.V.SEC_CORNERS, 0, 0, 100, 0, 100, 100,  # 4 corners
-                               wc.V.SEC_ROOMS, 0, 4, 4, 96, 96, 4, 4,  # 1 room
-                               wc.V.SEC_OPEN]  # no openings
-                    
-                    # 섹션 마커 최소화된 버전: decode가 처리하므로 과도한 추가 금지
-                    has_corners = wc.V.SEC_CORNERS in row
-                    has_rooms = wc.V.SEC_ROOMS in row
-                    has_open = wc.V.SEC_OPEN in row
-                    
-                    if not has_corners:
-                        row.insert(min(5, len(row)), wc.V.SEC_CORNERS)
-                    if not has_rooms:
-                        try:
-                            ci = row.index(wc.V.SEC_CORNERS)
-                            row.insert(min(ci + 8, len(row)), wc.V.SEC_ROOMS)
-                        except:
-                            row.append(wc.V.SEC_ROOMS)
-                    if not has_open:
-                        row.append(wc.V.SEC_OPEN)
-
-                    try:
-                        g = wc.canon_to_graph(wc.decode(row, vocab))
-                    except Exception as decode_err:
-                        st.error(f"⚠️ 토큰 디코딩 실패: {type(decode_err).__name__}: {str(decode_err)[:100]}")
-                        st.stop()
-
-                    if not g or not g.get('rooms'):
-                        st.error("❌ 생성된 그래프가 비어있습니다. 모델이 아직 학습 중이거나 제약이 너무 강할 수 있습니다.")
-                        st.stop()
-
-                    # 4.5️⃣ 출력 repair (토글) — 자기교차·겹침 제거 + 직각화 + 벽 재생성
-                    if _use_repair:
-                        try:
-                            from plan2graph.graph_repair import repair_graph
-                            repair_graph(g, drop_bad=True, declash="wall")
-                        except Exception as _re:
-                            st.warning(f"repair 건너뜀: {type(_re).__name__}")
-
-                    # 5️⃣ 렌더링
-                    geom = _cr.from_geomgraph(g)
-                    geom = _cr.autocorrect(geom)
-                    png_bytes = _cr.render_png(geom)
-                    dxf_bytes = _cr.render_dxf(geom)
-
-                    # 6️⃣ 결과 표시
-                    st.success(f"✅ 도면 생성 성공! (방 {len(g['rooms'])}개, 문 {len(g['doors'])}개, 창 {len(g['windows'])}개)")
-
-                    # 6️⃣ 생성된 도면 검증
-                    actual_bedrooms = _count_bedrooms_in_geom(g)
-                    actual_bathrooms = _count_bathrooms_in_geom(g)
-                    validation_pass = _validate_floorplan(g, _bedrooms, _bathrooms)
-
-                    if not validation_pass:
-                        st.warning(f"⚠️ 조건 불일치: 침실 {actual_bedrooms}/{_bedrooms}, 욕실 {actual_bathrooms}/{_bathrooms}")
-                        if st.button("🔄 다시 생성", use_container_width=True):
-                            st.rerun()
-
-
-                    _o1, _o2 = st.columns(2)
-                    with _o1:
-                        st.markdown("##### 생성 도면")
-                        st.image(png_bytes, use_container_width=True)
-                        st.download_button(
-                            "📥 도면 이미지 (PNG)", png_bytes,
-                            file_name=f"apt_{_bedrooms}bed_{_bathrooms}bath.png",
-                            mime="image/png", use_container_width=True)
-
-                    with _o2:
-                        st.markdown("##### AutoCAD 호환 파일")
-                        st.info("DXF 형식 — 건축 설계 소프트웨어(AutoCAD, SketchUp 등)에서 편집 가능")
-                        st.download_button(
-                            "📐 AutoCAD (DXF)", dxf_bytes,
-                            file_name=f"apt_{_bedrooms}bed_{_bathrooms}bath.dxf",
-                            mime="image/vnd.dxf", use_container_width=True)
-
-                except Exception as _e:
-                    st.error(f"❌ 생성 실패: {type(_e).__name__}: {str(_e)}")
-                    import traceback
-                    st.code(traceback.format_exc(), language="python")
-
-    # ── ⑤ 반복 검증 생성 (agentic loop) — 생성→검증→재요청→재생성, 흐름 로그 + 이미지 ──
+    # ── 생성 진행 (위 한 버튼이 돌리는 자동 검증 반복 루프) ──
     with st.container(border=True):
-        st.subheader("⑤ 반복 검증 생성 (agentic loop) — 생성·검증·재요청 흐름을 순서대로")
-        st.caption("프롬프트 스펙(방·욕실 수) + 기하(도면답게) + 법규(채광 등)를 검증하고, 실패하면 무엇이 틀렸는지 "
-                   "로그 후 재요청·재생성. 각 반복 도면과 흐름 로그가 순서대로 쌓이고(길이 무관), AutoCAD(DXF)는 최종 1개만.")
-        st.caption("⚠️ 현재 모델은 snap_split된 데이터(내외벽을 공유벽 하나로 합친 RPLAN식)로 학습 → 생성물은 단일벽. "
-                   "벽 두께(내외벽 분리) 표시는 벽-1급 재학습 또는 렌더 두께화가 필요(별도 과제).")
-        _max_it = st.slider("최대 반복 횟수", 2, 12, 6, key="iter_max")
-        _lgo = st.button("🔁 반복 검증 생성 시작", type="primary", use_container_width=True, key="iter_go")
-        if _lgo:
+        st.markdown("### 🛠 생성 진행 — 생성 → 검증(스펙·기하·법규) → 규제 반영 → 재생성 (자동 반복)")
+        st.caption("위 '🏗 도면 생성'을 누르면 자동 반복합니다. 실패 시 무엇이 틀렸나 로그 후 재생성. "
+                   "각 반복 도면·흐름이 순서대로 쌓이고(길이 무관), AutoCAD(DXF)는 최종 1개만.")
+        st.caption("⚠️ snap_split 단일벽 표현이라 내외벽 두께는 안 보임(벽-1급 재학습 별도 과제).")
+        if _go:
             try:
                 import torch
                 from pathlib import Path
