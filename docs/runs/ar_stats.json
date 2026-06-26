@@ -202,6 +202,14 @@
       {"지표": "★strict drawable", "raw": "54%", "+repair": "58%"}
     ]
   },
+  "ft_base_ablation": {
+    "note": "한국 grid256를 RPLAN의 어느 ep에서 파인튜닝(FT)할지 — 베이스 ep90·100·110 3종을 동일 레시피로 학습·비교(eval n200 seed42 strict). ★핵심 반전: RPLAN에서 가장 좋던 베이스(ep110, RPLAN strict 64%)가 한국 전이엔 *더 나쁨*(50%) — RPLAN 레이아웃 과특화 때문. 플래토(ep90)가 전이 천장 최고. 도면생성 콤보엔 우승 base90만.",
+    "rows": [
+      {"FT 베이스 (RPLAN ep)": "★base ep90 (플래토)", "베이스 RPLAN strict": "56%", "→ 한국 FT strict": "56%", "한국 loose": "63%", "single": "84%", "선택": "★ 채택(콤보)"},
+      {"FT 베이스 (RPLAN ep)": "base ep100 (플래토)", "베이스 RPLAN strict": "56%", "→ 한국 FT strict": "48%", "한국 loose": "57%", "single": "84%", "선택": "최저"},
+      {"FT 베이스 (RPLAN ep)": "base ep110 (RPLAN 피크)", "베이스 RPLAN strict": "64%", "→ 한국 FT strict": "50%", "한국 loose": "57%", "single": "82%", "선택": "과특화→전이↓"}
+    ]
+  },
   "projected": {
     "note": "모든 곡선 실데이터 확정(results_*.md 라이브). 잠정(가정) 곡선 없음 — grid256 실측 66%@ep110로 옛 잠정 53% 대체됨.",
     "curves": {},

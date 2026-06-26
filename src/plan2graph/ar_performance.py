@@ -275,6 +275,12 @@ def render(root="."):
         st.table(re_["rows"])
         if re_.get("note"):
             st.caption(re_["note"])
+    fab = stats.get("ft_base_ablation", {})
+    if fab.get("rows"):
+        st.markdown("**FT 베이스 ablation — 한국 grid256를 RPLAN 어느 ep에서 FT? (3종 학습·비교)**")
+        st.table(fab["rows"])
+        if fab.get("note"):
+            st.caption(fab["note"])
     # 옛 gt_vs_gen 폴백(있으면)
     gvg = stats.get("gt_vs_gen", {})
     if gvg.get("rows"):
