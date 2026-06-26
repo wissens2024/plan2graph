@@ -1326,80 +1326,87 @@ if which.startswith("📗"):
                 BED = {"침실", "안방"}; BATH = {"욕실", "화장실", "전용욕실", "전용화장실"}
                 want_bed, want_bath = _bedrooms, _bathrooms
                 _maxnew = min(a.get("max_len", 1152) - len(pre) - 2, 1100)
-                st.markdown("**📋 생성 방식 (성능비교 몽타주와 동일)**")
+                st.markdown("**📋 생성 방식 (백그라운드 · 보정-후-선택)**")
                 st.table([
-                    {"단계": "① 프리픽스 (AI 입력)", "내용": f"country={_ctry} · housing=APT · scope=unit · units=1 — **무가이드**(guide는 기하 악화라 끔)"},
+                    {"단계": "① 프리픽스 (AI 입력)", "내용": f"country={_ctry} · APT · unit · units=1 — **무가이드**(guide는 기하 악화라 끔)"},
                     {"단계": f"② 후보 {_max_it}장 생성", "내용": "자기회귀 샘플링 (constrained + orthogonal)"},
-                    {"단계": "③ 선택", "내용": "가장 깨끗한(clean = 겹침↓ · 세장비↓) 도면 1장"},
-                    {"단계": "④ 규제 보정", "내용": "선택 도면에만 채광·환기 창 + 동선 문 + 현관 + 면적(전용 %g㎡) 검증" % _area_m2},
+                    {"단계": "③ 각자 반복 교정", "내용": "후보마다 규제 보정(창·문·현관) 안정될 때까지 — 면적 전용 %g㎡" % _area_m2},
+                    {"단계": "④ 1등 선택·출력", "내용": "**최종(보정 후) 품질**(기하 clean + 규제 충족 + 스펙)로 1등 1장만 출력"},
                 ])
                 with st.expander("🔎 AI에 넘기는 raw 입력", expanded=False):
                     st.code(f"prefix_tokens = {pre}  # [BOS, country={_ctry}, APT, schema, unit, units=1]\n"
                             f"model.generate(prefix, max_new={_maxnew}, temperature=1.0, top_k=40, mask_fn=constrained+orthogonal)", language="python")
 
-                # ── Phase 1: 후보 N장 생성·선별 (무가이드) ──
-                st.markdown(f"### 🎲 1단계 · 후보 {_max_it}장 생성 → 가장 깨끗한 것 선택")
-                best_g, best_q, best_meta = None, -1e9, None
-                _cols = None
-                for _it in range(1, _max_it + 1):
-                    out = model.generate(torch.tensor([pre], device=dev), max_new=_maxnew, eos=wc.V.EOS,
-                                         temperature=1.0, top_k=40, mask_fn=mask_fn)
-                    row = out[0].tolist(); row = row[:row.index(wc.V.EOS) + 1] if wc.V.EOS in row else row
-                    try:
-                        g = wc.canon_to_graph(wc.decode(row, vocab))
-                    except Exception:
-                        g = None
-                    if not g or not g.get("rooms"):
-                        continue
-                    if _use_repair:
-                        repair_graph(g, drop_bad=True, declash="wall"); snap_windows(g)
-                    estimate_scale(g, _area_m2)
-                    roles = [r.get("role") for r in g["rooms"].values()]
-                    nbed = sum(1 for x in roles if x in BED); nbath = sum(1 for x in roles if x in BATH)
-                    spec_ok = (nbed == want_bed and nbath == want_bath)
-                    try:
-                        gok, gd = _RG.is_clean(g) if _RG else (False, {})
-                    except Exception:
-                        gok, gd = False, {}
-                    ov = round(float(gd.get('overlap_frac', 1.0)), 3); sp = round(float(gd.get('span_ratio', 99)), 1)
-                    q = 100 * int(gok) - 30 * ov - 2 * max(0.0, sp - 4.0) + 5 * int(spec_ok)
-                    if (_it - 1) % 3 == 0:
-                        _cols = st.columns(3)
-                    try:
-                        _png = _cr.render_png(_cr.autocorrect(_cr.from_geomgraph(g)))
-                        _cols[(_it - 1) % 3].image(_png, caption=f"#{_it} {'✅clean' if gok else '❌'} 겹침{ov}·세장{sp}·방{len(roles)}·침{nbed}욕{nbath}", use_container_width=True)
-                    except Exception:
-                        pass
-                    if q > best_q:
-                        best_q, best_g, best_meta = q, g, (gok, spec_ok, ov, sp, len(roles), nbed, nbath)
+                # ── 백그라운드: N장 생성 → 각자 반복 교정(규제) → 최종 품질로 1등 선택 ──
+                best_g, best_q, best_meta, best_raw = None, -1e9, None, None
+                _thumbs = []
+                with st.status(f"🎲 후보 {_max_it}장 생성·보정·선별 중… (백그라운드)", expanded=False) as _stt:
+                    for _it in range(1, _max_it + 1):
+                        out = model.generate(torch.tensor([pre], device=dev), max_new=_maxnew, eos=wc.V.EOS,
+                                             temperature=1.0, top_k=40, mask_fn=mask_fn)
+                        row = out[0].tolist(); row = row[:row.index(wc.V.EOS) + 1] if wc.V.EOS in row else row
+                        try:
+                            g = wc.canon_to_graph(wc.decode(row, vocab))
+                        except Exception:
+                            g = None
+                        if not g or not g.get("rooms"):
+                            _stt.write(f"#{_it} 디코드 실패"); continue
+                        if _use_repair:
+                            repair_graph(g, drop_bad=True, declash="wall"); snap_windows(g)
+                        estimate_scale(g, _area_m2)
+                        roles = [r.get("role") for r in g["rooms"].values()]
+                        nbed = sum(1 for x in roles if x in BED); nbath = sum(1 for x in roles if x in BATH)
+                        spec_ok = (nbed == want_bed and nbath == want_bath)
+                        try:
+                            gok, gd = _RG.is_clean(g) if _RG else (False, {})
+                        except Exception:
+                            gok, gd = False, {}
+                        ov = round(float(gd.get('overlap_frac', 1.0)), 3); sp = round(float(gd.get('span_ratio', 99)), 1)
+                        try:
+                            rawpng = _cr.render_png(_cr.autocorrect(_cr.from_geomgraph(g)))   # 보정 전(규제 적용 전)
+                        except Exception:
+                            rawpng = None
+                        # ★반복 교정(규제): 안정될 때까지 창·문·현관 보정
+                        for _p in range(3):
+                            v = verify_plan(g)
+                            if v['legal_ok']:
+                                break
+                            _n0 = len(g.get("windows") or []) + len(g.get("doors") or [])
+                            legal_repair(g); egress_repair(g); snap_windows(g)
+                            if len(g.get("windows") or []) + len(g.get("doors") or []) == _n0:
+                                break
+                        v = verify_plan(g)
+                        q = 100 * int(gok) - 30 * ov - 2 * max(0.0, sp - 4.0) + 30 * int(v['legal_ok']) + 5 * int(spec_ok)
+                        _stt.write(f"#{_it}: 기하 {'✅' if gok else '❌'}(겹침{ov}·세장{sp}) · 규제 {'✅' if v['legal_ok'] else '❌'} · 침{nbed}욕{nbath} → 점수 {q:.0f}")
+                        try:
+                            _thumbs.append((_cr.render_png(_cr.autocorrect(_cr.from_geomgraph(g))),
+                                            f"#{_it} 기하{'✅' if gok else '❌'}·규제{'✅' if v['legal_ok'] else '❌'}"))
+                        except Exception:
+                            pass
+                        if q > best_q:
+                            best_q, best_g, best_meta, best_raw = q, g, (gok, v['legal_ok'], spec_ok, ov, sp, len(roles), nbed, nbath), rawpng
+                    _stt.update(label=f"✅ {_max_it}장 생성·보정 완료 → 1등 선택", state="complete")
                 if not best_g:
                     st.error("디코드된 후보가 없습니다. 후보 장수를 늘려보세요.")
                 else:
                     bm = best_meta
-                    st.success(f"✅ **선택**: {_max_it}장 중 가장 깨끗 — 기하 {'✅통과' if bm[0] else '❌실패'} · "
-                               f"clean[겹침 {bm[2]} · 세장 {bm[3]} · 방 {bm[4]}] · 침실 {bm[5]} · 욕실 {bm[6]}")
+                    st.markdown("### 🏁 최종 도면 (후보 중 1등 — 보정까지 끝난 최종 품질 기준)")
+                    st.success(f"{_max_it}장 중 선택 — 기하 {'✅' if bm[0] else '❌'} · 규제 {'✅' if bm[1] else '❌'} · "
+                               f"스펙(침{bm[6]}·욕{bm[7]}) {'✅' if bm[2] else '❌'} · clean[겹침 {bm[3]} · 세장 {bm[4]} · 방 {bm[5]}]")
                     g = best_g
-                    # ── Phase 2: 선택 도면에만 규제 검증·보정 ──
-                    st.markdown("### 🏛 2단계 · 선택 도면에 규제 검증·보정 (neuro-symbolic)")
-                    pngB = _cr.render_png(_cr.autocorrect(_cr.from_geomgraph(g)))
-                    v = verify_plan(g)
-                    if not v['legal_ok'] and v['legal_violations']:
-                        st.write(f"⚖️ 규제 위반 {len(v['legal_violations'])}건 → 도면에 반영:")
-                        for _vi in v['legal_violations'][:6]:
-                            st.write(f"　• {_vi.get('msg', _vi.get('rule', ''))}")
-                        _acts = legal_repair(g); _eacts = egress_repair(g); snap_windows(g)
-                        for _ac in (_acts + _eacts)[:12]:
-                            st.write(f"　🔧 {_ac['msg']}")
-                        v = verify_plan(g)
-                        st.write(f"🔁 재검증: 규제(채광·환기·동선) {'✅ 통과 — 개선됨' if v['legal_ok'] else '❌ 일부 미해결(떠있는 방·면적 등)'}")
-                    else:
-                        st.write("⚖️ 규제 검사: ✅ 위반 없음")
                     geomF = _cr.autocorrect(_cr.from_geomgraph(g)); pngF = _cr.render_png(geomF); dxf = _cr.render_dxf(geomF)
                     _fc1, _fc2 = st.columns(2)
-                    _fc1.image(pngB, caption="선택 도면 (규제 보정 전)", use_container_width=True)
-                    _fc2.image(pngF, caption="🏁 최종 도면 (규제 보정 후)", use_container_width=True)
+                    if best_raw is not None:
+                        _fc1.image(best_raw, caption="선택 도면 (규제 보정 전)", use_container_width=True)
+                    _fc2.image(pngF, caption="🏁 최종 (규제 보정 후 — 창·문·현관)", use_container_width=True)
                     st.download_button("📐 AutoCAD (DXF) — 최종 1개", dxf, file_name="final.dxf",
                                        mime="image/vnd.dxf", use_container_width=True)
+                    with st.expander(f"후보 {len(_thumbs)}장 전체 보기 (선택 근거)"):
+                        for _i in range(0, len(_thumbs), 3):
+                            _cc = st.columns(3)
+                            for _j, (_tp, _cap) in enumerate(_thumbs[_i:_i + 3]):
+                                if _tp is not None:
+                                    _cc[_j].image(_tp, caption=_cap, use_container_width=True)
             except Exception as _le:
                 st.error(f"반복 검증 생성 실패: {type(_le).__name__}: {_le}")
                 import traceback
