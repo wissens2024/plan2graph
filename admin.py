@@ -1115,29 +1115,35 @@ if which.startswith("📗"):
         "B": "KorPlan-AR(wall-cycle) — 자기회귀 토큰(코너+벽+room-cycle+opening). 직교 제약·법규 verify→repair. ✅ 완성형",
         "C": "Raster→벡터 헤지(추후) — 다양성 확보용 백업 엔진.",
     }
-    # 의미있는 = 도면생성에 쓸 수 있고 비교가치 있는 모델만(차이를 직접 체감용). 모두 Track B(KorPlan-AR).
-    # 축: 데이터품질(옛단독 vs gated)·해상도(grid128 vs 256)·도메인(RPLAN vs 한국). clean=strict(도면답게, n200 seed42).
+    # ★네이밍 규칙: KorPlan-AR-{R|K|RK} · grid{128|256} (R=RPLAN단독·K=한국AI-Hub단독·RK=RPLAN→한국FT). 모두 Track B(KorPlan-AR).
+    # 정본 매트릭스(FT-ablation): R·K·RK @ grid128(통제비교) + R256(참고). ⚠️격자 다르면 vocab 불일치로 FT 불가.
+    # strict=도면답게(eval n200 seed42). ※"실생성 best-of"는 실시간 생성 시 깨끗할 확률(grid128 23%≫grid256 6%, 굵은격자=타일링).
     _MODELS = [
-        {"name": "★한국 gated FT grid128 (production·실사용 best·타일링 양호)", "engine": "B",
+        {"name": "★KorPlan-AR-RK · grid128 (production·RPLAN→한국 FT)", "engine": "B",
          "ckpt": "ckpts/korplan_ar_k_gated_ft_ep130.pt", "vocab": "tokens_korean_gated", "country": 0, "grid": 128,
-         "graphs": "10,485 (게이트 통과)", "gt_clean": "100%", "tokens": "10,430", "peak_ep": "한국 ep80 (=FT ep130)",
-         "strict": "54%", "repair": "58%", "status": "✅ production (best-of-20 clean 4/20·방 적어 잘 붙음)"},
-        {"name": "한국 gated FT grid256 (strict지표↑이나 방 많아 산포)", "engine": "B",
-         "ckpt": "ckpts/korplan_ar_k_g256_ftR_b90_ep170.pt", "vocab": "tokens_korean_gated_g256", "country": 0, "grid": 256,
-         "graphs": "10,485", "gt_clean": "99%", "tokens": "10,430", "peak_ep": "한국 ep80 (base90 FT ep170)",
-         "strict": "56%", "repair": "—", "status": "⚠️ 대조(best-of-20 clean 0/20·방 14개 산포)"},
-        {"name": "한국 단독 (옛·ungated·pretrain無)", "engine": "B",
-         "ckpt": "ckpts/korplan_ar_k_fmlm80m.pt", "vocab": "tokens_korean_clean", "country": 0, "grid": 128,
-         "graphs": "13,224 (clean·미게이트)", "gt_clean": "43~51%", "tokens": "13,224", "peak_ep": "ep50",
-         "strict": "2% (loose 20)", "repair": "2%", "status": "✅ 대조(데이터품질·저조)"},
-        {"name": "RPLAN grid128 (사전학습 베이스)", "engine": "B",
-         "ckpt": "ckpts/korplan_ar_r_fmlm80m_pretrain_v2_ep70.pt", "vocab": "tokens_rplan", "country": 1, "grid": 128,
-         "graphs": "80,788", "gt_clean": "99%", "tokens": "72,608(train)", "peak_ep": "ep70",
-         "strict": "44%", "repair": "—", "status": "✅ 대조(RPLAN·6방·문창無)"},
-        {"name": "RPLAN grid256 (rBoundary)", "engine": "B",
+         "graphs": "10,485 (게이트 통과)", "gt_clean": "100%", "tokens": "10,430", "peak_ep": "한국 ep80 (FT ep130)",
+         "strict": "54% (eval; 실생성 best-of≈23%)", "repair": "58%",
+         "status": "✅ production (현 working RK·옛 room_perm無 → 정본 RK 학습완료 시 교체예정)"},
+        {"name": "KorPlan-AR-K · grid128 (한국 AI-Hub 단독·target-only)", "engine": "B",
+         "ckpt": "ckpts/korplan_ar_k_gated_targetonly_ep80.pt", "vocab": "tokens_korean_gated", "country": 0, "grid": 128,
+         "graphs": "10,485 (게이트)", "gt_clean": "100%", "tokens": "10,430", "peak_ep": "ep80 (peak)",
+         "strict": "33% (peak ep80)", "repair": "—", "status": "✅ 정본 K (FT 효과 비교·seed42·room_perm)"},
+        {"name": "KorPlan-AR-R · grid128 (RPLAN 단독·baseline·RK의 FT base)", "engine": "B",
+         "ckpt": "ckpts/korplan_ar_r_roomperm_seed42_ep80.pt", "vocab": "tokens_rplan", "country": 1, "grid": 128,
+         "graphs": "80,788", "gt_clean": "99%", "tokens": "72,608(train)", "peak_ep": "ep80",
+         "strict": "≈44% (RPLAN·문창無)", "repair": "—", "status": "✅ 정본 R (seed42·room_perm·RK가 이걸 FT)"},
+        {"name": "KorPlan-AR-R · grid256 (RPLAN 단독·참고·최고 strict)", "engine": "B",
          "ckpt": "ckpts/korplan_ar_r_rb256_roomperm_ep110.pt", "vocab": "tokens_rplan_rb256", "country": 1, "grid": 256,
          "graphs": "80,788", "gt_clean": "99%", "tokens": "72,608", "peak_ep": "ep110",
-         "strict": "64%", "repair": "—", "status": "✅ 대조(RPLAN best)"},
+         "strict": "64%", "repair": "—", "status": "📎 참고 (RPLAN은 256이 우위·한국 FT엔 격자 불일치로 못 씀)"},
+        {"name": "KorPlan-AR-RK · grid256 (참고·방 많아 산포)", "engine": "B",
+         "ckpt": "ckpts/korplan_ar_k_g256_ftR_b90_ep170.pt", "vocab": "tokens_korean_gated_g256", "country": 0, "grid": 256,
+         "graphs": "10,485", "gt_clean": "99%", "tokens": "10,430", "peak_ep": "한국 ep80 (base90 FT ep170)",
+         "strict": "56% (eval; 실생성 6% 빈틈)", "repair": "—", "status": "⚠️ 참고 (방14개 산포·실생성 best-of 0~6%·grid128에 밀림)"},
+        {"name": "KorPlan-AR-K · grid128 (옛 ungated 대조·데이터품질)", "engine": "B",
+         "ckpt": "ckpts/korplan_ar_k_fmlm80m.pt", "vocab": "tokens_korean_clean", "country": 0, "grid": 128,
+         "graphs": "13,224 (clean·미게이트)", "gt_clean": "43~51%", "tokens": "13,224", "peak_ep": "ep50",
+         "strict": "2% (loose 20)", "repair": "2%", "status": "📎 대조 (미게이트 데이터=저품질, 게이트 효과 증명용)"},
     ]
 
     with st.container(border=True):
