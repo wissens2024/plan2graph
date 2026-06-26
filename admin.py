@@ -1509,6 +1509,91 @@ if which.startswith("📗"):
                     import traceback
                     st.code(traceback.format_exc(), language="python")
 
+    # ── ⑤ 반복 검증 생성 (agentic loop) — 생성→검증→재요청→재생성, 흐름 로그 + 이미지 ──
+    with st.container(border=True):
+        st.subheader("⑤ 반복 검증 생성 (agentic loop) — 생성·검증·재요청 흐름을 순서대로")
+        st.caption("프롬프트 스펙(방·욕실 수) + 기하(도면답게) + 법규(채광 등)를 검증하고, 실패하면 무엇이 틀렸는지 "
+                   "로그 후 재요청·재생성. 각 반복 도면과 흐름 로그가 순서대로 쌓이고(길이 무관), AutoCAD(DXF)는 최종 1개만.")
+        st.caption("⚠️ 현재 모델은 snap_split된 데이터(내외벽을 공유벽 하나로 합친 RPLAN식)로 학습 → 생성물은 단일벽. "
+                   "벽 두께(내외벽 분리) 표시는 벽-1급 재학습 또는 렌더 두께화가 필요(별도 과제).")
+        _max_it = st.slider("최대 반복 횟수", 2, 12, 6, key="iter_max")
+        _lgo = st.button("🔁 반복 검증 생성 시작", type="primary", use_container_width=True, key="iter_go")
+        if _lgo:
+            try:
+                import torch
+                from pathlib import Path
+                from plan2graph import wallcycle_codec as wc
+                from plan2graph.generators.wall_cycle import WallCycleLM, make_constraint_mask
+                from plan2graph.gen_verify import verify_plan
+                from plan2graph.graph_repair import repair_graph
+                dev = "cuda" if torch.cuda.is_available() else "cpu"
+                _vp = Path(config.DATA_DIR) / "staging" / _mrow.get("vocab", "tokens_korean_gated") / "vocab.json"
+                vocab = _json.load(open(_vp, encoding="utf-8"))
+                ckpt = torch.load(str(Path(config.PROJECT_ROOT) / _mrow["ckpt"]), map_location=dev, weights_only=False)
+                a = ckpt["args"]; dim_ff = ckpt["model"]["blocks.0.mlp.w1.weight"].shape[0]
+                model = WallCycleLM(vocab["size"], d_model=a["d_model"], n_layer=a["n_layer"],
+                                    n_head=a.get("n_head", 8), max_len=a["max_len"], dim_ff=dim_ff).to(dev)
+                model.load_state_dict(ckpt["model"]); model.eval()
+                pre = [wc.V.BOS, vocab["meta"] + _mrow.get("country", 0),
+                       vocab["meta"] + len(wc.COUNTRIES) + 0,
+                       vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 0, vocab["units"] + 1]
+                mask_fn = make_constraint_mask(vocab, orthogonal=True)
+                BED = {"침실", "안방"}; BATH = {"욕실", "화장실", "전용욕실", "전용화장실"}
+                want_bed, want_bath = _bedrooms, _bathrooms
+                st.info(f"🎯 요청 스펙: 침실 {want_bed} · 욕실 {want_bath}"
+                        + (" · 드레스룸" if _has_dressingroom else "") + (" · 파우더룸" if _has_powderroom else ""))
+                final_g, best_g, best_score = None, None, -1
+                for _it in range(1, _max_it + 1):
+                    st.markdown(f"#### 🔁 반복 {_it}/{_max_it}")
+                    st.write(f"🔸 모델 `{_msel}`에 생성 요청…")
+                    out = model.generate(torch.tensor([pre], device=dev), max_new=650, eos=wc.V.EOS,
+                                         temperature=1.0, top_k=40, mask_fn=mask_fn)
+                    row = out[0].tolist(); row = row[:row.index(wc.V.EOS) + 1] if wc.V.EOS in row else row
+                    g = wc.canon_to_graph(wc.decode(row, vocab))
+                    if not g or not g.get("rooms"):
+                        st.write("　⚠️ 디코드 실패 → 재요청"); continue
+                    if _use_repair:
+                        repair_graph(g, drop_bad=True, declash="wall")
+                        st.write("　🔧 출력 repair 적용 (자기교차·겹침 제거 + 직각화 + 벽 재생성)")
+                    roles = [r.get("role") for r in g["rooms"].values()]
+                    nbed = sum(1 for x in roles if x in BED); nbath = sum(1 for x in roles if x in BATH)
+                    geom = _cr.autocorrect(_cr.from_geomgraph(g)); png = _cr.render_png(geom)
+                    st.image(png, caption=f"반복 {_it} 생성 (방 {len(roles)}개)", use_container_width=True)
+                    v = verify_plan(g)
+                    spec_ok = (nbed == want_bed and nbath == want_bath)
+                    st.write(f"　📋 스펙: 침실 {nbed}/{want_bed} {'✅' if nbed == want_bed else '❌'} · "
+                             f"욕실 {nbath}/{want_bath} {'✅' if nbath == want_bath else '❌'}")
+                    st.write(f"　📐 기하(도면답게): {'✅ 통과' if v['geom_ok'] else '❌ 실패'}")
+                    _lv = '; '.join(x.get('msg', '') for x in v['legal_violations'][:3])
+                    st.write(f"　⚖️ 법규(채광 등): {'✅ 통과' if v['legal_ok'] else '❌ 실패 — ' + _lv}")
+                    score = int(spec_ok) + int(v['geom_ok']) + int(v['legal_ok'])
+                    if score > best_score:
+                        best_score, best_g = score, g
+                    if spec_ok and v['geom_ok'] and v['legal_ok']:
+                        st.success(f"　✅✅ 반복 {_it}: 스펙+기하+법규 모두 통과 → 채택!"); final_g = g; break
+                    _fails = ([] + (["스펙 불일치"] if not spec_ok else [])
+                              + (["기하 결함"] if not v['geom_ok'] else [])
+                              + (["법규 위반"] if not v['legal_ok'] else []))
+                    st.warning(f"　🔁 재요청: {', '.join(_fails)} → 다시 생성")
+                st.divider()
+                _use = final_g or best_g
+                if _use:
+                    st.markdown("### 🏁 최종 결과")
+                    if final_g:
+                        st.success("모든 검증(스펙+기하+법규)을 통과한 도면 채택")
+                    else:
+                        st.warning(f"{_max_it}회 내 완전 통과 실패 — 가장 근접(점수 {best_score}/3)한 도면 제공")
+                    geom = _cr.autocorrect(_cr.from_geomgraph(_use)); png = _cr.render_png(geom); dxf = _cr.render_dxf(_use)
+                    st.image(png, caption="최종 채택 도면", use_container_width=True)
+                    st.download_button("📐 AutoCAD (DXF) — 최종 1개만", dxf, file_name="final.dxf",
+                                       mime="image/vnd.dxf", use_container_width=True)
+                else:
+                    st.error("디코드된 도면이 없습니다. 반복 횟수를 늘려보세요.")
+            except Exception as _le:
+                st.error(f"반복 검증 생성 실패: {type(_le).__name__}: {_le}")
+                import traceback
+                st.code(traceback.format_exc(), language="python")
+
         st.divider()
 
 elif which.startswith("✏️"):
