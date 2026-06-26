@@ -1089,17 +1089,24 @@ if which.startswith("📗"):
   edge [color="#6366f1"];
   subgraph cluster_d { label="① 데이터(코퍼스)"; style=dashed; color="#94a3b8";
     R [label="RPLAN\n사전학습"]; K [label="한국 AI-Hub\ngated 10,430"]; C [label="CubiCasa"]; }
-  T [label="② 토큰화·표현\nwall-cycle 코덱\n+snap_split·grid"];
-  subgraph cluster_g { label="③ 생성 3-track 헤지(ADR-0019)"; style=dashed; color="#94a3b8";
-    A [label="Track A\nKorPlan-Diff\n코너확산+정렬"];
-    B [label="Track B  ★현재\nKorPlan-AR\nwall-cycle AR" fillcolor="#c7d2fe" penwidth=2];
-    Cc [label="Track C\nRaster(대기)" fillcolor="#f1f5f9"]; }
-  V [label="④ 규제 공통 뒤단\nverify→repair→rerank\n(법규 준수)" fillcolor="#dcfce7"];
+  G [label="② 표현 (공통)\ngeomgraph 온톨로지 그래프\n벽-cycle·opening·역할"];
+  subgraph cluster_g { label="③ 생성 3-track 헤지(ADR-0019) — 토큰화·디코드는 Track B(AR) 전용"; style=dashed; color="#94a3b8";
+    A [label="Track A · KorPlan-Diff\n코너-그래프 확산+정렬\n(그래프 직접)"];
+    Tk [label="토큰화\nwall-cycle 코덱\n+snap_split·grid" fillcolor="#e0e7ff"];
+    B [label="Track B ★현재 · KorPlan-AR\n자기회귀 토큰 생성" fillcolor="#c7d2fe" penwidth=2];
+    Dc [label="디코드\n토큰→그래프" fillcolor="#e0e7ff"];
+    Cc [label="Track C · Raster(대기)\n(그래프 직접)" fillcolor="#f1f5f9"]; }
+  V [label="④ 규제 공통 뒤단\nverify→repair→rerank\n(기하 + 법규)" fillcolor="#dcfce7"];
   O [label="⑤ 출력\n렌더(SVG/PNG)\n+DXF(AutoCAD)" fillcolor="#fef9c3"];
-  R->T; K->T; C->T; T->A; T->B; T->Cc; A->V; B->V; Cc->V; V->O;
+  R->G; K->G; C->G;
+  G->A [label="직접" fontsize=9];
+  G->Tk; Tk->B; B->Dc;
+  G->Cc [label="직접" fontsize=9];
+  A->V; Dc->V; Cc->V; V->O;
 }''', use_container_width=True)
-        st.caption("① 데이터 → ② 토큰화 → ③ 3-track 생성(A/B/C) → ④ 규제 verify·repair → ⑤ 렌더+DXF. "
-                   "★ Track B(KorPlan-AR) = 현재 완성형. A=Diff·C=Raster는 헤지.")
+        st.caption("① 데이터 → ② 표현(geomgraph 온톨로지 그래프, 3-track 공통) → ③ 생성: "
+                   "**Track B(AR)만 토큰화→자기회귀 생성→디코드**, Track A(확산)·C(raster)는 그래프에서 직접 "
+                   "→ ④ 규제 공통 뒤단(기하+법규 verify·repair) → ⑤ 렌더+DXF. ★Track B = 현재 완성형.")
 
     # ── 생성형 AI 모델 레지스트리 — 엔진 2종 × 학습 데이터셋 조합. 이름 = 엔진코드(AL/WC)+데이터코드(R/P/C). ──
     #   프레임워크 = KorPlan(KOR=한국 ISO코드, regulation-aware vector floor-plan). 엔진 2종 × 코퍼스(R/K/C).
