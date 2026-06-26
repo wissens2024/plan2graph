@@ -1333,6 +1333,18 @@ if which.startswith("📗"):
                 ])
                 st.caption("②③은 AI가 토큰을 *생성하는 동안* 반영(decode-time bias). ④ 동선은 위상, 면적(L4·L5·L6)은 "
                            "⑤ 가정 척도로 환산해 검증·보정. (모델은 텍스트 지시형 아님 — 위 조건이 실제 입력)")
+                # ── 생성형 AI에 실제로 넘기는 값 (raw) ──
+                with st.expander("🔎 생성형 AI에 실제로 넘기는 값 (model.generate raw 입력)", expanded=True):
+                    st.code(
+                        "# 프리픽스 토큰열 (이게 AI 생성의 출발점)\n"
+                        f"prefix_tokens = {pre}\n"
+                        f"  = [BOS, country={_ctry}({_mrow.get('country',0)}), housing=APT, schema=기본, scope=unit, units=1]\n\n"
+                        "# guided decoding (생성 중 logit bias로 유도)\n"
+                        f"guide = {_guide}\n\n"
+                        "# 샘플링 파라미터\n"
+                        "model.generate(prefix, max_new=650, temperature=1.0, top_k=40,\n"
+                        "               mask_fn=constrained+orthogonal+guide)",
+                        language="python")
                 final_g, best_g, best_score = None, None, -1
                 for _it in range(1, _max_it + 1):
                     st.markdown(f"#### 🔁 반복 {_it}/{_max_it}")
@@ -1387,7 +1399,7 @@ if which.startswith("📗"):
                         for _ac in (_acts + _eacts)[:12]:
                             st.write(f"　　🔧 {_ac['msg']}")
                         geom2 = _cr.autocorrect(_cr.from_geomgraph(g)); png2 = _cr.render_png(geom2)
-                        st.image(png2, caption=f"반복 {_it} · 규제 반영 후(창·문 추가)", use_container_width=True)
+                        st.image(png2, caption=f"반복 {_it} · 🏛 규제 반영 후 도면 (= 채광/환기 창 + 동선 문 + 현관 보정을 적용한 3번째 이미지)", use_container_width=True)
                         v = verify_plan(g)  # 재검증
                         st.write(f"　🔁 **재검증**: 규제(채광·환기·동선) {'✅ 통과 — 도면 개선됨' if v['legal_ok'] else '❌ 일부 미해결(떠있는 방·면적 등)'}")
                     else:
@@ -1409,7 +1421,7 @@ if which.startswith("📗"):
                         st.success("모든 검증(스펙+기하+법규)을 통과한 도면 채택")
                     else:
                         st.warning(f"{_max_it}회 내 완전 통과 실패 — 가장 근접(점수 {best_score}/3)한 도면 제공")
-                    geom = _cr.autocorrect(_cr.from_geomgraph(_use)); png = _cr.render_png(geom); dxf = _cr.render_dxf(_use)
+                    geom = _cr.autocorrect(_cr.from_geomgraph(_use)); png = _cr.render_png(geom); dxf = _cr.render_dxf(geom)
                     st.image(png, caption="최종 채택 도면", use_container_width=True)
                     st.download_button("📐 AutoCAD (DXF) — 최종 1개만", dxf, file_name="final.dxf",
                                        mime="image/vnd.dxf", use_container_width=True)
