@@ -614,9 +614,20 @@ if which.startswith("🏢"):
         _ukey[_albl(_r)] += dataset_status.aihub_row_units(_r)
     keymap_unit = {"📋 전체": sum(_ukey.values())}        # 분류 → 세대수
     keymap_unit.update(dict(_ukey))
+    # ── 버킷 통합 옵션(사용/보정·복구/제외 전체) — 사유별로 쪼개지 않고 한 번에 보기 ──
+    _BUCKETS = [("✅ 사용 (전체)", "use"), ("🛠 보정·복구 (전체)", "fix"), ("🚫 제외 (전체)", "excl")]
+    _bucket_disp = dict(_BUCKETS)
+    _dispcnt = _C(r["disposition"] for r in rows)
+    _dispunit = _C()
+    for _r in rows:
+        _dispunit[_r["disposition"]] += dataset_status.aihub_row_units(_r)
+    for _blab, _bdisp in _BUCKETS:
+        if _dispcnt.get(_bdisp):
+            keymap[_blab] = _dispcnt[_bdisp]; keymap_unit[_blab] = _dispunit[_bdisp]
     # ── 상단 통일 컨트롤(사이드바→본문): 분류 | 거주형태 + 보기 모드. G검수(🧩)와 동일 구조. ──
     c_cat, c_house = st.columns(2)
-    cat = c_cat.selectbox("분류", ["📋 전체"] + [lab for lab, _ in disp],
+    _cat_opts = ["📋 전체"] + [b for b, _ in _BUCKETS if keymap.get(b)] + [lab for lab, _ in disp]
+    cat = c_cat.selectbox("분류", _cat_opts,
                           format_func=lambda k: f"{k} (도면 {keymap[k]:,} · 세대 {keymap_unit.get(k,0):,})")
     _HOUSE_KO = {"APT": "APT(아파트)", "DEH": "DEH(단독주택)", "ROW": "ROW(연립주택)"}
     house = c_house.selectbox("거주형태", ["(전체)", "APT", "DEH", "ROW"],
@@ -628,7 +639,7 @@ if which.startswith("🏢"):
              "사람 위상 구축은 좌측 메뉴 🧩 AI-Hub 검수 (G)")
     # 보정(재변환) 도구 — 분류 콤보가 '보정필요(fix)'일 때만 노출(사용/제외/전체에선 숨김).
     _disp_by_label = {lab: dispo for (dispo, _r), lab in AIHUB_LABEL.items()}
-    if _aim_t.exists() and _disp_by_label.get(cat) == "fix":
+    if _aim_t.exists() and (_disp_by_label.get(cat) == "fix" or _bucket_disp.get(cat) == "fix"):
         with st.expander("🔧 변환 보정 (재변환) — 보정필요(fix) → 사용(use)", expanded=True):
             @st.cache_data(show_spinner=False)
             def _fix_reasons_t(_sz):
@@ -668,7 +679,10 @@ if which.startswith("🏢"):
             st.caption("재변환→통합→manifest까지 닫힘(별도 dir 빌드→성공 시만 교체·백업). "
                        "spa_only/str_only_pending은 V2V 검출이 별도 필요.")
     sel = [r for r in rows
-           if (cat == "📋 전체" or _albl(r) == cat) and (house == "(전체)" or r.get("house") == house)]
+           if (cat == "📋 전체"
+               or (cat in _bucket_disp and r["disposition"] == _bucket_disp[cat])
+               or _albl(r) == cat)
+           and (house == "(전체)" or r.get("house") == house)]
     # 렌더 대상: manifest 행의 지문 → 렌더 인덱스(없으면 스킵). 카운트는 manifest(sel)가 권위.
     recs = [ridx[r["fingerprint"]] for r in sel if r["fingerprint"] in ridx]
 
