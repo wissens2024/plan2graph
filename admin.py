@@ -1118,14 +1118,14 @@ if which.startswith("📗"):
     # 의미있는 = 도면생성에 쓸 수 있고 비교가치 있는 모델만(차이를 직접 체감용). 모두 Track B(KorPlan-AR).
     # 축: 데이터품질(옛단독 vs gated)·해상도(grid128 vs 256)·도메인(RPLAN vs 한국). clean=strict(도면답게, n200 seed42).
     _MODELS = [
-        {"name": "★한국 gated FT grid128 (production·RPLAN사전학습→한국FT)", "engine": "B",
+        {"name": "★한국 gated FT grid256 (production·최신·strict 56%·RPLAN→한국FT)", "engine": "B",
+         "ckpt": "ckpts/korplan_ar_k_g256_ftR_b90_ep170.pt", "vocab": "tokens_korean_gated_g256", "country": 0, "grid": 256,
+         "graphs": "10,485", "gt_clean": "99%", "tokens": "10,430", "peak_ep": "한국 ep80 (base90 FT ep170)",
+         "strict": "56%", "repair": "—", "status": "✅ production (최고 strict·방 많아 산포↑)"},
+        {"name": "한국 gated FT grid128 (안정·strict 54%·방 적당)", "engine": "B",
          "ckpt": "ckpts/korplan_ar_k_gated_ft_ep130.pt", "vocab": "tokens_korean_gated", "country": 0, "grid": 128,
          "graphs": "10,485 (게이트 통과)", "gt_clean": "100%", "tokens": "10,430", "peak_ep": "한국 ep80 (=FT ep130)",
-         "strict": "54%", "repair": "58%", "status": "✅ production"},
-        {"name": "한국 gated grid256", "engine": "B",
-         "ckpt": "ckpts/korplan_ar_k_g256_ftR_b90_ep170.pt", "vocab": "tokens_korean_gated_g256", "country": 0, "grid": 256,
-         "graphs": "10,485", "gt_clean": "99%", "tokens": "10,430", "peak_ep": "한국 ep80",
-         "strict": "56%", "repair": "—", "status": "✅ 대조(해상도)"},
+         "strict": "54%", "repair": "58%", "status": "✅ 대조(저해상도·안정)"},
         {"name": "한국 단독 (옛·ungated·pretrain無)", "engine": "B",
          "ckpt": "ckpts/korplan_ar_k_fmlm80m.pt", "vocab": "tokens_korean_clean", "country": 0, "grid": 128,
          "graphs": "13,224 (clean·미게이트)", "gt_clean": "43~51%", "tokens": "13,224", "peak_ep": "ep50",
@@ -1342,7 +1342,7 @@ if which.startswith("📗"):
                         "# guided decoding (생성 중 logit bias로 유도)\n"
                         f"guide = {_guide}\n\n"
                         "# 샘플링 파라미터\n"
-                        "model.generate(prefix, max_new=650, temperature=1.0, top_k=40,\n"
+                        f"model.generate(prefix, max_new={min(a.get('max_len',1152)-len(pre)-2,1100)}, temperature=1.0, top_k=40,\n"
                         "               mask_fn=constrained+orthogonal+guide)",
                         language="python")
                 final_g, best_g, best_score = None, None, -1
@@ -1350,7 +1350,7 @@ if which.startswith("📗"):
                     st.markdown(f"#### 🔁 반복 {_it}/{_max_it}")
                     st.write(f"**1단계 · 생성** — `{_msel}` 에 위 조건(①프리픽스 + ②③guided)을 적용해 자기회귀 샘플링"
                              + (" · 재생성(동일 조건)" if _it > 1 else ""))
-                    out = model.generate(torch.tensor([pre], device=dev), max_new=650, eos=wc.V.EOS,
+                    out = model.generate(torch.tensor([pre], device=dev), max_new=min(a.get("max_len", 1152) - len(pre) - 2, 1100), eos=wc.V.EOS,
                                          temperature=1.0, top_k=40, mask_fn=mask_fn)
                     row = out[0].tolist(); row = row[:row.index(wc.V.EOS) + 1] if wc.V.EOS in row else row
                     g = wc.canon_to_graph(wc.decode(row, vocab))
