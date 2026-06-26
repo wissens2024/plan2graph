@@ -150,6 +150,7 @@ def make_constraint_mask(vocab: dict, orthogonal: bool = False, guide: dict = No
     _gb = float((guide or {}).get("bias", 6.0))
     _g_bed = (guide or {}).get("bedrooms"); _g_bath = (guide or {}).get("bathrooms")
     _g_day = bool((guide or {}).get("daylight", True))
+    _g_want = list((guide or {}).get("want_roles", []))   # 특정 방 유도(드레스룸7·파우더룸15 등)
     HAB_R, BED_R, BATH_R = {0, 1, 2}, {1, 2}, {4, 5}    # 거실·안방·침실 / 안방·침실 / 화장실·욕실
 
     def _guide_state(seq):
@@ -328,6 +329,10 @@ def make_constraint_mask(vocab: dict, orthogonal: bool = False, guide: dict = No
                         boost += [role + r for r in BED_R]
                     if _g_bath is not None and nbath < _g_bath:
                         boost += [role + r for r in BATH_R]
+                    _have = {rl for rl, _ in rooms}                 # 요청 특수방(드레스룸 등) 없으면 유도
+                    for wr in _g_want:
+                        if wr not in _have:
+                            boost.append(role + wr)
                 _hard = bool((guide or {}).get("hard_daylight"))
                 if _g_day and uncov and V.SEC_OPEN in seq:          # OPEN phase, 창없는 habitable 존재
                     if V.WINDOW in a:                               # head

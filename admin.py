@@ -1317,26 +1317,33 @@ if which.startswith("📗"):
                 pre = [wc.V.BOS, vocab["meta"] + _mrow.get("country", 0),
                        vocab["meta"] + len(wc.COUNTRIES) + 0,
                        vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 0, vocab["units"] + 1]
-                # ★guided decoding: 스펙(방 수)을 AI 생성에 유도 + 채광 유도(보장은 repair)
-                _guide = {"bedrooms": _bedrooms, "bathrooms": _bathrooms, "daylight": True, "bias": 7.0}
+                _cnames = ["KR", "CN"]; _ctry = _cnames[_mrow.get("country", 0)] if _mrow.get("country", 0) < len(_cnames) else str(_mrow.get("country", 0))
+                # ★guided decoding: 스펙(방수)+특수방+규제(채광)를 AI 생성에 유도
+                _want = []
+                if _has_dressingroom: _want.append(7)     # 드레스룸
+                if _has_powderroom:  _want.append(15)     # 파우더룸
+                _guide = {"bedrooms": _bedrooms, "bathrooms": _bathrooms, "daylight": True,
+                          "want_roles": _want, "bias": 7.0}
                 mask_fn = make_constraint_mask(vocab, orthogonal=True, guide=_guide)
                 BED = {"침실", "안방"}; BATH = {"욕실", "화장실", "전용욕실", "전용화장실"}
                 want_bed, want_bath = _bedrooms, _bathrooms
-                st.info(f"🎯 요청 스펙(검증 기준): 침실 {want_bed} · 욕실 {want_bath}"
-                        + (" · 드레스룸" if _has_dressingroom else "") + (" · 파우더룸" if _has_powderroom else ""))
-                _cnames = ["KR", "CN"]; _ctry = _cnames[_mrow.get("country", 0)] if _mrow.get("country", 0) < len(_cnames) else str(_mrow.get("country", 0))
-                st.info(
-                    "ℹ️ **AI 입력 구조 (정직):** 프리픽스 프로그램 = "
-                    f"`country={_ctry}, housing=APT, scope=unit, units=1` (모델은 텍스트 지시형 아님). "
-                    "**★단, guided decoding 적용** — AI가 토큰을 *생성하는 동안* 스펙(침실/욕실 수)·채광을 "
-                    "유도합니다(role bias·창 유도). 즉 **요청 스펙이 AI 생성에 실제 반영**됩니다(방수 일치 40→55%). "
-                    "채광은 생성-유도만으론 보장 어려워(모든 거실·침실 창=hard 논리곱) **symbolic repair(legal_repair)가 보장**. "
-                    "재생성=같은 프리픽스+guided로 재샘플링.")
+                # ── AI에 전달되는 조건 (프리픽스 + 스펙·규제 guided + 규제 검증) ──
+                st.markdown("**📋 생성 AI에 전달되는 조건 (= 우리의 '프롬프트' 역할)**")
+                _spec_txt = (f"침실 {_bedrooms} · 욕실 {_bathrooms}"
+                             + (" · 드레스룸" if _has_dressingroom else "") + (" · 파우더룸" if _has_powderroom else ""))
+                st.table([
+                    {"구분": "① 모델 프리픽스 (native 학습 조건)", "전달 방식": "토큰 프리픽스", "내용": f"country={_ctry} · housing=APT · scope=unit · units=1"},
+                    {"구분": "② 스펙 유도", "전달 방식": "guided decoding (생성 중)", "내용": _spec_txt},
+                    {"구분": "③ 규제 유도 — 채광(L1)", "전달 방식": "guided decoding (생성 중)", "내용": "거실·침실에 채광창 토큰 유도"},
+                    {"구분": "④ 규제 검증·보정", "전달 방식": "생성 후 verify→repair", "내용": "채광·환기·동선(egress)·세대/침실 면적·대피공간 (rules_legal)"},
+                ])
+                st.caption("②③은 AI가 토큰을 *생성하는 동안* 반영(decode-time bias). ④ 면적·동선은 metric scale/위상이 필요해 "
+                           "생성-유도 불가 → 검증·보정 단계에서 충족. (모델은 텍스트 지시형 아님 — 위 조건이 실제 입력)")
                 final_g, best_g, best_score = None, None, -1
                 for _it in range(1, _max_it + 1):
                     st.markdown(f"#### 🔁 반복 {_it}/{_max_it}")
-                    st.write(f"**1단계 · 생성** — `{_msel}` 에 프로그램 `[country={_ctry}, APT, unit, units=1]` 전달 → 자기회귀 샘플링 "
-                             + ("(동일 프리픽스 재샘플링 · AI는 직전 위반을 모름)" if _it > 1 else ""))
+                    st.write(f"**1단계 · 생성** — `{_msel}` 에 위 조건(①프리픽스 + ②③guided)을 적용해 자기회귀 샘플링"
+                             + (" · 재생성(동일 조건)" if _it > 1 else ""))
                     out = model.generate(torch.tensor([pre], device=dev), max_new=650, eos=wc.V.EOS,
                                          temperature=1.0, top_k=40, mask_fn=mask_fn)
                     row = out[0].tolist(); row = row[:row.index(wc.V.EOS) + 1] if wc.V.EOS in row else row
