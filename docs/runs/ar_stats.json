@@ -9,7 +9,8 @@
     {"term": "grid (좌표 양자화)", "type": "①표준(서브필드 통용)", "def": "좌표를 N×N 격자로 양자화. HouseDiffusion 등 생성도면 다수가 사용. grid128/256=해상도."},
     {"term": "overlap", "type": "②선행연구 인용(FMLM 등 소수, 표준 아님)", "def": "방 겹침 면적비 = (Σ방면적−합집합)/Σ방면적. FMLM이 쓴 뒤 널리 안 쓰임 → 표준 아님, 우리 평가에 차용."},
     {"term": "room-perm", "type": "②선행연구 인용(FMLM 기법, 표준 아님)", "def": "방 순서 셔플 증강(기하 불변). FMLM 논문 기법이지 일반 표준 아님."},
-    {"term": "clean", "type": "③우리정의(복합 지표)", "def": "도면이 쓸만한가 복합 판정 = selfint=0 ∧ overlap<0.25 ∧ 종횡비<8. 개별항목 출처는 섞였고 묶음 기준은 우리 것. 논문 첫 등장 시 정의 필수."},
+    {"term": "clean — loose vs strict(★)", "type": "③우리정의(복합 지표)", "def": "loose clean=selfint=0 ∧ overlap<0.25 ∧ 종횡비<8 (3조건, 옛). ★strict clean(도면답게)=loose + 대각선0 + 꼭짓점≥4 + 외곽(pieces=1·fill≥0.6·convex≥0.75) (6조건, 현행 헤드라인). loose가 사선·뭉개짐을 통과시킨 걸 strict가 잡음. 논문 첫 등장 시 정의 필수."},
+    {"term": "drawable / repair", "type": "③우리정의", "def": "drawable=출력 repair(graph_repair) 적용 후의 strict clean 비율. repair=생성그래프를 추론시점 보정(자기교차·겹침 제거+벽재생성), 재학습0. 논문1 verify→repair."},
     {"term": "snap / snap_split", "type": "③우리정의", "def": "벽두께만큼 떨어진 한국 방들을 축좌표 스냅+벽분할로 RPLAN식 공유벽 구조로 정규화하는 우리 코덱 연산. (snap-to-grid은 CAD 일반개념이나 이 연산은 우리 것)"},
     {"term": "gate / 기하 게이트 / gated", "type": "③우리정의", "def": "기하적으로 깨끗한(selfint0·연결·미겹침) 소스 그래프만 통과시키는 우리 품질 필터. gated=통과셋."},
     {"term": "single-piece / core-single", "type": "③우리정의(연결성분 개념은 표준)", "def": "모든방(또는 코어방)을 합쳐 한 덩어리로 연결되나. core=발코니·실외기실·기타 제외. '연결성분(connected component)'은 표준이나 core 구분은 우리."},
@@ -20,32 +21,40 @@
     "headline": "온톨로지(역할·그래프 스키마)는 불변. 변환 코덱(토큰화 표현)만 변경.",
     "points": [
       "역할 온톨로지 검증=건강(안방 위계 7958/8000 보존, RPLAN rBoundary 실폴리곤). 우리가 온톨로지로 한계를 만든 게 아님.",
-      "RPLAN: GT 99% clean → 천장=모델(99→생성46% 격차는 모델이 못 따라그림).",
-      "한국(AI-Hub): GT 43~51%·연결0~48% → 천장=변환 코덱 표현 + 소스 오배치(우리가 고칠 수 있는 것).",
-      "처방=코덱(snap_split) 수정 + 기하 게이트 선별. 온톨로지·모델 아키텍처는 그대로."
+      "RPLAN: GT 99% clean → 천장=모델(99→생성 strict 44% 격차는 모델이 못 따라그림).",
+      "한국(AI-Hub): GT 43~51%·연결0~48% → 천장=변환 코덱 표현 + 소스 오배치(우리가 고칠 수 있는 것). 게이트로 GT 100%화→생성 strict 54~56%.",
+      "처방=코덱(snap_split) 수정 + 기하 게이트 선별 + 출력 repair. 온톨로지·모델 아키텍처는 그대로."
     ]
   },
   "methodology": {
     "intro": "평가지표는 객관성이 최우선. 타 논문과 똑같이 안 가고 다르게 가져간 이유, overlap 단독이 아니라 clean 복합을 만든 이유를 데이터 근거로 기술.",
+    "정의_진화": "★헤드라인 지표는 loose→strict로 진화함(사용자 육안서 loose의 맹점 발견). 아래 loose 3조건이 기초, strict 6조건이 현행.",
     "clean_formula": {
-      "정의": "clean(g) = 1 (사용가능 도면) iff 세 조건 모두 만족, else 0. clean율 = (Σ_g clean(g)) / N (고정 N 생성, 무편향).",
+      "정의": "loose clean(g)=1 iff 아래 3조건. ★strict clean(도면답게)=loose + 3조건 추가(아래 strict확장). clean율 = (Σ clean)/N (고정 N, 무편향).",
       "조건": [
         "① 유효성: 모든 방 폴리곤 r에 대해 selfint(r)=0  (OGC/ISO 19125 Simple Features 유효, 자기교차 없음)",
         "② 미겹침: overlap(g) = (Σ_r area(r) − area(∪_r r)) / Σ_r area(r) < 0.25",
         "③ 형상정상: max_r 종횡비(r) < 8,  종횡비(r) = max(w,h)/min(w,h) of bbox(r)"
       ],
+      "strict확장": [
+        "④ 직각: 어떤 방 변도 대각선 아님(dx≠0 ∧ dy≠0 변 0개) — loose는 사선 통과시킴",
+        "⑤ 꼭짓점: 모든 방 고유꼭짓점 ≥ 4 (삼각형·붕괴 거절)",
+        "⑥ 외곽품질: footprint 연결1덩어리(pieces=1) ∧ 채움 fill≥0.6(footprint/bbox) ∧ 볼록 convex≥0.75(footprint/convexhull) — 빗모양·흩어짐 거절"
+      ],
       "한국확장": "연결-clean = clean(g) ∧ core-single(g)=1.  core-single = 발코니·실외기실·테라스·기타 제외한 코어방들이 단일 연결성분(∪이 MultiPolygon 아님). 한국 발코니=외벽밖 분리 정상이라 코어만 연결 요구.",
-      "표기": "selfint=OGC validity, overlap=RLVR/FMLM 공식 인용, 종횡비·core-single=우리 정의. 모든 항 결정론·시드42·임계값 고정."
+      "표기": "selfint=OGC validity, overlap=RLVR/FMLM 공식 인용, 종횡비·core-single·strict확장(④⑤⑥)=우리 정의. 모든 항 결정론·시드42·임계값 고정."
     },
     "why_not_identical": [
       {"점": "FID는 raster(이미지) 분포 지표", "기존": "FMLM 등은 생성물을 이미지로 렌더→FID로 분포 realism 측정", "우리": "출력이 벡터/AR. 렌더 프로토콜이 다르면 FID가 '모델 품질'이 아니라 '렌더 스타일 차이'를 잼 → 동일 프로토콜 재현 시에만 1:1, 아니면 부적합 명시(억지 FID 금지)"},
       {"점": "기여 성격이 다름", "기존": "생성 분포 realism(전체가 도면 분포 같나)", "우리": "verify→repair가 *개별* 도면을 유효·합법하게 만듦 → per-sample 지표(overlap·clean·법규)가 본질, 분포지표(FID)는 부차"}
     ],
     "why_composite_clean": [
-      {"실패모드": "방 겹침", "잡는 항": "overlap<0.25", "overlap단독_한계": "이건 overlap이 잡음"},
-      {"실패모드": "무효 폴리곤(자기교차)", "잡는 항": "selfint=0 (OGC)", "overlap단독_한계": "overlap이 못 잡음"},
-      {"실패모드": "극단 세장/붕괴", "잡는 항": "종횡비<8", "overlap단독_한계": "overlap이 못 잡음"},
-      {"실패모드": "비연결(떠다니는 박스)", "잡는 항": "single-piece(보조)", "overlap단독_한계": "overlap이 *틈을 보상*해 오히려 통과시킴(맹점)"}
+      {"실패모드": "방 겹침", "잡는 항": "overlap<0.25 (loose)", "overlap단독_한계": "이건 overlap이 잡음"},
+      {"실패모드": "무효 폴리곤(자기교차)", "잡는 항": "selfint=0 (loose, OGC)", "overlap단독_한계": "overlap이 못 잡음"},
+      {"실패모드": "극단 세장/붕괴", "잡는 항": "종횡비<8 (loose)", "overlap단독_한계": "overlap이 못 잡음"},
+      {"실패모드": "★사선 벽(비직각)", "잡는 항": "대각선0 (strict ④)", "overlap단독_한계": "loose 전부 못 잡음 — 사용자가 육안서 지적한 주범"},
+      {"실패모드": "★빗모양/오목 외곽·흩어짐", "잡는 항": "footprint pieces1·fill·convex (strict ⑥)", "overlap단독_한계": "overlap이 *틈을 보상*해 오히려 통과시킴(맹점). loose의 가장 큰 구멍"},
+      {"실패모드": "삼각형/붕괴 방", "잡는 항": "꼭짓점≥4 (strict ⑤)", "overlap단독_한계": "loose 못 잡음"}
     ],
     "clean_evidence": "데이터 입증: nosnap GT는 연결성 0%(떠다니는 박스)인데 overlap은 100% 통과 → overlap 단독은 '쓸 수 있는 도면'을 보장 못 함. 독립 실패모드를 묶은 clean이 필요한 직접 근거.",
     "comparison": [
@@ -80,23 +89,23 @@
      "before": "clean 43% / core-single 48%", "after": "clean 72% / core-single 81% (방손실 0.3%)",
      "verdict": "의미있음", "note": "tol 7.0은 방 25% 파괴 → 3.5가 균형점"},
     {"id": 6, "title": "기하 게이트 선별", "question": "소스 오배치(코덱이 못 고침)를 어떻게?",
-     "before": "clean_ids 13,325 (GT 43%)", "after": "게이트 통과 10,430 (GT 100%)",
+     "before": "clean_ids 13,325 (GT 43%)", "after": "게이트 통과 10,485 → 토큰화 10,430 (GT 100%)",
      "verdict": "의미있음", "note": "코어분리 100%가 소스에 존재 → 걸러냄. RPLAN급(99%) 달성. 품질>수량"},
     {"id": 7, "title": "사전학습 RPLAN→FT vs target-only", "question": "RPLAN 사전학습이 한국에 도움되나?",
      "before": "target-only nosnap 24%", "after": "RPLAN→FT nosnap 32%",
      "verdict": "의미있음", "note": "pretrain 채택(옛 '한국단독만 유효' 정정). 단 탐색치"},
     {"id": 8, "title": "room-perm 증강", "question": "방순서 증강이 천장을 올리나?",
-     "before": "no-perm 피크 46%", "after": "room-perm 피크 46% (동일)",
-     "verdict": "부분적", "note": "천장 관점=의미없음. 연결성(single 74→80)·재현성=의미있음"},
-    {"id": 9, "title": "grid 128→256", "question": "해상도가 천장(46%)을 깨나?",
-     "before": "grid128 RPLAN 46% 천장", "after": "grid256 RPLAN 피크 66%@ep110 (천장 46% 돌파). 단 한국 FT엔 미전이: grid256 한국 63% ≈ grid128 65%",
-     "verdict": "의미있음", "note": "RPLAN은 해상도가 천장이었으나 한국 천장은 해상도 아님(63≈65%, 육안도 동등). 한국 병목=표현/데이터. production은 grid128 유지"},
+     "before": "no-perm 피크 strict 44%(loose 46)", "after": "room-perm 피크 strict 44%(loose 46) — 동일",
+     "verdict": "부분적", "note": "천장 관점=의미없음. 연결성(single 73→80)·재현성=의미있음"},
+    {"id": 9, "title": "grid 128→256", "question": "해상도가 천장을 깨나?",
+     "before": "grid128 RPLAN strict 44% 천장", "after": "RPLAN: strict 44→64%@ep110 돌파. 단 한국 FT엔 미전이: 한국 strict grid256=grid128=56% (정확히 동일)",
+     "verdict": "의미있음", "note": "RPLAN은 해상도가 천장이었으나 한국 천장은 해상도 아님(strict 56=56, 육안도 동등). 한국 병목=표현/데이터. production grid128 유지(grid256 기각)"},
     {"id": 10, "title": "한국 gated 재학습 (종합 검증)", "question": "GT 품질↑이 생성 clean↑로 이어지나?",
-     "before": "ungated RPLAN→FT snap 생성 clean 20%", "after": "gated 피크 clean 65%@ep130 (한국 80ep)",
-     "verdict": "의미있음", "note": "확정. 옛 ungated 20%의 3.25배, RPLAN 46%마저 초과. GT 43→100% clean이 모델 품질 결정"},
+     "before": "ungated RPLAN→FT snap 생성 strict ~? (loose 20%)", "after": "gated production strict 54%@ep130 (loose 65%), 곡선 strict 피크 56%@ep150",
+     "verdict": "의미있음", "note": "확정. 옛 ungated loose 20%의 큰폭 상승. 한국 strict 56% > RPLAN strict 44%(한국 방 2배인데도). GT 43→100% clean이 모델 품질 결정"},
     {"id": 11, "title": "FT 베이스 에폭 ablation (피크 vs 플래토)", "question": "RPLAN 피크 베이스가 최선 전이베이스인가?",
-     "before": "가정: 피크(grid256 ep110, 66%)가 당연히 최선 전이베이스", "after": "플래토 ep90→한국 63% > 피크 ep110→한국 57% (ep100→57%)",
-     "verdict": "의미있음", "note": "피크 베이스=RPLAN 과특화→전이 천장 낮음(초반 빠르나 낮게 수렴). '추측말고 비교'로 확정, 사용자 가설 확증"},
+     "before": "가정: 피크(grid256 ep110)가 당연히 최선 전이베이스", "after": "strict: 플래토 ep90→56% > 피크 ep110→50% > ep100→48% (loose: 63>57=57)",
+     "verdict": "의미있음", "note": "피크 베이스=RPLAN 과특화→전이 천장 낮음. strict에선 base100이 최저(48). '추측말고 비교'로 확정, 사용자 가설 확증"},
     {"id": 12, "title": "출력 repair 레이어 (verify→repair)", "question": "생성 결함(자기교차·겹침)을 추론 시점에 고쳐 사용가능률을 올릴 수 있나? (재학습0)",
      "before": "raw 생성: selfint=0 68%·overlap<.25 77%·loose 65%·drawable 54%", "after": "repair 후: selfint 100%·overlap 100%·loose 83%·drawable 58%",
      "verdict": "의미있음", "note": "graph_repair.py=make_valid(selfint복구)+drop_bad(아티팩트드롭)+WALL declash(공유벽분할,겹침0)+벽재생성(렌더반영). 논문1 verify→repair 실증. ★천장 58%=나머지는 배치레벨(broken layout)→best-of-N 몫. eval_ar_geom --repair"}
@@ -107,8 +116,8 @@
     "representation": {"grid": 128, "snap_tol": 3.5, "room_perm_prob": 0.5, "vocab_size": 520},
     "rationale": {
       "dim_ff": "FMLM 정본 2048이나 10GB OOM → 1408(하드웨어 deviation)",
-      "grid": "128 기본 / 256 천장돌파 검증중(한국 벽두께 셀당 47mm)",
-      "snap_tol": "2.5=틈 일부만 / 3.5=clean 52→72%·방손실0 / 7.0=연결94%지만 방25%파괴 → 3.5 채택",
+      "grid": "128 채택(확정). 256은 RPLAN만 이득(strict 44→64)·한국 미전이(strict 56=56)로 기각",
+      "snap_tol": "2.5=틈 일부만 / 3.5=GT clean 43→72%·방손실0 / 7.0=연결94%지만 방25%파괴 → 3.5 채택",
       "seed": "42 고정=재현가능",
       "room_perm": "방순서 robust 증강(기하불변). 천장 미상승, 연결성·재현성 이득"
     }
@@ -118,10 +127,11 @@
     "RPLAN no-perm (grid128)": {"strict_peak": 44, "loose_peak": 46, "ep_peak": 70},
     "RPLAN room-perm+seed42 (grid128)": {"strict_peak": 44, "loose_peak": 46, "ep_peak": 80},
     "RPLAN grid256 (rBoundary)": {"strict_peak": 64, "loose_peak": 66, "ep_peak": 110, "ceiling": "grid128 천장 44→64% 돌파 확정. ep120 꺾임(과학습)"},
-    "한국 ungated RPLAN→FT snap": {"loose_peak": 20, "ep_peak": 100},
-    "★한국 gated grid128 (production)": {"strict_peak": 56, "loose_peak": 65, "ep_peak": "korean100 (production ckpt ep130=korean80 strict 54%)", "ceiling": "도면답게 54~56%. +repair drawable 58%. RPLAN strict 44% 초과"},
-    "한국 gated grid256 FT (base ep90·플래토)": {"strict_peak": 56, "loose_peak": 63, "ep_peak": 80, "ceiling": "grid128과 동등(해상도 미전이)"},
-    "한국 gated grid256 FT (base ep110·피크)": {"strict_peak": 50, "loose_peak": 57, "ep_peak": 80, "ceiling": "피크<플래토=과특화 전이손실"}
+    "한국 ungated RPLAN→FT snap (대조)": {"loose_peak": 20, "ep_peak": "~100(근사)"},
+    "★한국 gated grid128 (production)": {"strict_peak": 56, "loose_peak": 65, "ep_peak": "loose 65@ep130 / strict 54@ep130·피크56@ep150", "ceiling": "도면답게 54~56%. +repair drawable 58%. RPLAN strict 44% 초과(한국 방 2배인데도)"},
+    "한국 gated grid256 FT (base ep90·플래토)": {"strict_peak": 56, "loose_peak": 63, "ep_peak": "k80", "ceiling": "strict 56=grid128 56(해상도 미전이)"},
+    "한국 gated grid256 FT (base ep100)": {"strict_peak": 48, "loose_peak": 57, "ep_peak": "k70", "ceiling": "strict 최저 — base90<base110<base100 역전(loose와 순서 다름)"},
+    "한국 gated grid256 FT (base ep110·피크)": {"strict_peak": 50, "loose_peak": 57, "ep_peak": "k80", "ceiling": "피크<플래토=과특화 전이손실"}
   },
   "tokenization": {
     "korean_gate_funnel": [
@@ -151,13 +161,45 @@
     "selfint_diagnosis": {"무효방_사유": {"Ring Self-intersection": "80%", "Self-intersection": "20%"}, "원인": "edge-split이 방 cycle을 벽 따라 왕복→collinear 스파이크"},
     "ontology_unchanged": "역할 온톨로지·그래프 스키마 불변. 변환 코덱(snap_split 토큰화)만 수정. 모델 아키텍처(d512/L24/dim_ff1408)도 불변."
   },
-  "gt_vs_gen": {
-    "note": "GT clean = 학습 타깃(원본 도면)의 품질 = 모델이 못 넘는 천장. 생성 clean = 모델 피크. 회복률 = 생성/GT. 모델은 깨진 GT를 못 넘고, 깨끗한 GT일수록 더 높이 회복.",
+  "metric_evolution": {
+    "intro": "지표는 정직성 위해 두 번 진화했다. ★헤드라인=strict(도면답게). loose는 옛 기준(과대평가)으로 병기만.",
+    "stages": [
+      {"단계": "loose clean (옛)", "조건": "selfint=0 ∧ overlap<0.25 ∧ 종횡비<8 (3조건)", "한계": "사선·틈·외곽붕괴를 통과시킴(사용자 육안서 발견). overlap은 겹침만 벌점→흩어져 뭉개지면 overlap=0으로 오히려 통과."},
+      {"단계": "★strict clean (도면답게, 현행)", "조건": "loose + 대각선0 + 꼭짓점≥4 + 외곽(1덩어리 pieces=1·채움 fill≥0.6·볼록 convex≥0.75) (6조건)", "한계": "모델이 잘못 배치한 건 못 거름(거를 뿐). 진짜 '도면답게' 비율."},
+      {"단계": "+ 출력 repair drawable", "조건": "strict + graph_repair(make_valid·drop_bad·WALL declash·벽재생성) 적용 후 측정", "한계": "재학습0. 배치레벨 결함(broken layout)은 못 고침→best-of-N 몫."}
+    ]
+  },
+  "metric_pipeline": {
+    "note": "production(grid128 gated ep130) 기준 생성 품질 깔때기. 데이터 천장(GT)부터 사용가능 도면까지.",
     "rows": [
-      {"모델": "RPLAN (grid128)", "GT clean": "99%", "생성 clean(피크)": "46%", "회복률": "46%"},
-      {"모델": "★ AI-Hub gated (snap+게이트)", "GT clean": "100%", "생성 clean(피크)": "65%", "회복률": "65%"},
-      {"모델": "AI-Hub ungated nosnap", "GT clean": "51%", "생성 clean(피크)": "32%", "회복률": "63%"},
-      {"모델": "AI-Hub ungated snap", "GT clean": "43%", "생성 clean(피크)": "20%", "회복률": "47%"}
+      {"단계": "GT clean (학습 타깃)", "비율": "100%", "의미": "기하게이트로 만든 데이터 천장(RPLAN 99%급)"},
+      {"단계": "생성 loose clean (옛 지표)", "비율": "65%", "의미": "사선·틈 허용=과대평가"},
+      {"단계": "★생성 strict clean (도면답게)", "비율": "54~56%", "의미": "정직한 모델 사용가능률 (ep130=54, 곡선피크 ep150=56)"},
+      {"단계": "+ 출력 repair drawable", "비율": "58%", "의미": "selfint·overlap 100%제거 (재학습0, 추론시점)"},
+      {"단계": "+ best-of-N (N5)", "비율": "~98%", "의미": "N개 생성→repair→안 깨진 것 선택 (다음 구현, gen_loop)"}
+    ]
+  },
+  "model_compare": {
+    "note": "전 모델 한 표. ★strict=도면답게(헤드라인). RPLAN은 strict≈loose(단순), 한국은 strict<<loose(복잡=사선/외곽 많음). 모두 eval n200·seed42·피크에폭.",
+    "rows": [
+      {"모델": "RPLAN grid128 no-perm", "GT": "99%", "loose": "46", "strict": "44", "+repair": "—", "single": "73", "ep": "70"},
+      {"모델": "RPLAN grid128 room-perm", "GT": "99%", "loose": "46", "strict": "44", "+repair": "—", "single": "80", "ep": "80"},
+      {"모델": "RPLAN grid256 (rBoundary)", "GT": "99%", "loose": "66", "strict": "64", "+repair": "—", "single": "87", "ep": "110"},
+      {"모델": "★한국 gated grid128 (production)", "GT": "100%", "loose": "65", "strict": "54(피크56)", "+repair": "58", "single": "70~78", "ep": "130(loose)/150(strict)"},
+      {"모델": "한국 g256 base-ep90 (플래토)", "GT": "99%", "loose": "63", "strict": "56", "+repair": "—", "single": "84", "ep": "k80"},
+      {"모델": "한국 g256 base-ep100", "GT": "99%", "loose": "57", "strict": "48", "+repair": "—", "single": "84", "ep": "k70"},
+      {"모델": "한국 g256 base-ep110 (피크)", "GT": "99%", "loose": "57", "strict": "50", "+repair": "—", "single": "82", "ep": "k80"},
+      {"모델": "한국 ungated nosnap (대조)", "GT": "51%", "loose": "32", "strict": "—", "+repair": "—", "single": "0(GT)", "ep": "—"},
+      {"모델": "한국 ungated snap (대조)", "GT": "43%", "loose": "20", "strict": "—", "+repair": "—", "single": "48(GT)", "ep": "—"}
+    ]
+  },
+  "repair_effect": {
+    "note": "출력 repair 전/후 (production fresh n200 seed42). 같은 공식으로 before→after (지표 갈아끼우기 금지).",
+    "rows": [
+      {"지표": "selfint=0", "raw": "68%", "+repair": "100%"},
+      {"지표": "overlap<0.25", "raw": "77%", "+repair": "100%"},
+      {"지표": "loose clean", "raw": "65%", "+repair": "83%"},
+      {"지표": "★strict drawable", "raw": "54%", "+repair": "58%"}
     ]
   },
   "projected": {
@@ -166,23 +208,25 @@
     "peaks": {}
   },
   "conclusions": [
-    {"가설": "깨끗한 GT(43→100%)가 생성 clean을 올린다", "상태": "확정", "결론": "옛 ungated 20% → gated 피크 65%@ep130(한국80ep). RPLAN 46%마저 초과(한국 방 2배인데도). GT품질→모델품질 결정적 입증."},
-    {"가설": "grid256가 grid128 천장 46%를 깬다", "상태": "확정", "결론": "RPLAN grid256 피크 66%@ep110 — 천장 46% 돌파. 단 한국 FT엔 미전이(grid256 63%≈grid128 65%, 육안도 동등). RPLAN 병목=해상도, 한국 병목≠해상도."},
-    {"가설": "RPLAN 피크 베이스가 최선 전이베이스다", "상태": "기각", "결론": "플래토 ep90→한국 63% > 피크 ep110→한국 57%. 피크=RPLAN 과특화로 전이 천장 낮음. '피크 clean=최고 전이' 자동 아님(사용자 직감 확증)."},
+    {"가설": "깨끗한 GT(43→100%)가 생성 clean을 올린다", "상태": "확정", "결론": "ungated loose 20% → gated production strict 54%(loose 65%, 곡선 strict피크 56). 한국 strict 56 > RPLAN strict 44(한국 방 2배인데도). GT품질→모델품질 결정적 입증."},
+    {"가설": "grid256가 grid128 천장을 깬다", "상태": "확정(RPLAN)·기각(한국)", "결론": "RPLAN strict 44→64%@ep110 돌파. 단 한국 FT엔 미전이(strict grid256=grid128=56%, 정확히 동일·육안도 동등). RPLAN 병목=해상도, 한국 병목≠해상도→표현/데이터."},
+    {"가설": "RPLAN 피크 베이스가 최선 전이베이스다", "상태": "기각", "결론": "strict 플래토 ep90→56% > 피크 ep110→50% > ep100→48%. 피크=RPLAN 과특화로 전이 천장 낮음. '피크 clean=최고 전이' 자동 아님(사용자 직감 확증)."},
+    {"가설": "출력 repair로 사용가능률을 올린다(재학습0)", "상태": "확정", "결론": "graph_repair(make_valid·drop_bad·WALL declash·벽재생성): selfint·overlap 100%제거, strict 54→58%·loose 65→83%. 엉킨 생성물→깔끔한 도면(벽재생성 결정적). 천장 58%(배치레벨은 best-of-N 몫)."},
     {"가설": "snap 단일화가 옳다(nosnap=비연결)", "상태": "확정", "결론": "nosnap GT 연결 0% → snap 채택. 데이터로 종결."},
     {"가설": "기하게이트로 한국 GT를 RPLAN급으로", "상태": "확정", "결론": "GT 43→100% clean, 10,430 plans. 달성."},
     {"가설": "온톨로지가 아니라 변환코덱이 병목", "상태": "확정", "결론": "역할(안방)·기하(rBoundary) 건강, 코덱(snap_split) 수정으로 해결. 방향 확정."}
   ],
-  "목표_달성": "RPLAN 사전학습 → AI-Hub 파인튜닝 구성 확정 = grid128 gated FT ep130 (clean 65%). production 확정.",
+  "목표_달성": "RPLAN 사전학습 → AI-Hub 파인튜닝 구성 확정 = grid128 gated FT ep130 (strict 54%·loose 65%) + 출력 repair(drawable 58%). production 확정.",
   "next_plan": {
-    "목표": "production(grid128 gated FT ep130) = 도면생성 연결 + 한국 65% 천장 추가돌파 탐색",
+    "목표": "production(grid128 gated ep130 + repair) = gen_loop 통합(best-of-N+법규+스펙) + 한국 strict 54~56% 천장 추가돌파",
     "권장": [
-      "① grid 결정 완료: grid128 채택 (grid256는 RPLAN만 이득·한국 미전이·육안 동등으로 기각).",
+      "① grid 결정 완료: grid128 채택 (grid256는 RPLAN만 이득·한국 strict 미전이로 기각).",
       "② FT 베이스 결정 완료: 피크 베이스 ≠ 최선(과특화). 플래토 베이스가 전이 천장 높음.",
-      "③ 한국 65% 천장의 다음 레버 = 좌표해상도(grid) 아님이 확정됐으니, 표현(벽-1급 토큰화)·데이터(보정 Corrected) 쪽 탐색 — 논문2 축과 연결.",
-      "④ production 모델을 도면생성 GUI에 연결 + neuro-symbolic verify→repair 레이어 적용(논문1 end-to-end)."
+      "③ 출력 repair 완료(drawable 58%, 재학습0). 배치레벨 결함은 repair 천장 → best-of-N으로.",
+      "④ 다음=gen_loop 통합: KorPlan-AR을 generate_compliant의 gen_fn으로 + graph_repair + 법규(rules_legal)·스펙(방개수) 선택. 사용자 비전(스펙+법규 도면 반복생성)의 완성.",
+      "⑤ 한국 strict 천장의 다음 레버 = 좌표해상도 아님(확정) → 표현(벽-1급 토큰화)·데이터(Corrected 보정, 논문2)."
     ],
-    "상태": "production 확정(2026-06-26). 다음=표현/데이터 레버로 한국 천장 추가돌파."
+    "상태": "production+repair 확정(2026-06-26). 다음=gen_loop 통합(best-of-N+법규+스펙)."
   },
   "production": {
     "원칙": "성능비교 페이지=모델 만드는 과정의 가설·발견·실험 정리(흔적). 실제 도면생성에는 최종 선정된 1개 구성의 모델만 사용.",
@@ -191,7 +235,7 @@
       "데이터": "한국 gated (snap+tol3.5, 기하게이트 10,430, GT 100% clean)",
       "학습": "RPLAN 사전학습 → 한국 FT, room-perm+seed42, d512/L24/dim_ff1408",
       "grid": "128 — 확정. grid256는 RPLAN만 이득(46→66%), 한국 FT엔 미전이(63%≈65%)+육안 동등 → 재토큰화/큰 vocab 비용 불필요",
-      "ep": "한국 ep130 (피크 clean 65%)",
+      "ep": "한국 ep130 (loose 피크 65%·strict 54%). ⚠️strict 곡선 피크는 ep150(strict 56%) — ep130은 loose로 선정됨. strict 헤드라인 전환 후에도 차이 2%p(노이즈)라 ep130 유지, ep150은 strict-동급 대안.",
       "ckpt": "ckpts/korplan_ar_k_gated_ft_ep130.pt (vocab=tokens_korean_gated, size520)",
       "후처리_repair": "graph_repair.repair_graph(drop_bad,declash=wall)+벽재생성. selfint·overlap 제거→drawable 54→58%·loose 65→83%, 도면다움↑. eval_ar_geom --repair. 렌더: 창문 벽방향 정렬 수정(cadrender).",
       "사용가능률_best_of_N": "N개 생성→repair→strict 통과 채택. 58%/sample → N5≈98% 사용가능. (다음 구현 — 배치레벨 결함은 모델이 만든 거라 repair 못 고침→여러개서 고름)"
@@ -211,7 +255,7 @@
     "★FT 베이스 ablation: 피크 베이스(ep110,66%)가 플래토(ep90,56%)보다 한국 전이 더 낮음(57%<63%). 피크=RPLAN 과특화→전이 천장↓. '피크 clean=최고 전이베이스'는 자동 아님(추측 대신 비교로 확증)."
   ],
   "montages": [
-    {"path": "docs/runs/montage_g128_repair.png", "caption": "★production 최종: grid128 gated ep130 + repair(--repair) + 벽재생성 + 창문 벽방향정렬. 직각 아파트·사선0·창문 정확. drawable 58~62%."},
+    {"path": "docs/runs/montage_g128_repair.png", "caption": "★production 최종: grid128 gated ep130 + repair(--repair) + 벽재생성 + 창문 벽방향정렬. 직각 아파트·사선0·창문 정확. drawable 58%."},
     {"path": "docs/runs/repair_before_after.png", "caption": "★repair 효과(같은 샘플 전/후): 왼쪽=raw(엉킨 난장판), 오른쪽=repaired. overlap 54~59% 깨진 생성물도 깔끔한 도면으로. 벽재생성이 핵심."},
     {"path": "docs/runs/montage_loose_vs_strict_g128.png", "caption": "loose vs strict: 왼쪽=loose 통과∧strict 탈락(헤드라인 65%가 셈, 사선·뭉개짐), 오른쪽=strict 통과(진짜 도면)."},
     {"path": "docs/runs/repair_fresh_convex_check.png", "caption": "convex<0.75 탈락(왼,빗모양 뭉개짐) vs strict 통과(오,깔끔) — convex 완화 금지 근거."},

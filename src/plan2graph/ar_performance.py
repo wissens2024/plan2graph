@@ -163,12 +163,25 @@ def render(root="."):
                       for r in mth["why_composite_clean"]])
             if mth.get("clean_evidence"):
                 st.warning(mth["clean_evidence"])
+        me = stats.get("metric_evolution", {})
+        if me.get("stages"):
+            st.markdown("**지표 진화 — loose → strict(도면답게) → +repair**")
+            if me.get("intro"):
+                st.caption(me["intro"])
+            st.table([{"단계": s["단계"], "조건": s["조건"], "한계/의미": s["한계"]} for s in me["stages"]])
         cf = mth.get("clean_formula")
+        if mth.get("정의_진화"):
+            st.info(mth["정의_진화"])
         if cf:
             st.markdown("**clean 공식 (제안 지표 — 정식 기술)**")
             st.markdown(cf.get("정의", ""))
+            st.markdown("_loose 3조건:_")
             for cond in cf.get("조건", []):
                 st.markdown("- " + cond)
+            if cf.get("strict확장"):
+                st.markdown("_★strict 추가 3조건 (도면답게):_")
+                for cond in cf["strict확장"]:
+                    st.markdown("- " + cond)
             if cf.get("한국확장"):
                 st.markdown("**한국 확장(연결-clean):** " + cf["한국확장"])
             if cf.get("표기"):
@@ -241,13 +254,32 @@ def render(root="."):
         if stats.get("montage_note"):
             st.caption(stats["montage_note"])
 
-    # ── GT clean(데이터 천장) vs 생성 clean(모델 피크) ──
+    # ── 1.5 지표 종합 (loose vs strict vs +repair, 모델비교, 파이프라인) ──
+    mc = stats.get("model_compare", {})
+    if mc.get("rows"):
+        st.subheader("1.5 모델별 종합 — loose vs strict(도면답게) vs +repair")
+        st.table([{"모델": r.get("모델"), "GT": r.get("GT"), "loose": r.get("loose"),
+                   "★strict": r.get("strict"), "+repair": r.get("+repair"),
+                   "single": r.get("single"), "ep": r.get("ep")} for r in mc["rows"]])
+        if mc.get("note"):
+            st.caption(mc["note"])
+    mp = stats.get("metric_pipeline", {})
+    if mp.get("rows"):
+        st.markdown("**생성 품질 파이프라인 (production: GT→strict→+repair→best-of-N)**")
+        st.table(mp["rows"])
+        if mp.get("note"):
+            st.caption(mp["note"])
+    re_ = stats.get("repair_effect", {})
+    if re_.get("rows"):
+        st.markdown("**출력 repair 전/후 (같은 공식 before→after)**")
+        st.table(re_["rows"])
+        if re_.get("note"):
+            st.caption(re_["note"])
+    # 옛 gt_vs_gen 폴백(있으면)
     gvg = stats.get("gt_vs_gen", {})
     if gvg.get("rows"):
-        st.markdown("**GT clean(데이터 천장) vs 생성 clean(모델 피크)**")
+        st.markdown("**GT clean vs 생성 clean**")
         st.table(gvg["rows"])
-        if gvg.get("note"):
-            st.caption(gvg["note"])
 
     # ════ 2. 파라미터 선정 (데이터 근거) ════
     st.subheader("2. 파라미터 선정 (데이터 근거)")
