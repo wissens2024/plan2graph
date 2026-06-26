@@ -1366,18 +1366,26 @@ if which.startswith("📗"):
                         st.write("　⚠️ 디코드 실패 → 다음 생성"); continue
                     roles = [r.get("role") for r in g["rooms"].values()]
                     nbed = sum(1 for x in roles if x in BED); nbath = sum(1 for x in roles if x in BATH)
-                    # 🤖 AI 원본 도면 (보정 전)
+                    # 🤖 AI 원본 + 🔧 보정 도면을 한 줄에 나란히
                     try:
                         png0 = _cr.render_png(_cr.from_geomgraph(g))
-                        st.image(png0, caption=f"반복 {_it} · 🤖 생성형 AI 원본 도면 (보정 전, 방 {len(roles)}개)", use_container_width=True)
                     except Exception:
-                        st.write("　(원본 렌더 생략)")
-                    # 🔧 보정 도면
+                        png0 = None
+                    pngR = None
                     if _use_repair:
                         repair_graph(g, drop_bad=True, declash="wall")
                         st.write("**2단계 · 기하 repair** — 자기교차·겹침 제거 + 직각화 + 벽 재생성")
-                        geomR = _cr.autocorrect(_cr.from_geomgraph(g)); pngR = _cr.render_png(geomR)
-                        st.image(pngR, caption=f"반복 {_it} · 🔧 보정 후 도면", use_container_width=True)
+                        try:
+                            geomR = _cr.autocorrect(_cr.from_geomgraph(g)); pngR = _cr.render_png(geomR)
+                        except Exception:
+                            pngR = None
+                    _ic1, _ic2 = st.columns(2)
+                    if png0 is not None:
+                        _ic1.image(png0, caption=f"반복 {_it} · 🤖 AI 원본 (보정 전, 방 {len(roles)}개)", use_container_width=True)
+                    if pngR is not None:
+                        _ic2.image(pngR, caption=f"반복 {_it} · 🔧 보정 후", use_container_width=True)
+                    elif png0 is not None and not _use_repair:
+                        pass
                     # 3단계: 검증
                     st.write("**3단계 · 검증** — 스펙 / 기하 / 규제(법규)")
                     _sc, _ = estimate_scale(g, _area_m2)    # 가정 척도(전용 N㎡) → 면적 규제(L4·L5·L6) 활성화
