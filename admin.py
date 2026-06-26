@@ -1351,7 +1351,7 @@ if which.startswith("📗"):
                         language="python")
                 final_g, best_g, best_score = None, None, -1e9
                 best_meta = final_meta = None
-                _NCAND = 20   # 반복마다 백그라운드로 생성할 후보 수(이 중 가장 깨끗한 1장 선택)
+                _NCAND = 10   # 반복마다 백그라운드로 생성할 후보 수(이 중 가장 깨끗한 1장 선택). 속도 위해 10.
                 _mask_pick = make_constraint_mask(vocab, orthogonal=True)   # ★후보 생성은 무가이드(guide는 기하 악화)
                 for _it in range(1, _max_it + 1):
                     st.markdown(f"#### 🔁 반복 {_it}/{_max_it}")
