@@ -1247,6 +1247,7 @@ if which.startswith("📗"):
         _bathrooms_default = 2
         _dressingroom_default = True
         _powderroom_default = True
+        _area_default = 84.0     # 전용면적(㎡) 가정 — 면적 규제(L4·L5·L6)용 척도
 
         if _prompt.strip():
             import re
@@ -1266,6 +1267,14 @@ if which.startswith("📗"):
             # 파우더룸 여부
             _powderroom_default = bool(re.search(r'파우더룸|분장실', _prompt))
 
+            # 전용면적: "84㎡/84제곱/전용 84/84타입/84형" 또는 "33평"
+            _am = re.search(r'(\d{2,3})\s*(?:㎡|m2|제곱|평형|타입|형)', _prompt) or re.search(r'전용\s*(\d{2,3})', _prompt)
+            _pm = re.search(r'(\d{1,2})\s*평', _prompt)
+            if _am:
+                _area_default = float(_am.group(1))
+            elif _pm:
+                _area_default = round(float(_pm.group(1)) * 3.3058, 1)   # 평→㎡
+
         st.divider()
         st.markdown("**또는 수치로 직접 입력:**")
 
@@ -1278,9 +1287,13 @@ if which.startswith("📗"):
         _has_dressingroom = _d1.checkbox("드레스룸 추가", value=_dressingroom_default)
         _has_powderroom = _d2.checkbox("파우더룸 추가", value=_powderroom_default)
 
+        _area_m2 = st.slider("전용면적 가정 (㎡) — 면적 규제 L4·L5·L6 척도", 30.0, 150.0, float(_area_default), step=1.0,
+                             help="생성물은 무척도(normalized)라 면적 규제는 이 가정 전용면적으로 환산해 검사합니다. 국민주택규모=84㎡.")
+
         st.caption(f"**생성 예정:** {_bedrooms}침실 {_bathrooms}욕실 APT" +
                   (" + 드레스룸" if _has_dressingroom else "") +
-                  (" + 파우더룸" if _has_powderroom else ""))
+                  (" + 파우더룸" if _has_powderroom else "") +
+                  f" · 전용 {_area_m2:.0f}㎡ 가정")
 
         # 출력 repair 토글 (자기교차·겹침 제거+직각화+벽재생성) — 끄고 켜보며 차이 체감
         _use_repair = st.checkbox("✨ 출력 repair 적용 (자기교차·겹침 제거 + 직각화 + 벽 재생성)", value=True,
@@ -1304,7 +1317,7 @@ if which.startswith("📗"):
                 from pathlib import Path
                 from plan2graph import wallcycle_codec as wc
                 from plan2graph.generators.wall_cycle import WallCycleLM, make_constraint_mask
-                from plan2graph.gen_verify import verify_plan, legal_repair, egress_repair
+                from plan2graph.gen_verify import verify_plan, legal_repair, egress_repair, estimate_scale
                 from plan2graph.graph_repair import repair_graph
                 dev = "cuda" if torch.cuda.is_available() else "cpu"
                 _vp = Path(config.DATA_DIR) / "staging" / _mrow.get("vocab", "tokens_korean_gated") / "vocab.json"
@@ -1335,10 +1348,11 @@ if which.startswith("📗"):
                     {"구분": "① 모델 프리픽스 (native 학습 조건)", "전달 방식": "토큰 프리픽스", "내용": f"country={_ctry} · housing=APT · scope=unit · units=1"},
                     {"구분": "② 스펙 유도", "전달 방식": "guided decoding (생성 중)", "내용": _spec_txt},
                     {"구분": "③ 규제 유도 — 채광·환기(L1·L2)", "전달 방식": "guided decoding (생성 중)", "내용": "거실·침실에 창 토큰 유도 (채광창=환기창 겸용)"},
-                    {"구분": "④ 규제 검증·보정", "전달 방식": "생성 후 verify→repair", "내용": "채광·환기·동선(egress)·세대/침실 면적·대피공간 (rules_legal)"},
+                    {"구분": "④ 규제 검증·보정", "전달 방식": "생성 후 verify→repair", "내용": "채광·환기(창)·동선(문 연결)·침실/세대 면적·대피공간 — 전量 활성"},
+                    {"구분": "⑤ 면적 척도", "전달 방식": f"가정 척도(전용 {_area_m2:.0f}㎡)", "내용": "무척도 생성물에 전용면적 가정해 ㎡ 환산 → L4 침실≥7·L5 세대≥14·L6 대피≥2㎡ 검사"},
                 ])
-                st.caption("②③은 AI가 토큰을 *생성하는 동안* 반영(decode-time bias). ④ 면적·동선은 metric scale/위상이 필요해 "
-                           "생성-유도 불가 → 검증·보정 단계에서 충족. (모델은 텍스트 지시형 아님 — 위 조건이 실제 입력)")
+                st.caption("②③은 AI가 토큰을 *생성하는 동안* 반영(decode-time bias). ④ 동선은 위상, 면적(L4·L5·L6)은 "
+                           "⑤ 가정 척도로 환산해 검증·보정. (모델은 텍스트 지시형 아님 — 위 조건이 실제 입력)")
                 final_g, best_g, best_score = None, None, -1
                 for _it in range(1, _max_it + 1):
                     st.markdown(f"#### 🔁 반복 {_it}/{_max_it}")
@@ -1366,6 +1380,9 @@ if which.startswith("📗"):
                         st.image(pngR, caption=f"반복 {_it} · 🔧 보정 후 도면", use_container_width=True)
                     # 3단계: 검증
                     st.write("**3단계 · 검증** — 스펙 / 기하 / 규제(법규)")
+                    _sc, _ = estimate_scale(g, _area_m2)    # 가정 척도(전용 N㎡) → 면적 규제(L4·L5·L6) 활성화
+                    if _sc:
+                        st.write(f"　📏 가정 척도: 전용 {_area_m2:.0f}㎡ → {_sc:.1f} mm/px (면적 규제 L4·L5·L6 활성)")
                     v = verify_plan(g)
                     spec_ok = (nbed == want_bed and nbath == want_bath)
                     st.write(f"　📋 스펙: 침실 {nbed}/{want_bed} {'✅' if nbed == want_bed else '❌'} · "

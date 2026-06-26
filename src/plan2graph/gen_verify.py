@@ -78,6 +78,29 @@ def verify_plan(g: dict) -> dict:
             "legal_applied": legal.get("applied_rules", [])}
 
 
+def estimate_scale(g, ref_m2: float = 84.0):
+    """무척도 생성물에 *가정 척도* 부여: 전용면적(거주실 합, 발코니·실외기실 제외)=ref_m2로
+    scale(mm/px) 역산 → g['scale_mm_per_px'] 설정. L4/L5/L6 면적 규제 활성화.
+    ref_m2 기본 84(국민주택규모). 반환 (scale_mm_per_px, 적용 전용면적 px²) 또는 (None, 0)."""
+    rooms = g.get("rooms") or {}
+    excl = {"발코니", "실외기실", "exterior", None}
+    tot_px = 0.0
+    for r in rooms.values():
+        if r.get("role") in excl:
+            continue
+        poly = r.get("polygon") or []
+        if len(poly) >= 3:
+            try:
+                tot_px += Polygon(poly).area
+            except Exception:
+                pass
+    if tot_px <= 0:
+        return None, 0.0
+    scale = (ref_m2 * 1e6 / tot_px) ** 0.5     # mm/px (m2 = px²·scale²/1e6)
+    g["scale_mm_per_px"] = round(scale, 4)
+    return g["scale_mm_per_px"], tot_px
+
+
 _HAB_ROLES = {"거실", "침실", "안방"}
 
 
