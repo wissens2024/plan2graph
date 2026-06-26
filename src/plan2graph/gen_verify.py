@@ -184,13 +184,82 @@ def _adjacent_door_pos(segs_a, segs_b, tol=3.0, minlen=8.0):
     return None
 
 
+def _poly_area(p):
+    try:
+        return Polygon(p).area if len(set(map(tuple, p))) >= 4 else 0.0
+    except Exception:
+        return 0.0
+
+
+def _ensure_entrance(g):
+    """유효 현관(area>4)이 없으면 *재구성*: 건물 외곽에 닿는 거실/복도/주방의 외벽 쪽에
+    현관 strip을 만들고(둘 다 직사각 유지) 문으로 연결. 모델이 면적0 현관을 낸 경우 egress 앵커 복원."""
+    rooms = g.get("rooms") or {}
+    if any(r.get("role") == "현관" and _poly_area(r.get("polygon") or []) > 4 for r in rooms.values()):
+        return None
+    allx = [p[0] for r in rooms.values() for p in (r.get("polygon") or [])]
+    ally = [p[1] for r in rooms.values() for p in (r.get("polygon") or [])]
+    if not allx:
+        return None
+    bx0, bx1, by0, by1 = min(allx), max(allx), min(ally), max(ally)
+    tol = 2.0; PRI = {"거실": 3, "복도": 2, "주방": 1}
+
+    def _side(x0, x1, y0, y1):                    # donor가 닿는 외곽 변
+        if abs(y0 - by0) < tol: return "bottom"
+        if abs(y1 - by1) < tol: return "top"
+        if abs(x0 - bx0) < tol: return "left"
+        if abs(x1 - bx1) < tol: return "right"
+        return None
+    # 후보: 면적 충분 + 외곽 변에 닿는 방. 우선순위(거실>복도>주방>면적)
+    cands = []
+    for k, r in rooms.items():
+        p = r.get("polygon") or []
+        ar = _poly_area(p)
+        if ar < 300:
+            continue
+        xs = [q[0] for q in p]; ys = [q[1] for q in p]
+        side = _side(min(xs), max(xs), min(ys), max(ys))
+        if side:
+            cands.append((PRI.get(r.get("role"), 0), ar, k, side))
+    if not cands:
+        return None
+    cands.sort(reverse=True)
+    _, _, donor_k, side = cands[0]
+    dp = rooms[donor_k]["polygon"]
+    xs = [p[0] for p in dp]; ys = [p[1] for p in dp]
+    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+    h = min(25.0, (y1 - y0) * 0.35); w = min(25.0, (x1 - x0) * 0.35)
+    if side in ("bottom", "top") and h < 6:
+        return None
+    if side in ("left", "right") and w < 6:
+        return None
+    if side == "bottom":
+        ent = [[x0, y0], [x1, y0], [x1, y0 + h], [x0, y0 + h]]; nd = [[x0, y0 + h], [x1, y0 + h], [x1, y1], [x0, y1]]; dpos = [(x0 + x1) / 2, y0 + h]
+    elif side == "top":
+        ent = [[x0, y1 - h], [x1, y1 - h], [x1, y1], [x0, y1]]; nd = [[x0, y0], [x1, y0], [x1, y1 - h], [x0, y1 - h]]; dpos = [(x0 + x1) / 2, y1 - h]
+    elif side == "left":
+        ent = [[x0, y0], [x0 + w, y0], [x0 + w, y1], [x0, y1]]; nd = [[x0 + w, y0], [x1, y0], [x1, y1], [x0 + w, y1]]; dpos = [x0 + w, (y0 + y1) / 2]
+    else:                                          # right
+        ent = [[x1 - w, y0], [x1, y0], [x1, y1], [x1 - w, y1]]; nd = [[x0, y0], [x1 - w, y0], [x1 - w, y1], [x0, y1]]; dpos = [x1 - w, (y0 + y1) / 2]
+    rooms[donor_k]["polygon"] = nd
+    nk = max([int(k) for k in rooms if str(k).lstrip("-").isdigit()] + [0]) + 1
+    rooms[str(nk)] = {"role": "현관", "base": "현관", "polygon": ent, "wall_ids": [], "door_ids": [], "window_ids": []}
+    g.setdefault("doors", [])
+    dk = int(donor_k) if str(donor_k).lstrip("-").isdigit() else donor_k
+    g["doors"].append({"id": f"dE{nk}", "connects": [nk, dk], "via": "door", "position": [round(dpos[0], 1), round(dpos[1], 1)]})
+    return {"ok": True, "msg": f"현관 결함 → {rooms[donor_k].get('role')}#{donor_k} 외벽 쪽에 현관 재구성(+문 연결)"}
+
+
 def egress_repair(g):
-    """규제 위반(동선 L3)을 *도면에 반영*: 현관에서 도달 못 하는 고립 실을,
-    벽을 공유하는 '연결된 실'과 문(door)으로 이어 피난 동선을 복원. 반환=조치 목록."""
+    """규제 위반(동선 L3)을 *도면에 반영*: 유효 현관 없으면 재구성, 이어서
+    현관에서 도달 못 하는 고립 실을 벽 공유 실과 문으로 연결. 반환=조치 목록."""
     actions = []
     rooms = g.get("rooms") or {}
     if not rooms:
         return actions
+    _ent = _ensure_entrance(g)                    # 현관 결함 시 재구성
+    if _ent:
+        actions.append(_ent)
     G = geomgraph_to_nx(g)
     if EXTERIOR not in G:
         actions.append({"ok": False, "msg": "현관 없음 → 외부 피난경로 자체가 없어 동선 보정 불가"})

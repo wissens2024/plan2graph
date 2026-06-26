@@ -192,15 +192,23 @@ def repair_graph(g, tol=3.0, snap=False, declash=False, drop_bad=True):
         if r.get("polygon"):
             r["polygon"] = _make_valid(rectify_diagonals(r["polygon"]))
     # 1a) degenerate(고칠 수 없는 무효/미세 방=아티팩트) 드롭 → 잔여 selfint 1개가 그래프 죽이는 것 방지
+    #     ★현관 등 핵심 역할은 폴리곤만 유효하면(≥3 verts·valid) 보존 — 드롭 시 egress(피난동선) 앵커 소실.
     if drop_bad:
+        CRITICAL_ROLES = {"현관"}
         drop = []
         for k, r in rooms.items():
             p = r.get("polygon") or []
+            nuniq = len(set(map(tuple, p)))
             ok = False
-            if len(set(map(tuple, p))) >= 4:
+            if nuniq >= 4:
                 try:
                     P = Polygon(p)
                     ok = P.is_valid and P.area > 4
+                except Exception:
+                    ok = False
+            if not ok and r.get("role") in CRITICAL_ROLES and nuniq >= 3:
+                try:
+                    ok = Polygon(p).is_valid and Polygon(p).area > 0   # 현관 보존: 미세해도 노드 유지
                 except Exception:
                     ok = False
             if not ok:
@@ -208,6 +216,7 @@ def repair_graph(g, tol=3.0, snap=False, declash=False, drop_bad=True):
         for k in drop:
             del rooms[k]
         log["dropped"] = len(drop)
+        log["protected"] = [k for k, r in rooms.items() if r.get("role") in CRITICAL_ROLES]
     # 1b) overlap 제거 (옵션): "wall"=공유벽 분할(대칭 트림) / "clip"=큰방 우선 잘라내기
     if declash:
         mode = "wall" if declash is True else declash
