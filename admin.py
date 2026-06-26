@@ -443,6 +443,10 @@ if which.startswith("🧮"):
     g[1].metric("✅ 사용", f"{tot['use']:,}")
     g[2].metric("🛠 보정·복구 필요", f"{tot['fix']:,}")
     g[3].metric("🚫 제외", f"{tot['excl']:,}")
+    if not (config.DATA_DIR / "staging" / "aihub" / "manifest.jsonl").exists():
+        st.warning("⚠️ AI-Hub 원본 매니페스트(`data/staging/aihub/manifest.jsonl`)가 없어 **AI-Hub가 0으로 집계**됩니다 — "
+                   "데이터 재정리 때 위치 이동(손실 아님). 원본 43,219·gated 10,485는 별도 보유. "
+                   "복구하려면 AI-Hub 매니페스트 재생성 필요(처분 카운트는 그 후 정상). ※느린 카운팅과는 무관.")
     st.caption("※ AI-Hub는 원본 도면 기준(그래프는 다세대 분할로 더 많음). 합 = 받은 원본.")
     st.divider()
 
