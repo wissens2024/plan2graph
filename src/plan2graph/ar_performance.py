@@ -146,7 +146,7 @@ def render(root="."):
 
     _addc("RPLAN grid128 no-perm", _pref("results_rplan_strict.md", rep, lambda l: "RPLAN ep" in l))
     _addc("RPLAN room-perm+seed42", _pref("results_roomperm_rplan_strict.md", rperm, lambda l: "room-perm+seed ep" in l))
-    _addc("한국 gated FT (production)", _pref("results_korean_gated_strict.md", kgat))
+    _addc("KorPlan-AR-RK grid128 (현 production·옛 room_perm無)", _pref("results_korean_gated_strict.md", kgat))
     _addc("RPLAN grid256 (rBoundary)", _pref("results_rplan_grid256_strict.md", rg256))
     _addc("한국 grid256 FT base ep90·플래토", _pref("results_korean_g256_ftbase_strict.md", ftb, section="ep90"))
     _addc("한국 grid256 FT base ep100·플래토", _pref("results_korean_g256_ftbase_b100_strict.md", ftb100, section="ep100"))
@@ -353,9 +353,11 @@ def render(root="."):
             rows.append(row)
         st.table(rows)
         st.caption("빈칸(·)=해당 ep 미학습. 한국 FT=korean-ep, RPLAN=자체 ep. strict clean(도면답게). 모델별 그래프는 §1 곡선.")
-        st.info("**한국 grid256 FT는 3종 모두 학습·표시**(base ep90·100·110). ★선택=**base ep90**(strict 56% 최고 > base110 50% > base100 48%) — "
-                "RPLAN 피크(ep110)에서 FT하면 과특화로 전이 천장 낮아짐(§0 실험11). 도면생성 콤보엔 우승 base90만 넣음. "
-                "⚠️ '한국 단독(옛 ungated)'은 ep50 단일 ckpt라 학습곡선 없음(단일점, §1.5 표의 측정값 참조).")
+        st.warning("**⚠️ 이 grid256-한국FT 3종(base ep90·100·110)은 기각된 탐색입니다.** eval strict는 base90이 56%로 높아 보이나, "
+                   "**실생성 타일링은 grid256가 grid128에 압도적으로 밀립니다**(실시간 best-of clean: grid128 23% ≫ grid256 6%·방 14개 산포). "
+                   "굵은 격자(128)가 방을 자동 정렬(snap)해 빈틈 없이 붙기 때문. → **정본 production = grid128**(KorPlan-AR-RK·grid128). "
+                   "grid256는 'eval 지표만 높고 실사용 도면은 흩어진' 사례로, RPLAN 단독(R-256, strict 64%)에만 의미. "
+                   "⚠️ '한국 단독(옛 ungated)'은 ep50 단일 ckpt라 학습곡선 없음(단일점).")
     # loss 곡선(로그 파싱)
     for logf, lab in [("logs_ar_k_gated_ft.log", "한국 gated"),
                       ("logs_ar_r_rb256.log", "RPLAN grid256"),
