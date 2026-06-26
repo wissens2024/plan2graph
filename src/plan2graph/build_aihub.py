@@ -114,7 +114,10 @@ def merged_crc8s(gpath: dict) -> set:
             meta = json.loads(Path(f).read_text(encoding="utf-8")).get("meta", {})
         except Exception:  # noqa: BLE001
             continue
-        if meta.get("provenance", {}).get("origin") == "dedup_label_merge":
+        if not isinstance(meta, dict):
+            continue
+        prov = meta.get("provenance", {})
+        if isinstance(prov, dict) and prov.get("origin") == "dedup_label_merge":
             p = gid.split("_")
             if len(p) >= 3:
                 out.add(p[2])
