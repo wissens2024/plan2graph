@@ -1154,15 +1154,9 @@ if which.startswith("📗"):
          "ckpt": "ckpts/korplan_ar_r_rb256_roomperm_ep110.pt", "vocab": "tokens_rplan_rb256", "country": 1, "grid": 256,
          "graphs": "80,788", "gt_clean": "99%", "tokens": "72,608", "peak_ep": "ep110",
          "strict": "64%", "repair": "—", "status": "📎 참고 (RPLAN은 256이 우위·한국 FT엔 격자 불일치로 못 씀)"},
-        {"name": "KorPlan-AR-RK · grid256 (참고·방 많아 산포)", "engine": "B",
-         "ckpt": "ckpts/korplan_ar_k_g256_ftR_b90_ep170.pt", "vocab": "tokens_korean_gated_g256", "country": 0, "grid": 256,
-         "graphs": "10,485", "gt_clean": "99%", "tokens": "10,430", "peak_ep": "한국 ep80 (base90 FT ep170)",
-         "strict": "56% (eval; 실생성 6% 빈틈)", "repair": "—", "status": "⚠️ 참고 (방14개 산포·실생성 best-of 0~6%·grid128에 밀림)"},
-        {"name": "KorPlan-AR-K · grid128 (옛 ungated 대조·데이터품질)", "engine": "B",
-         "ckpt": "ckpts/korplan_ar_k_fmlm80m.pt", "vocab": "tokens_korean_clean", "country": 0, "grid": 128,
-         "graphs": "13,224 (clean·미게이트)", "gt_clean": "43~51%", "tokens": "13,224", "peak_ep": "ep50",
-         "strict": "2% (loose 20)", "repair": "2%", "status": "📎 대조 (미게이트 데이터=저품질, 게이트 효과 증명용)"},
     ]
+    # ※도면생성 목록 = 정본 4모델(R·K·RK@grid128 + R256)만. grid256-한국FT·옛 ungated 등은 의미 없어 제외.
+    #   탐색·노력 흔적(grid256 한국FT·base ablation·snap 등 전 실험)은 ⚖️ 성능 비교에서 스토리로 표출.
 
     with st.container(border=True):
         st.subheader("① 데이터셋 현황 (Parsed = 정제 데이터 기준)")
