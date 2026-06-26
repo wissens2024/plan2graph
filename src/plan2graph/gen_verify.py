@@ -1,0 +1,119 @@
+"""Verifier-guided generation (논문 Figure 1 뒤단) — geometric + regulatory verify + best-of-N.
+
+생성 geomgraph(canon_to_graph 출력) → typed nx.Graph → 법규(rules_legal) + 기하(strict clean) 검증
+→ 통과만 채택(rejection sampling). repair는 graph_repair로 사전 적용.
+"""
+from __future__ import annotations
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+for _p in (str(ROOT), str(ROOT / "src"), str(ROOT / "scripts")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+import networkx as nx
+from shapely.geometry import Polygon
+
+from plan2graph.rules_legal import check_legal
+from plan2graph.topology import EXTERIOR
+from plan2graph.graph_repair import repair_graph
+
+try:
+    import render_geomclean as _RG  # strict geometric verifier (도면답게)
+    _is_clean = _RG.is_clean
+except Exception:
+    _is_clean = None
+
+
+def geomgraph_to_nx(g: dict) -> nx.Graph:
+    """생성 geomgraph dict → typed 인접 그래프(법규 검증용). 노드=방(type·area·n_windows), 엣지=문 인접."""
+    G = nx.Graph(scale=g.get("scale_mm_per_px"))
+    rooms = g.get("rooms") or {}
+
+    def _nid(k):
+        return int(k) if str(k).lstrip("-").isdigit() else k
+
+    for k, r in rooms.items():
+        poly = r.get("polygon") or []
+        try:
+            area = round(Polygon(poly).area, 1) if len(poly) >= 3 else 0.0
+        except Exception:
+            area = 0.0
+        role = r.get("role") or r.get("base") or "기타"
+        nwin = r.get("n_windows")
+        if nwin is None:
+            nwin = len(r.get("window_ids") or [])
+        G.add_node(_nid(k), type=role, area_px=area, n_windows=nwin,
+                   is_entrance=(role == "현관"))
+    for d in (g.get("doors") or []):
+        cn = d.get("connects") or d.get("rooms")
+        if cn and len(cn) == 2:
+            a, b = _nid(cn[0]), _nid(cn[1])
+            if a in G and b in G:
+                G.add_edge(a, b, via="door", door_type=d.get("subtype"))
+    # 현관 → 외부(egress 경로용)
+    for n, d in list(G.nodes(data=True)):
+        if d.get("is_entrance"):
+            G.add_edge(n, EXTERIOR, via="entrance")
+    return G
+
+
+def verify_plan(g: dict) -> dict:
+    """단일 생성물 검증. geometric(strict clean) + regulatory(법규). 반환 pass/fail + 위반."""
+    geom_ok = True
+    if _is_clean is not None:
+        try:
+            geom_ok, _ = _is_clean(g)
+        except Exception:
+            geom_ok = False
+    try:
+        legal = check_legal(geomgraph_to_nx(g))
+    except Exception as e:
+        legal = {"passed": False, "violations": [{"rule": "legal_err", "msg": str(e)[:80]}],
+                 "applied_rules": [], "scale_available": False}
+    return {"geom_ok": bool(geom_ok), "legal_ok": bool(legal["passed"]),
+            "both_ok": bool(geom_ok) and bool(legal["passed"]),
+            "legal_violations": legal.get("violations", []),
+            "legal_applied": legal.get("applied_rules", [])}
+
+
+def best_of_n(gen_fn, n: int = 8, repair: bool = True):
+    """rejection sampling: n개 생성→repair→verify. 채택(both_ok)·통계·best 반환.
+    gen_fn() → geomgraph dict (또는 None). 논문 §4.5 draw-budget.
+    """
+    cand = []
+    stat = dict(total=0, decoded=0, geom_pass=0, legal_pass=0, both_pass=0)
+    for _ in range(n):
+        stat["total"] += 1
+        try:
+            g = gen_fn()
+        except Exception:
+            g = None
+        if not g or not (g.get("rooms")):
+            continue
+        stat["decoded"] += 1
+        if repair:
+            try:
+                repair_graph(g, drop_bad=True, declash="wall")
+            except Exception:
+                pass
+        v = verify_plan(g)
+        if v["geom_ok"]:
+            stat["geom_pass"] += 1
+        if v["legal_ok"]:
+            stat["legal_pass"] += 1
+        if v["both_ok"]:
+            stat["both_pass"] += 1
+        cand.append((g, v))
+    accepted = [(g, v) for g, v in cand if v["both_ok"]]
+    # best: both_ok 우선, 없으면 geom_ok, 없으면 위반 최소
+    if accepted:
+        best = accepted[0]
+    else:
+        cand.sort(key=lambda gv: (not gv[1]["geom_ok"], len(gv[1]["legal_violations"])))
+        best = cand[0] if cand else None
+    p = stat["both_pass"] / stat["total"] if stat["total"] else 0.0
+    stat["pass_rate"] = round(100 * p, 1)
+    stat["expected_draws"] = round(1.0 / p, 1) if p > 0 else None
+    return dict(accepted=accepted, best=best, candidates=cand, stat=stat)
