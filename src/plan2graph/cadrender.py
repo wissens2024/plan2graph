@@ -365,6 +365,24 @@ def _nearest_wall_axis(geom, pos, dflt="h"):
     return best
 
 
+def _snap_to_wall(geom, pos, max_dist=80.0):
+    """창/문 위치를 가장 가까운 벽 선분 위로 투영 → 방 중간에 뜨는 것 방지(repair로 벽이 옮겨진 뒤 좌표 보정)."""
+    px, py = pos
+    best = None; bd = max_dist
+    for w in geom.walls:
+        (x1, y1), (x2, y2) = w.seg
+        dx, dy = x2 - x1, y2 - y1
+        L2 = dx * dx + dy * dy
+        if L2 < 1e-6:
+            continue
+        t = max(0.0, min(1.0, ((px - x1) * dx + (py - y1) * dy) / L2))
+        qx, qy = x1 + dx * t, y1 + dy * t
+        d = ((px - qx) ** 2 + (py - qy) ** 2) ** 0.5
+        if d < bd:
+            bd = d; best = (qx, qy)
+    return best if best is not None else pos
+
+
 def render_fig(geom: Geometry, *, dims: bool = True, labels: bool = True,
                fixtures: bool = True, figsize=(9, 9)):
     """공통 Geometry → matplotlib Figure(진짜 도면 스타일). 화면·SVG·PNG 겸용."""
@@ -400,8 +418,8 @@ def render_fig(geom: Geometry, *, dims: bool = True, labels: bool = True,
                 ax.plot([x, x], [y - w / 2, y + w / 2], color="#888", lw=1.2, zorder=4)
         if d.is_entrance:
             ax.plot(x, y, marker="v", color="#c33", ms=6, zorder=5)
-    for win in geom.windows:                     # 창: 이중선 마크 (벽 방향에 정렬)
-        x, y = win.pos; w = max(win.width_px, 12)
+    for win in geom.windows:                     # 창: 이중선 마크 (가장 가까운 벽에 스냅 후 벽 방향 정렬)
+        x, y = _snap_to_wall(geom, win.pos); w = max(win.width_px, 12)
         if _nearest_wall_axis(geom, (x, y)) == "h":   # 가로벽 → 가로 이중선
             ax.plot([x - w / 2, x + w / 2], [y - 1.5, y - 1.5], color="#37c", lw=1.0, zorder=4)
             ax.plot([x - w / 2, x + w / 2], [y + 1.5, y + 1.5], color="#37c", lw=1.0, zorder=4)

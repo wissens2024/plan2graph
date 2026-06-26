@@ -127,6 +127,47 @@ def _room_exterior_edges(rooms, rid):
     return ext
 
 
+def _pt_seg(p, a, b):
+    px, py = p; ax, ay = a; bx, by = b
+    dx, dy = bx - ax, by - ay; L2 = dx * dx + dy * dy
+    if L2 < 1e-9:
+        return (ax, ay), ((px - ax) ** 2 + (py - ay) ** 2) ** 0.5
+    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / L2))
+    qx, qy = ax + dx * t, ay + dy * t
+    return (qx, qy), ((px - qx) ** 2 + (py - qy) ** 2) ** 0.5
+
+
+def snap_windows(g):
+    """각 창을 belongs_to 방의 *외벽 변*으로 재배치(repair로 방 이동 후 중간·내벽에 뜨는 것 교정).
+    belongs_to 방에 외벽이 없으면(내부 방) 창 자체를 드롭(의미 없음). 반환 (옮김, 드롭)."""
+    rooms = g.get("rooms") or {}
+    keep = []; moved = 0; dropped = 0
+    for w in (g.get("windows") or []):
+        rid = w.get("belongs_to")
+        ext = _room_exterior_edges(rooms, str(rid)) if (rid is not None and str(rid) in rooms) else []
+        if not ext:                                   # 내부 방/미귀속 창 → 드롭
+            dropped += 1
+            if rid is not None and str(rid) in rooms:
+                wl = rooms[str(rid)].get("window_ids") or []
+                if w.get("id") in wl:
+                    wl.remove(w.get("id"))
+            continue
+        wp = w.get("position") or [0.0, 0.0]
+        best = None
+        for (a, b) in ext:
+            q, d = _pt_seg(wp, a, b)
+            elen = ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
+            if best is None or d < best[0]:
+                best = (d, q, a, b, elen)
+        _, q, a, b, elen = best
+        w["position"] = [round(q[0], 1), round(q[1], 1)]
+        w["width_px"] = round(min(w.get("width_px") or 40.0, max(12.0, elen * 0.6)), 1)
+        w["orientation_deg"] = 90.0 if abs(b[0] - a[0]) < abs(b[1] - a[1]) else 0.0
+        keep.append(w); moved += 1
+    g["windows"] = keep
+    return moved, dropped
+
+
 def legal_repair(g):
     """규제 위반(채광 L1)을 *도면에 반영*: 창 없는 거실·침실의 외벽에 채광창 추가.
     → AI 생성물에 규제 피드백을 적용해 개선(neuro-symbolic). 반환=수행한 조치 목록."""

@@ -1302,7 +1302,7 @@ if which.startswith("📗"):
                 from pathlib import Path
                 from plan2graph import wallcycle_codec as wc
                 from plan2graph.generators.wall_cycle import WallCycleLM, make_constraint_mask
-                from plan2graph.gen_verify import verify_plan, legal_repair, egress_repair, estimate_scale
+                from plan2graph.gen_verify import verify_plan, legal_repair, egress_repair, estimate_scale, snap_windows
                 from plan2graph.graph_repair import repair_graph
                 dev = "cuda" if torch.cuda.is_available() else "cpu"
                 _vp = Path(config.DATA_DIR) / "staging" / _mrow.get("vocab", "tokens_korean_gated") / "vocab.json"
@@ -1366,6 +1366,7 @@ if which.startswith("📗"):
                     pngR = None
                     if _use_repair:
                         repair_graph(g, drop_bad=True, declash="wall")
+                        snap_windows(g)            # 창을 외벽으로 재배치(중간 뜸 교정)+내부방 창 드롭
                         st.write("**2단계 · 기하 repair** — 자기교차·겹침 제거 + 직각화 + 벽 재생성")
                         try:
                             geomR = _cr.autocorrect(_cr.from_geomgraph(g)); pngR = _cr.render_png(geomR)
@@ -1396,6 +1397,7 @@ if which.startswith("📗"):
                         st.write("**4단계 · 규제 반영(피드백)** — AI 도면에 위반 규제를 적용해 수정")
                         _acts = legal_repair(g)         # 채광·환기(L1·L2): 거실/침실 창 추가
                         _eacts = egress_repair(g)       # 동선(L3): 고립 실을 문으로 연결
+                        snap_windows(g)                 # 추가된 창 포함 전체를 외벽으로 정렬
                         for _ac in (_acts + _eacts)[:12]:
                             st.write(f"　　🔧 {_ac['msg']}")
                         geom2 = _cr.autocorrect(_cr.from_geomgraph(g)); png2 = _cr.render_png(geom2)
