@@ -1118,7 +1118,7 @@ if which.startswith("📗"):
     # 의미있는 = 도면생성에 쓸 수 있고 비교가치 있는 모델만(차이를 직접 체감용). 모두 Track B(KorPlan-AR).
     # 축: 데이터품질(옛단독 vs gated)·해상도(grid128 vs 256)·도메인(RPLAN vs 한국). clean=strict(도면답게, n200 seed42).
     _MODELS = [
-        {"name": "★한국 gated grid128 (production)", "engine": "B",
+        {"name": "★한국 gated FT grid128 (production·RPLAN사전학습→한국FT)", "engine": "B",
          "ckpt": "ckpts/korplan_ar_k_gated_ft_ep130.pt", "vocab": "tokens_korean_gated", "country": 0, "grid": 128,
          "graphs": "10,485 (게이트 통과)", "gt_clean": "100%", "tokens": "10,430", "peak_ep": "한국 ep80 (=FT ep130)",
          "strict": "54%", "repair": "58%", "status": "✅ production"},
