@@ -180,7 +180,7 @@
     ]
   },
   "model_compare": {
-    "note": "전 모델 한 표. ★strict=도면답게(헤드라인). RPLAN은 strict≈loose(단순), 한국은 strict<<loose(복잡=사선/외곽 많음). 모두 eval n200·seed42·피크에폭.",
+    "note": "전 모델 한 표. ★strict=도면답게(헤드라인). RPLAN은 strict≈loose(단순), 한국은 strict<<loose(복잡=사선/외곽 많음). eval seed42·피크에폭(옛 단독만 n80, 나머지 n200). ★데이터품질 대조: 옛 단독(ungated·pretrain無) strict 2% vs production(gated+pretrain) strict 54% — GT 게이트+사전학습의 결정적 효과.",
     "rows": [
       {"모델": "RPLAN grid128 no-perm", "GT": "99%", "loose": "46", "strict": "44", "+repair": "—", "single": "73", "ep": "70"},
       {"모델": "RPLAN grid128 room-perm", "GT": "99%", "loose": "46", "strict": "44", "+repair": "—", "single": "80", "ep": "80"},
@@ -189,8 +189,7 @@
       {"모델": "한국 g256 base-ep90 (플래토)", "GT": "99%", "loose": "63", "strict": "56", "+repair": "—", "single": "84", "ep": "k80"},
       {"모델": "한국 g256 base-ep100", "GT": "99%", "loose": "57", "strict": "48", "+repair": "—", "single": "84", "ep": "k70"},
       {"모델": "한국 g256 base-ep110 (피크)", "GT": "99%", "loose": "57", "strict": "50", "+repair": "—", "single": "82", "ep": "k80"},
-      {"모델": "한국 ungated nosnap (대조)", "GT": "51%", "loose": "32", "strict": "—", "+repair": "—", "single": "0(GT)", "ep": "—"},
-      {"모델": "한국 ungated snap (대조)", "GT": "43%", "loose": "20", "strict": "—", "+repair": "—", "single": "48(GT)", "ep": "—"}
+      {"모델": "한국 단독 (옛·ungated·콤보)", "GT": "43~51%", "loose": "20", "strict": "2", "+repair": "2", "single": "21", "ep": "ep50 (단일ckpt·곡선無)"}
     ]
   },
   "repair_effect": {

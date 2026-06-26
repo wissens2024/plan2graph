@@ -1122,7 +1122,7 @@ if which.startswith("📗"):
         {"name": "한국 단독 (옛·ungated·pretrain無)", "engine": "B",
          "ckpt": "ckpts/korplan_ar_k_fmlm80m.pt", "vocab": "tokens_korean_clean", "country": 0, "grid": 128,
          "graphs": "13,224 (clean·미게이트)", "gt_clean": "43~51%", "tokens": "13,224", "peak_ep": "ep50",
-         "strict": "낮음(미측정)", "repair": "—", "status": "✅ 대조(데이터품질)"},
+         "strict": "2% (loose 20)", "repair": "2%", "status": "✅ 대조(데이터품질·저조)"},
         {"name": "RPLAN grid128 (사전학습 베이스)", "engine": "B",
          "ckpt": "ckpts/korplan_ar_r_fmlm80m_pretrain_v2_ep70.pt", "vocab": "tokens_rplan", "country": 1, "grid": 128,
          "graphs": "80,788", "gt_clean": "99%", "tokens": "72,608(train)", "peak_ep": "ep70",
