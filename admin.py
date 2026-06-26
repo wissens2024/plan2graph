@@ -1334,7 +1334,7 @@ if which.startswith("📗"):
                 st.table([
                     {"구분": "① 모델 프리픽스 (native 학습 조건)", "전달 방식": "토큰 프리픽스", "내용": f"country={_ctry} · housing=APT · scope=unit · units=1"},
                     {"구분": "② 스펙 유도", "전달 방식": "guided decoding (생성 중)", "내용": _spec_txt},
-                    {"구분": "③ 규제 유도 — 채광(L1)", "전달 방식": "guided decoding (생성 중)", "내용": "거실·침실에 채광창 토큰 유도"},
+                    {"구분": "③ 규제 유도 — 채광·환기(L1·L2)", "전달 방식": "guided decoding (생성 중)", "내용": "거실·침실에 창 토큰 유도 (채광창=환기창 겸용)"},
                     {"구분": "④ 규제 검증·보정", "전달 방식": "생성 후 verify→repair", "내용": "채광·환기·동선(egress)·세대/침실 면적·대피공간 (rules_legal)"},
                 ])
                 st.caption("②③은 AI가 토큰을 *생성하는 동안* 반영(decode-time bias). ④ 면적·동선은 metric scale/위상이 필요해 "

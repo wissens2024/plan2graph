@@ -106,6 +106,18 @@ def check_daylight(G: nx.Graph) -> list[dict]:
     return v
 
 
+def check_ventilation(G: nx.Graph) -> list[dict]:
+    """L2: 거실·침실 환기창 보유(설비기준 §11). v1=창 보유 검사(채광과 동일 거주실 요건,
+    면적비 1/20은 scale 확보 시). 채광용 창이 환기 겸용이라 거실·침실 창 1개로 L1·L2 동시 충족."""
+    v = []
+    for n, d in _hab_nodes(G):
+        if d.get("n_windows", 0) < 1:
+            v.append({"rule": "L2_ventilation_window", "node": n, "type": d.get("type"),
+                      "law": "건축물 설비기준 규칙 제11조",
+                      "msg": "환기창 없음(거실·침실은 환기창 필수)"})
+    return v
+
+
 def check_bedroom_area(G: nx.Graph, scale) -> list[dict]:
     """L4: scale 있고 기준 설정 시 침실 면적 하한 검사."""
     min_m2 = getattr(config, "LEGAL_BEDROOM_MIN_M2", None)
@@ -173,10 +185,11 @@ def check_legal(G: nx.Graph) -> dict:
     scale = G.graph.get("scale")
     violations = []
     violations += check_daylight(G)             # L1 채광(창 보유+면적비)
+    violations += check_ventilation(G)          # L2 환기(거실·침실 창)
     violations += check_bedroom_area(G, scale)  # L4 침실 최소면적
     violations += check_dwelling_area(G, scale)  # L5 세대 최소면적
     violations += check_refuge_area(G, scale)   # L6 대피공간 최소면적
-    applied = ["L1_daylight_window"]
+    applied = ["L1_daylight_window", "L2_ventilation_window"]
     skipped = []
     if scale is not None:
         applied += ["L1_daylight_ratio", "L4_bedroom_min_area",
