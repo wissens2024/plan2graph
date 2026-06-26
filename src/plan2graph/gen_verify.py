@@ -78,6 +78,64 @@ def verify_plan(g: dict) -> dict:
             "legal_applied": legal.get("applied_rules", [])}
 
 
+_HAB_ROLES = {"거실", "침실", "안방"}
+
+
+def _room_exterior_edges(rooms, rid):
+    """방 rid의 외벽 변(다른 방과 공유 안 하는 변) — 창 추가 위치 후보."""
+    from collections import Counter
+    cnt = Counter()
+    for k, r in rooms.items():
+        poly = r.get("polygon") or []
+        n = len(poly)
+        for i in range(n):
+            a = (round(float(poly[i][0]), 1), round(float(poly[i][1]), 1))
+            b = (round(float(poly[(i + 1) % n][0]), 1), round(float(poly[(i + 1) % n][1]), 1))
+            if a != b:
+                cnt[tuple(sorted([a, b]))] += 1
+    ext = []
+    poly = rooms[rid].get("polygon") or []
+    n = len(poly)
+    for i in range(n):
+        a = (round(float(poly[i][0]), 1), round(float(poly[i][1]), 1))
+        b = (round(float(poly[(i + 1) % n][0]), 1), round(float(poly[(i + 1) % n][1]), 1))
+        if a != b and cnt[tuple(sorted([a, b]))] == 1:
+            ext.append((a, b))
+    return ext
+
+
+def legal_repair(g):
+    """규제 위반(채광 L1)을 *도면에 반영*: 창 없는 거실·침실의 외벽에 채광창 추가.
+    → AI 생성물에 규제 피드백을 적용해 개선(neuro-symbolic). 반환=수행한 조치 목록."""
+    import math
+    actions = []
+    rooms = g.get("rooms") or {}
+    g.setdefault("windows", [])
+    wid = len(g["windows"])
+    for k, r in rooms.items():
+        if r.get("role") not in _HAB_ROLES:
+            continue
+        if len(r.get("window_ids") or []) >= 1 or r.get("n_windows"):
+            continue
+        ext = _room_exterior_edges(rooms, k)
+        if not ext:
+            actions.append({"room": k, "role": r.get("role"), "ok": False,
+                            "msg": f"{r.get('role')}#{k}: 외벽 없음(내부 방) → 창 추가 불가"})
+            continue
+        a, b = max(ext, key=lambda e: (e[0][0] - e[1][0]) ** 2 + (e[0][1] - e[1][1]) ** 2)
+        mx, my = (a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0
+        wlen = max(24.0, min(80.0, math.hypot(b[0] - a[0], b[1] - a[1]) * 0.6))
+        ang = 90.0 if abs(b[0] - a[0]) < abs(b[1] - a[1]) else 0.0
+        wname = f"winR{wid}"
+        g["windows"].append({"id": wname, "belongs_to": k, "position": [mx, my],
+                             "width_px": round(wlen, 1), "on_wall": None, "orientation_deg": ang})
+        r.setdefault("window_ids", []).append(wname)
+        actions.append({"room": k, "role": r.get("role"), "ok": True,
+                        "msg": f"{r.get('role')}#{k}: 외벽에 채광창 추가"})
+        wid += 1
+    return actions
+
+
 def best_of_n(gen_fn, n: int = 8, repair: bool = True):
     """rejection sampling: n개 생성→repair→verify. 채택(both_ok)·통계·best 반환.
     gen_fn() → geomgraph dict (또는 None). 논문 §4.5 draw-budget.

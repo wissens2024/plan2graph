@@ -1524,7 +1524,7 @@ if which.startswith("📗"):
                 from pathlib import Path
                 from plan2graph import wallcycle_codec as wc
                 from plan2graph.generators.wall_cycle import WallCycleLM, make_constraint_mask
-                from plan2graph.gen_verify import verify_plan
+                from plan2graph.gen_verify import verify_plan, legal_repair
                 from plan2graph.graph_repair import repair_graph
                 dev = "cuda" if torch.cuda.is_available() else "cpu"
                 _vp = Path(config.DATA_DIR) / "staging" / _mrow.get("vocab", "tokens_korean_gated") / "vocab.json"
@@ -1545,36 +1545,51 @@ if which.startswith("📗"):
                 final_g, best_g, best_score = None, None, -1
                 for _it in range(1, _max_it + 1):
                     st.markdown(f"#### 🔁 반복 {_it}/{_max_it}")
-                    st.write(f"🔸 모델 `{_msel}`에 생성 요청…")
+                    st.write(f"**1단계 · 생성** — 모델 `{_msel}`에 도면 생성 요청…")
                     out = model.generate(torch.tensor([pre], device=dev), max_new=650, eos=wc.V.EOS,
                                          temperature=1.0, top_k=40, mask_fn=mask_fn)
                     row = out[0].tolist(); row = row[:row.index(wc.V.EOS) + 1] if wc.V.EOS in row else row
                     g = wc.canon_to_graph(wc.decode(row, vocab))
                     if not g or not g.get("rooms"):
-                        st.write("　⚠️ 디코드 실패 → 재요청"); continue
+                        st.write("　⚠️ 디코드 실패 → 다음 생성"); continue
                     if _use_repair:
                         repair_graph(g, drop_bad=True, declash="wall")
-                        st.write("　🔧 출력 repair 적용 (자기교차·겹침 제거 + 직각화 + 벽 재생성)")
+                        st.write("**2단계 · 기하 repair** — 자기교차·겹침 제거 + 직각화 + 벽 재생성")
                     roles = [r.get("role") for r in g["rooms"].values()]
                     nbed = sum(1 for x in roles if x in BED); nbath = sum(1 for x in roles if x in BATH)
                     geom = _cr.autocorrect(_cr.from_geomgraph(g)); png = _cr.render_png(geom)
-                    st.image(png, caption=f"반복 {_it} 생성 (방 {len(roles)}개)", use_container_width=True)
+                    st.image(png, caption=f"반복 {_it} · 초안 (방 {len(roles)}개)", use_container_width=True)
+                    # 3단계: 검증
+                    st.write("**3단계 · 검증** — 스펙 / 기하 / 규제(법규)")
                     v = verify_plan(g)
                     spec_ok = (nbed == want_bed and nbath == want_bath)
                     st.write(f"　📋 스펙: 침실 {nbed}/{want_bed} {'✅' if nbed == want_bed else '❌'} · "
                              f"욕실 {nbath}/{want_bath} {'✅' if nbath == want_bath else '❌'}")
                     st.write(f"　📐 기하(도면답게): {'✅ 통과' if v['geom_ok'] else '❌ 실패'}")
-                    _lv = '; '.join(x.get('msg', '') for x in v['legal_violations'][:3])
-                    st.write(f"　⚖️ 법규(채광 등): {'✅ 통과' if v['legal_ok'] else '❌ 실패 — ' + _lv}")
+                    # 4단계: 규제 위반 → 규제 반영(피드백) → 재검증 (★프레임워크 키포인트)
+                    if not v['legal_ok'] and v['legal_violations']:
+                        st.write(f"　⚖️ 규제 검사: ❌ **위반 {len(v['legal_violations'])}건 발견**")
+                        for _vi in v['legal_violations'][:6]:
+                            st.write(f"　　• {_vi.get('msg', _vi.get('rule', ''))}")
+                        st.write("**4단계 · 규제 반영(피드백)** — AI 도면에 위반 규제를 적용해 수정")
+                        _acts = legal_repair(g)
+                        for _ac in _acts[:8]:
+                            st.write(f"　　🔧 {_ac['msg']}")
+                        geom2 = _cr.autocorrect(_cr.from_geomgraph(g)); png2 = _cr.render_png(geom2)
+                        st.image(png2, caption=f"반복 {_it} · 규제 반영 후(채광창 추가)", use_container_width=True)
+                        v = verify_plan(g)  # 재검증
+                        st.write(f"　🔁 **재검증**: 규제(채광) {'✅ 통과 — 도면 개선됨' if v['legal_ok'] else '❌ 일부 미해결(내부 방 등)'}")
+                    else:
+                        st.write(f"　⚖️ 규제 검사: {'✅ 통과' if v['legal_ok'] else '❌ 실패'}")
                     score = int(spec_ok) + int(v['geom_ok']) + int(v['legal_ok'])
                     if score > best_score:
                         best_score, best_g = score, g
                     if spec_ok and v['geom_ok'] and v['legal_ok']:
-                        st.success(f"　✅✅ 반복 {_it}: 스펙+기하+법규 모두 통과 → 채택!"); final_g = g; break
-                    _fails = ([] + (["스펙 불일치"] if not spec_ok else [])
-                              + (["기하 결함"] if not v['geom_ok'] else [])
-                              + (["법규 위반"] if not v['legal_ok'] else []))
-                    st.warning(f"　🔁 재요청: {', '.join(_fails)} → 다시 생성")
+                        st.success(f"　✅✅ 반복 {_it}: 스펙+기하+규제 모두 통과 → **채택!**"); final_g = g; break
+                    _fails = ([] + (["스펙 불일치(방 수)"] if not spec_ok else [])
+                              + (["기하 결함(배치)"] if not v['geom_ok'] else [])
+                              + (["규제 미해결"] if not v['legal_ok'] else []))
+                    st.warning(f"　🔁 미통과: {', '.join(_fails)} → 새로 생성해 재시도 (규제 위반은 위에서 반영함)")
                 st.divider()
                 _use = final_g or best_g
                 if _use:
