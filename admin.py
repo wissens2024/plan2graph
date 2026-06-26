@@ -1547,25 +1547,41 @@ if which.startswith("📗"):
                 mask_fn = make_constraint_mask(vocab, orthogonal=True)
                 BED = {"침실", "안방"}; BATH = {"욕실", "화장실", "전용욕실", "전용화장실"}
                 want_bed, want_bath = _bedrooms, _bathrooms
-                st.info(f"🎯 요청 스펙: 침실 {want_bed} · 욕실 {want_bath}"
+                st.info(f"🎯 요청 스펙(검증 기준): 침실 {want_bed} · 욕실 {want_bath}"
                         + (" · 드레스룸" if _has_dressingroom else "") + (" · 파우더룸" if _has_powderroom else ""))
+                _cnames = ["KR", "CN"]; _ctry = _cnames[_mrow.get("country", 0)] if _mrow.get("country", 0) < len(_cnames) else str(_mrow.get("country", 0))
+                st.warning(
+                    "⚠️ **솔직 고지 — AI에 실제로 들어가는 입력(프로그램 프리픽스):** "
+                    f"`country={_ctry}, housing=APT, scope=unit, units=1`. "
+                    "이게 전부입니다. **모델은 지시(instruction)형이 아니라 방 수·채광 위반 같은 텍스트 프롬프트를 못 받습니다.** "
+                    "위 '요청 스펙(방 수)'은 *검증용*이고 AI 생성 입력엔 미포함. "
+                    "재생성=같은 프리픽스로 다시 샘플링(AI는 위반을 모름) · 규제 위반은 symbolic(그래프 직접 편집)으로 반영. "
+                    "→ '계속 프롬프트로 AI에 규제를 알려주는' 진짜 피드백은 조건화/guided-decoding 구현이 필요(아직 없음).")
                 final_g, best_g, best_score = None, None, -1
                 for _it in range(1, _max_it + 1):
                     st.markdown(f"#### 🔁 반복 {_it}/{_max_it}")
-                    st.write(f"**1단계 · 생성** — 모델 `{_msel}`에 도면 생성 요청…")
+                    st.write(f"**1단계 · 생성** — `{_msel}` 에 프로그램 `[country={_ctry}, APT, unit, units=1]` 전달 → 자기회귀 샘플링 "
+                             + ("(동일 프리픽스 재샘플링 · AI는 직전 위반을 모름)" if _it > 1 else ""))
                     out = model.generate(torch.tensor([pre], device=dev), max_new=650, eos=wc.V.EOS,
                                          temperature=1.0, top_k=40, mask_fn=mask_fn)
                     row = out[0].tolist(); row = row[:row.index(wc.V.EOS) + 1] if wc.V.EOS in row else row
                     g = wc.canon_to_graph(wc.decode(row, vocab))
                     if not g or not g.get("rooms"):
                         st.write("　⚠️ 디코드 실패 → 다음 생성"); continue
+                    roles = [r.get("role") for r in g["rooms"].values()]
+                    nbed = sum(1 for x in roles if x in BED); nbath = sum(1 for x in roles if x in BATH)
+                    # 🤖 AI 원본 도면 (보정 전)
+                    try:
+                        png0 = _cr.render_png(_cr.from_geomgraph(g))
+                        st.image(png0, caption=f"반복 {_it} · 🤖 생성형 AI 원본 도면 (보정 전, 방 {len(roles)}개)", use_container_width=True)
+                    except Exception:
+                        st.write("　(원본 렌더 생략)")
+                    # 🔧 보정 도면
                     if _use_repair:
                         repair_graph(g, drop_bad=True, declash="wall")
                         st.write("**2단계 · 기하 repair** — 자기교차·겹침 제거 + 직각화 + 벽 재생성")
-                    roles = [r.get("role") for r in g["rooms"].values()]
-                    nbed = sum(1 for x in roles if x in BED); nbath = sum(1 for x in roles if x in BATH)
-                    geom = _cr.autocorrect(_cr.from_geomgraph(g)); png = _cr.render_png(geom)
-                    st.image(png, caption=f"반복 {_it} · 초안 (방 {len(roles)}개)", use_container_width=True)
+                        geomR = _cr.autocorrect(_cr.from_geomgraph(g)); pngR = _cr.render_png(geomR)
+                        st.image(pngR, caption=f"반복 {_it} · 🔧 보정 후 도면", use_container_width=True)
                     # 3단계: 검증
                     st.write("**3단계 · 검증** — 스펙 / 기하 / 규제(법규)")
                     v = verify_plan(g)
