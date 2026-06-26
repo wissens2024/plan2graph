@@ -1331,22 +1331,19 @@ if which.startswith("📗"):
                        vocab["meta"] + len(wc.COUNTRIES) + 0,
                        vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 0, vocab["units"] + 1]
                 _cnames = ["KR", "CN"]; _ctry = _cnames[_mrow.get("country", 0)] if _mrow.get("country", 0) < len(_cnames) else str(_mrow.get("country", 0))
-                # ★guided decoding: 스펙(방수)+특수방+규제(채광)를 AI 생성에 유도
-                _want = []
-                if _has_dressingroom: _want.append(7)     # 드레스룸
-                if _has_powderroom:  _want.append(15)     # 파우더룸
-                _guide = {"bedrooms": _bedrooms, "bathrooms": _bathrooms, "daylight": True,
-                          "want_roles": _want, "bias": 7.0}
+                # ★guided decoding: 방수(침실/욕실)+규제(채광) 유도. want_roles(특수방 강제)는
+                #   측정 결과 기하를 슬리버로 악화(기하 32%→20%)·스펙도 감소 → 제거. 특수방은 검증·선택으로만.
+                _guide = {"bedrooms": _bedrooms, "bathrooms": _bathrooms, "daylight": True, "bias": 7.0}
                 mask_fn = make_constraint_mask(vocab, orthogonal=True, guide=_guide)
                 BED = {"침실", "안방"}; BATH = {"욕실", "화장실", "전용욕실", "전용화장실"}
                 want_bed, want_bath = _bedrooms, _bathrooms
                 # ── AI에 전달되는 조건 (프리픽스 + 스펙·규제 guided + 규제 검증) ──
                 st.markdown("**📋 생성 AI에 전달되는 조건 (= 우리의 '프롬프트' 역할)**")
-                _spec_txt = (f"침실 {_bedrooms} · 욕실 {_bathrooms}"
-                             + (" · 드레스룸" if _has_dressingroom else "") + (" · 파우더룸" if _has_powderroom else ""))
+                _sp_extra = ((" · 드레스룸" if _has_dressingroom else "") + (" · 파우더룸" if _has_powderroom else ""))
                 st.table([
                     {"구분": "① 모델 프리픽스 (native 학습 조건)", "전달 방식": "토큰 프리픽스", "내용": f"country={_ctry} · housing=APT · scope=unit · units=1"},
-                    {"구분": "② 스펙 유도", "전달 방식": "guided decoding (생성 중)", "내용": _spec_txt},
+                    {"구분": "② 스펙 유도", "전달 방식": "guided decoding (생성 중)", "내용": f"침실 {_bedrooms} · 욕실 {_bathrooms}"},
+                    {"구분": "②' 특수방 (검증만)", "전달 방식": "verify·재생성 (강제 유도 X)", "내용": ("없음" if not _sp_extra else _sp_extra.lstrip(" ·")) + " — 강제 유도하면 기하 악화라 검증·선택으로만"},
                     {"구분": "③ 규제 유도 — 채광·환기(L1·L2)", "전달 방식": "guided decoding (생성 중)", "내용": "거실·침실에 창 토큰 유도 (채광창=환기창 겸용)"},
                     {"구분": "④ 규제 검증·보정", "전달 방식": "생성 후 verify→repair", "내용": "채광·환기(창)·동선(문 연결)·침실/세대 면적·대피공간 — 전量 활성"},
                     {"구분": "⑤ 면적 척도", "전달 방식": f"가정 척도(전용 {_area_m2:.0f}㎡)", "내용": "무척도 생성물에 전용면적 가정해 ㎡ 환산 → L4 침실≥7·L5 세대≥14·L6 대피≥2㎡ 검사"},
