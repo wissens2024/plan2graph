@@ -1303,6 +1303,10 @@ if which.startswith("📗"):
                 from plan2graph import wallcycle_codec as wc
                 from plan2graph.generators.wall_cycle import WallCycleLM, make_constraint_mask
                 from plan2graph.gen_verify import verify_plan, legal_repair, egress_repair, estimate_scale, snap_windows
+                try:
+                    import render_geomclean as _RG
+                except Exception:
+                    _RG = None
                 from plan2graph.graph_repair import repair_graph
                 dev = "cuda" if torch.cuda.is_available() else "cpu"
                 _vp = Path(config.DATA_DIR) / "staging" / _mrow.get("vocab", "tokens_korean_gated") / "vocab.json"
@@ -1345,7 +1349,8 @@ if which.startswith("📗"):
                         f"model.generate(prefix, max_new={min(a.get('max_len',1152)-len(pre)-2,1100)}, temperature=1.0, top_k=40,\n"
                         "               mask_fn=constrained+orthogonal+guide)",
                         language="python")
-                final_g, best_g, best_score = None, None, -1
+                final_g, best_g, best_score = None, None, -1e9
+                best_meta = final_meta = None
                 for _it in range(1, _max_it + 1):
                     st.markdown(f"#### 🔁 반복 {_it}/{_max_it}")
                     st.write(f"**1단계 · 생성** — `{_msel}` 에 위 조건(①프리픽스 + ②③guided)을 적용해 자기회귀 샘플링"
@@ -1385,10 +1390,16 @@ if which.startswith("📗"):
                     if _sc:
                         st.write(f"　📏 가정 척도: 전용 {_area_m2:.0f}㎡ → {_sc:.1f} mm/px (면적 규제 L4·L5·L6 활성)")
                     v = verify_plan(g)
+                    try:
+                        _gok, _gd = _RG.is_clean(g) if _RG else (v['geom_ok'], {})
+                    except Exception:
+                        _gd = {}
+                    _ov = round(float(_gd.get('overlap_frac', 1.0)), 3); _sp = round(float(_gd.get('span_ratio', 99)), 1)
                     spec_ok = (nbed == want_bed and nbath == want_bath)
                     st.write(f"　📋 스펙: 침실 {nbed}/{want_bed} {'✅' if nbed == want_bed else '❌'} · "
                              f"욕실 {nbath}/{want_bath} {'✅' if nbath == want_bath else '❌'}")
-                    st.write(f"　📐 기하(도면답게): {'✅ 통과' if v['geom_ok'] else '❌ 실패'}")
+                    st.write(f"　📐 기하(도면답게): {'✅ 통과' if v['geom_ok'] else '❌ 실패'} · "
+                             f"clean[겹침 {_ov} · 세장비 {_sp} · 방 {len(roles)}]")
                     # 4단계: 규제 위반 → 규제 반영(피드백) → 재검증 (★프레임워크 키포인트)
                     if not v['legal_ok'] and v['legal_violations']:
                         st.write(f"　⚖️ 규제 검사: ❌ **위반 {len(v['legal_violations'])}건 발견**")
@@ -1401,30 +1412,36 @@ if which.startswith("📗"):
                         for _ac in (_acts + _eacts)[:12]:
                             st.write(f"　　🔧 {_ac['msg']}")
                         geom2 = _cr.autocorrect(_cr.from_geomgraph(g)); png2 = _cr.render_png(geom2)
-                        st.image(png2, caption=f"반복 {_it} · 🏛 규제 반영 후 도면 (= 채광/환기 창 + 동선 문 + 현관 보정을 적용한 3번째 이미지)", use_container_width=True)
+                        st.columns(2)[0].image(png2, caption=f"반복 {_it} · 🏛 규제 반영 후 (창·문·현관 보정)", use_container_width=True)
                         v = verify_plan(g)  # 재검증
                         st.write(f"　🔁 **재검증**: 규제(채광·환기·동선) {'✅ 통과 — 도면 개선됨' if v['legal_ok'] else '❌ 일부 미해결(떠있는 방·면적 등)'}")
                     else:
                         st.write(f"　⚖️ 규제 검사: {'✅ 통과' if v['legal_ok'] else '❌ 실패'}")
-                    score = int(spec_ok) + int(v['geom_ok']) + int(v['legal_ok'])
-                    if score > best_score:
-                        best_score, best_g = score, g
+                    # ★기하 우선 품질점수로 best 선정 — 도면다움(겹침·세장비) 최우선이라 슬리버가 best로 안 뽑힘
+                    _qual = (100 * int(v['geom_ok']) + 20 * int(v['legal_ok']) + 10 * int(spec_ok)
+                             - 30.0 * _ov - 2.0 * max(0.0, _sp - 4.0))
+                    _meta = (v['geom_ok'], v['legal_ok'], spec_ok, _ov, _sp, len(roles))
+                    if _qual > best_score:
+                        best_score, best_g, best_meta = _qual, g, _meta
                     if spec_ok and v['geom_ok'] and v['legal_ok']:
-                        st.success(f"　✅✅ 반복 {_it}: 스펙+기하+규제 모두 통과 → **채택!**"); final_g = g; break
+                        st.success(f"　✅✅ 반복 {_it}: 스펙+기하+규제 모두 통과 → **채택!**"); final_g, final_meta = g, _meta; break
                     _fails = ([] + (["스펙 불일치(방 수)"] if not spec_ok else [])
                               + (["기하 결함(배치)"] if not v['geom_ok'] else [])
                               + (["규제 미해결"] if not v['legal_ok'] else []))
                     st.warning(f"　🔁 미통과: {', '.join(_fails)} → 새로 생성해 재시도 (규제 위반은 위에서 반영함)")
                 st.divider()
                 _use = final_g or best_g
+                _um = final_meta or best_meta
                 if _use:
-                    st.markdown("### 🏁 최종 결과")
+                    st.markdown("### 🏁 최종 결과 (전 반복 중 기하 품질 best)")
                     if final_g:
                         st.success("모든 검증(스펙+기하+법규)을 통과한 도면 채택")
-                    else:
-                        st.warning(f"{_max_it}회 내 완전 통과 실패 — 가장 근접(점수 {best_score}/3)한 도면 제공")
+                    elif _um:
+                        st.warning(f"완전 통과는 없어 — **{_max_it}회 중 가장 도면다운 것** 채택 "
+                                   f"(기하 {'✅' if _um[0] else '❌'} · 규제 {'✅' if _um[1] else '❌'} · 스펙 {'✅' if _um[2] else '❌'} · "
+                                   f"clean[겹침 {_um[3]} · 세장비 {_um[4]} · 방 {_um[5]}])")
                     geom = _cr.autocorrect(_cr.from_geomgraph(_use)); png = _cr.render_png(geom); dxf = _cr.render_dxf(geom)
-                    st.image(png, caption="최종 채택 도면", use_container_width=True)
+                    st.image(png, caption="최종 채택 도면 (기하 품질 best)", use_container_width=True)
                     st.download_button("📐 AutoCAD (DXF) — 최종 1개만", dxf, file_name="final.dxf",
                                        mime="image/vnd.dxf", use_container_width=True)
                 else:
