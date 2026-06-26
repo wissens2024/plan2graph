@@ -1333,7 +1333,7 @@ if which.startswith("📗"):
                             f"model.generate(prefix, max_new={_maxnew}, temperature=1.0, top_k=40, mask_fn=constrained+orthogonal)", language="python")
 
                 # ── Phase A (백그라운드·숨김): 후보 N장 중 가장 깨끗한 1장 선택 ──
-                best_g, best_meta, _bq = None, None, -1e9
+                best_g, best_meta, _bq, best_raw0 = None, None, -1e9, None
                 with st.spinner(f"도면 생성 중… (후보 {_max_it}장 중 가장 깨끗한 1장 선택)"):
                     for _it in range(1, _max_it + 1):
                         out = model.generate(torch.tensor([pre], device=dev), max_new=_maxnew, eos=wc.V.EOS,
@@ -1345,6 +1345,10 @@ if which.startswith("📗"):
                             g = None
                         if not g or not g.get("rooms"):
                             continue
+                        try:
+                            _raw0 = _cr.render_png(_cr.from_geomgraph(g))   # AI 원본(보정 전)
+                        except Exception:
+                            _raw0 = None
                         if _use_repair:
                             repair_graph(g, drop_bad=True, declash="wall"); snap_windows(g)
                         estimate_scale(g, _area_m2)
@@ -1358,15 +1362,19 @@ if which.startswith("📗"):
                         ov = round(float(gd.get('overlap_frac', 1.0)), 3); sp = round(float(gd.get('span_ratio', 99)), 1)
                         q = 100 * int(gok) - 30 * ov - 2 * max(0.0, sp - 4.0) + 5 * int(spec_ok)   # 기하 기준 선택
                         if q > _bq:
-                            _bq, best_g, best_meta = q, g, (gok, spec_ok, ov, sp, len(roles), nbed, nbath)
+                            _bq, best_g, best_meta, best_raw0 = q, g, (gok, spec_ok, ov, sp, len(roles), nbed, nbath), _raw0
                 if not best_g:
                     st.error("디코드된 후보가 없습니다. 후보 장수를 늘려보세요.")
                 else:
                     g = best_g; bm = best_meta
                     # ── Phase B (보임): 선택 도면의 규제 반복 교정 ──
                     st.markdown(f"### 🤖 생성형 AI 도면 — {_max_it}장 중 가장 깨끗한 1장 선택")
-                    st.caption(f"기하 {'✅clean' if bm[0] else '❌'} · 겹침 {bm[2]} · 세장비 {bm[3]} · 방 {bm[4]} · 침실 {bm[5]} · 욕실 {bm[6]}")
-                    st.image(_cr.render_png(_cr.autocorrect(_cr.from_geomgraph(g))), caption="선택된 AI 도면 (규제 교정 전)", use_container_width=True)
+                    _bc1, _bc2 = st.columns(2)
+                    if best_raw0 is not None:
+                        _bc1.image(best_raw0, caption=f"🤖 AI 원본 (보정 전, 방 {bm[4]}개)", use_container_width=True)
+                    _bc2.image(_cr.render_png(_cr.autocorrect(_cr.from_geomgraph(g))), caption="🔧 기하 보정 후 (규제 교정 전)", use_container_width=True)
+                    st.write(f"**검증** — 스펙: 침실 {bm[5]}/{want_bed} {'✅' if bm[5] == want_bed else '❌'} · 욕실 {bm[6]}/{want_bath} {'✅' if bm[6] == want_bath else '❌'}"
+                             f" | 기하(도면답게): {'✅ 통과' if bm[0] else '❌ 실패'} (겹침 {bm[2]} · 세장비 {bm[3]})")
                     st.markdown("### 🏛 규제 반복 교정 (neuro-symbolic)")
                     for _pass in range(1, 4):
                         v = verify_plan(g)
