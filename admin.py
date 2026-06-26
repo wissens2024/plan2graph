@@ -1108,10 +1108,29 @@ if which.startswith("📗"):
         "B": "KorPlan-AR(wall-cycle) — 자기회귀 토큰(코너+벽+room-cycle+opening). 직교 제약·법규 verify→repair. ✅ 완성형",
         "C": "Raster→벡터 헤지(추후) — 다양성 확보용 백업 엔진.",
     }
+    # 의미있는 = 도면생성에 쓸 수 있고 비교가치 있는 모델만(차이를 직접 체감용). 모두 Track B(KorPlan-AR).
+    # 축: 데이터품질(옛단독 vs gated)·해상도(grid128 vs 256)·도메인(RPLAN vs 한국). clean=strict(도면답게, n200 seed42).
     _MODELS = [
-        {"name": "KorPlan-AR-K (ep50)", "engine": "B", "data": "한국 Parsed\n(13,224: train 11.9k / val 637 / test 684)", "config": "d=512, L=24, H=32\n77.4M 파라미터", "train": "ep50 완료\nLR:1e-4, BS:32", "status": "✅ 완료", "ckpt": "ckpts/korplan_ar_k_fmlm80m.pt"},
-        {"name": "KorPlan-AR-K-FT-v1", "engine": "B", "data": "❌ 파일 없음", "config": "—", "train": "학습 실패\n(dim_ff 오류)", "status": "❌ 파일 없음", "ckpt": "—"},
-        {"name": "KorPlan-AR-K-FT-v2", "engine": "B", "data": "❌ 파일 없음", "config": "—", "train": "학습 실패\n(dim_ff 오류)", "status": "❌ 파일 없음", "ckpt": "—"},
+        {"name": "★한국 gated grid128 (production)", "engine": "B",
+         "ckpt": "ckpts/korplan_ar_k_gated_ft_ep130.pt", "vocab": "tokens_korean_gated", "country": 0, "grid": 128,
+         "graphs": "10,485 (게이트 통과)", "gt_clean": "100%", "tokens": "10,430", "peak_ep": "한국 ep80 (=FT ep130)",
+         "strict": "54%", "repair": "58%", "status": "✅ production"},
+        {"name": "한국 gated grid256", "engine": "B",
+         "ckpt": "ckpts/korplan_ar_k_g256_ftR_b90_ep170.pt", "vocab": "tokens_korean_gated_g256", "country": 0, "grid": 256,
+         "graphs": "10,485", "gt_clean": "99%", "tokens": "10,430", "peak_ep": "한국 ep80",
+         "strict": "56%", "repair": "—", "status": "✅ 대조(해상도)"},
+        {"name": "한국 단독 (옛·ungated·pretrain無)", "engine": "B",
+         "ckpt": "ckpts/korplan_ar_k_fmlm80m.pt", "vocab": "tokens_korean_clean", "country": 0, "grid": 128,
+         "graphs": "13,224 (clean·미게이트)", "gt_clean": "43~51%", "tokens": "13,224", "peak_ep": "ep50",
+         "strict": "낮음(미측정)", "repair": "—", "status": "✅ 대조(데이터품질)"},
+        {"name": "RPLAN grid128 (사전학습 베이스)", "engine": "B",
+         "ckpt": "ckpts/korplan_ar_r_fmlm80m_pretrain_v2_ep70.pt", "vocab": "tokens_rplan", "country": 1, "grid": 128,
+         "graphs": "80,788", "gt_clean": "99%", "tokens": "72,608(train)", "peak_ep": "ep70",
+         "strict": "44%", "repair": "—", "status": "✅ 대조(RPLAN·6방·문창無)"},
+        {"name": "RPLAN grid256 (rBoundary)", "engine": "B",
+         "ckpt": "ckpts/korplan_ar_r_rb256_roomperm_ep110.pt", "vocab": "tokens_rplan_rb256", "country": 1, "grid": 256,
+         "graphs": "80,788", "gt_clean": "99%", "tokens": "72,608", "peak_ep": "ep110",
+         "strict": "64%", "repair": "—", "status": "✅ 대조(RPLAN best)"},
     ]
 
     with st.container(border=True):
@@ -1131,18 +1150,19 @@ if which.startswith("📗"):
             "- Track C (Raster→벡터): 다양성 헤지 — 진행 중")
 
     with st.container(border=True):
-        st.subheader("② 생성 엔진 및 모델 현황")
-        st.markdown("**Track A · " + _ENGINES["A"] + "**")
-        st.markdown("**Track B · " + _ENGINES["B"] + "**")
-        st.markdown("**Track C · " + _ENGINES["C"] + "**")
-        st.markdown("\n모델 선택 기준: **현재 Track B(KorPlan-AR-K)가 테스트 가능** — 한국 Parsed 데이터로 아파트 도면 생성")
+        st.subheader("② 도면생성용 모델 — 데이터셋별 그래프단계 → 학습후 비교")
+        st.markdown("아래 모델들을 ③에서 골라 직접 생성하며 **차이를 체감**하세요. 모두 Track B(KorPlan-AR, " + _ENGINES["B"][:40] + "…). "
+                    "비교 축 = **데이터품질**(옛 단독 vs gated)·**해상도**(grid128 vs 256)·**도메인**(RPLAN 단순 vs 한국 복잡).")
+        st.markdown("**📊 그래프 단계(토큰화 전) → 학습 후** — clean=strict(도면답게, n200·seed42)")
         st.table([{"모델": m["name"],
-                   "엔진": m["engine"],
-                   "데이터셋": m["data"],
-                   "모델 구성": m["config"],
-                   "학습": m["train"],
-                   "상태": m["status"]} for m in _MODELS])
-        st.caption("✅ 체크: Track B KorPlan-AR-K로 자연어 도면 생성 테스트 중")
+                   "그래프수(토큰화 전)": m.get("graphs", "—"),
+                   "그래프 GT clean": m.get("gt_clean", "—"),
+                   "토큰화 수": m.get("tokens", "—"),
+                   "학습 피크 ep": m.get("peak_ep", "—"),
+                   "★strict clean": m.get("strict", "—"),
+                   "+repair": m.get("repair", "—")} for m in _MODELS])
+        st.caption("GT clean=학습 타깃(그래프)의 기하 품질=모델 천장. strict clean=학습 후 생성물의 '도면답게' 비율. "
+                   "+repair=출력 repair 적용 후(production만 측정). RPLAN은 6방·문/창 없음(데이터 특성), 한국은 14방·문창 보유.")
 
         with st.expander("🔧 모델 파라미터 설명 (구성값 + 쉬운 해설)"):
             st.markdown(
@@ -1255,6 +1275,10 @@ if which.startswith("📗"):
                   (" + 드레스룸" if _has_dressingroom else "") +
                   (" + 파우더룸" if _has_powderroom else ""))
 
+        # 출력 repair 토글 (자기교차·겹침 제거+직각화+벽재생성) — 끄고 켜보며 차이 체감
+        _use_repair = st.checkbox("✨ 출력 repair 적용 (자기교차·겹침 제거 + 직각화 + 벽 재생성)", value=True,
+                                  help="생성 그래프를 추론 시점에 보정. 끄면 모델 raw 출력 그대로(차이 비교용).")
+
         # 생성 버튼
         _g_col = st.columns([1, 5])
         _go = _g_col[0].button("🏗 도면 생성", type="primary", use_container_width=True)
@@ -1270,13 +1294,13 @@ if which.startswith("📗"):
                     # 1️⃣ 모델 로드
                     dev = "cuda" if torch.cuda.is_available() else "cpu"
                     ckpt_path = Path(config.PROJECT_ROOT) / _mrow["ckpt"]
-                    vocab_path = Path(config.DATA_DIR) / "staging" / "tokens_korean_clean" / "vocab.json"
+                    vocab_path = Path(config.DATA_DIR) / "staging" / _mrow.get("vocab", "tokens_korean_gated") / "vocab.json"
 
-                    # vocab 자동 생성 (없으면)
+                    # vocab 자동 생성 (없으면) — 모델 grid에 맞춤
                     if not vocab_path.exists():
                         st.info("vocab.json 자동 생성 중...")
                         vocab_path.parent.mkdir(parents=True, exist_ok=True)
-                        auto_vocab = wc._vocab(grid=128)
+                        auto_vocab = wc._vocab(grid=_mrow.get("grid", 128))
                         _json.dump(auto_vocab, open(vocab_path, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
                         st.success(f"✅ vocab 생성 완료: {vocab_path}")
 
@@ -1306,7 +1330,7 @@ if which.startswith("📗"):
                     # 2️⃣ 프리픽스 토큰 구성 (5개 메타 토큰만 — n_bedrooms/n_bathrooms는 검증용으로만)
                     prefix_tokens = [
                         wc.V.BOS,
-                        vocab["meta"] + 0,  # country: 0=KR
+                        vocab["meta"] + _mrow.get("country", 0),  # country: 0=KR, 1=RPLAN/CN
                         vocab["meta"] + len(wc.COUNTRIES) + 0,  # housing: 0=apartment
                         vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 0,  # scope: 0=unit
                         vocab["units"] + 1,  # units: 1 (단위세대)
@@ -1362,6 +1386,14 @@ if which.startswith("📗"):
                     if not g or not g.get('rooms'):
                         st.error("❌ 생성된 그래프가 비어있습니다. 모델이 아직 학습 중이거나 제약이 너무 강할 수 있습니다.")
                         st.stop()
+
+                    # 4.5️⃣ 출력 repair (토글) — 자기교차·겹침 제거 + 직각화 + 벽 재생성
+                    if _use_repair:
+                        try:
+                            from plan2graph.graph_repair import repair_graph
+                            repair_graph(g, drop_bad=True, declash="wall")
+                        except Exception as _re:
+                            st.warning(f"repair 건너뜀: {type(_re).__name__}")
 
                     # 5️⃣ 렌더링
                     geom = _cr.from_geomgraph(g)
