@@ -1285,16 +1285,16 @@ if which.startswith("📗"):
                                   help="생성 그래프를 추론 시점에 보정. 끄면 모델 raw 출력 그대로(차이 비교용).")
 
         # 최대 반복 + 생성 버튼 (한 버튼 = 자동 검증 반복 루프)
-        _max_it = st.slider("최대 반복 횟수 (통과까지)", 2, 12, 6,
-                            help="통과할 때까지 자동 반복할 최대 횟수. 실패 시 새로 생성·재검증.")
+        _max_it = st.slider("생성 후보 장수 (많을수록 깨끗한 게 나옴)", 4, 16, 10,
+                            help="N장 무가이드 생성 후 가장 깨끗한(clean) 1장 선택. 성능비교 몽타주처럼 후보가 많을수록 좋음.")
         _go = st.button("🏗 도면 생성", type="primary", use_container_width=True,
-                        help="누르면 자동으로 생성 → 검증(스펙·기하·법규) → 규제 반영 → 재생성을 반복하고, 통과 도면 + 최종 DXF를 냅니다.")
+                        help="N장 무가이드 생성 → 가장 깨끗한 것 선택 → 그 도면에만 규제 보정(창·문·현관·면적) → 최종 DXF.")
 
     # ── 생성 진행 (위 한 버튼이 돌리는 자동 검증 반복 루프) ──
     with st.container(border=True):
-        st.markdown("### 🛠 생성 진행 — 생성 → 검증(스펙·기하·법규) → 규제 반영 → 재생성 (자동 반복)")
-        st.caption("위 '🏗 도면 생성'을 누르면 자동 반복합니다. 실패 시 무엇이 틀렸나 로그 후 재생성. "
-                   "각 반복 도면·흐름이 순서대로 쌓이고(길이 무관), AutoCAD(DXF)는 최종 1개만.")
+        st.markdown("### 🛠 생성 진행 — N장 생성 → 가장 깨끗한 것 선택 → 규제 보정")
+        st.caption("성능비교 몽타주와 동일 방식: 무가이드로 여러 장 생성하고 그중 가장 깨끗한(도면다운) 1장만 골라 "
+                   "규제(창·문·현관·면적)를 보정합니다. AutoCAD(DXF)는 최종 1개.")
         st.caption("⚠️ snap_split 단일벽 표현이라 내외벽 두께는 안 보임(벽-1급 재학습 별도 과제).")
         if _go:
             try:
@@ -1320,132 +1320,86 @@ if which.startswith("📗"):
                        vocab["meta"] + len(wc.COUNTRIES) + 0,
                        vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 0, vocab["units"] + 1]
                 _cnames = ["KR", "CN"]; _ctry = _cnames[_mrow.get("country", 0)] if _mrow.get("country", 0) < len(_cnames) else str(_mrow.get("country", 0))
-                # ★guided decoding: 방수(침실/욕실)+규제(채광) 유도. want_roles(특수방 강제)는
-                #   측정 결과 기하를 슬리버로 악화(기하 32%→20%)·스펙도 감소 → 제거. 특수방은 검증·선택으로만.
-                _guide = {"bedrooms": _bedrooms, "bathrooms": _bathrooms, "daylight": True, "bias": 7.0}
-                mask_fn = make_constraint_mask(vocab, orthogonal=True, guide=_guide)
+                # ★성능비교 몽타주 방식: 무가이드 N장 생성 → 가장 깨끗(clean)한 1장 선택 → 그 도면에만 규제 보정.
+                #   (guide는 기하를 슬리버로 악화시켜 끔. 깨끗한 도면은 N장 중 고르는 게 핵심)
+                mask_fn = make_constraint_mask(vocab, orthogonal=True)   # guide 없음
                 BED = {"침실", "안방"}; BATH = {"욕실", "화장실", "전용욕실", "전용화장실"}
                 want_bed, want_bath = _bedrooms, _bathrooms
-                # ── AI에 전달되는 조건 (프리픽스 + 스펙·규제 guided + 규제 검증) ──
-                st.markdown("**📋 생성 AI에 전달되는 조건 (= 우리의 '프롬프트' 역할)**")
+                _maxnew = min(a.get("max_len", 1152) - len(pre) - 2, 1100)
+                st.markdown("**📋 생성 방식 (성능비교 몽타주와 동일)**")
                 st.table([
-                    {"구분": "① 모델 프리픽스 (native 학습 조건)", "전달 방식": "토큰 프리픽스", "내용": f"country={_ctry} · housing=APT · scope=unit · units=1"},
-                    {"구분": "② 스펙 유도", "전달 방식": "guided decoding (생성 중)", "내용": f"침실 {_bedrooms} · 욕실 {_bathrooms}"},
-                    {"구분": "③ 규제 유도 — 채광·환기(L1·L2)", "전달 방식": "guided decoding (생성 중)", "내용": "거실·침실에 창 토큰 유도 (채광창=환기창 겸용)"},
-                    {"구분": "④ 규제 검증·보정", "전달 방식": "생성 후 verify→repair", "내용": "채광·환기(창)·동선(문 연결)·침실/세대 면적·대피공간 — 전量 활성"},
-                    {"구분": "⑤ 면적 척도", "전달 방식": f"가정 척도(전용 {_area_m2:.0f}㎡)", "내용": "무척도 생성물에 전용면적 가정해 ㎡ 환산 → L4 침실≥7·L5 세대≥14·L6 대피≥2㎡ 검사"},
+                    {"단계": "① 프리픽스 (AI 입력)", "내용": f"country={_ctry} · housing=APT · scope=unit · units=1 — **무가이드**(guide는 기하 악화라 끔)"},
+                    {"단계": f"② 후보 {_max_it}장 생성", "내용": "자기회귀 샘플링 (constrained + orthogonal)"},
+                    {"단계": "③ 선택", "내용": "가장 깨끗한(clean = 겹침↓ · 세장비↓) 도면 1장"},
+                    {"단계": "④ 규제 보정", "내용": "선택 도면에만 채광·환기 창 + 동선 문 + 현관 + 면적(전용 %g㎡) 검증" % _area_m2},
                 ])
-                st.caption("②③은 AI가 토큰을 *생성하는 동안* 반영(decode-time bias). ④ 동선은 위상, 면적(L4·L5·L6)은 "
-                           "⑤ 가정 척도로 환산해 검증·보정. (모델은 텍스트 지시형 아님 — 위 조건이 실제 입력)")
-                # ── 생성형 AI에 실제로 넘기는 값 (raw) ──
-                with st.expander("🔎 생성형 AI에 실제로 넘기는 값 (model.generate raw 입력)", expanded=True):
-                    st.code(
-                        "# 프리픽스 토큰열 (이게 AI 생성의 출발점)\n"
-                        f"prefix_tokens = {pre}\n"
-                        f"  = [BOS, country={_ctry}({_mrow.get('country',0)}), housing=APT, schema=기본, scope=unit, units=1]\n\n"
-                        "# guided decoding (생성 중 logit bias로 유도)\n"
-                        f"guide = {_guide}\n\n"
-                        "# 샘플링 파라미터\n"
-                        f"model.generate(prefix, max_new={min(a.get('max_len',1152)-len(pre)-2,1100)}, temperature=1.0, top_k=40,\n"
-                        "               mask_fn=constrained+orthogonal+guide)",
-                        language="python")
-                final_g, best_g, best_score = None, None, -1e9
-                best_meta = final_meta = None
+                with st.expander("🔎 AI에 넘기는 raw 입력", expanded=False):
+                    st.code(f"prefix_tokens = {pre}  # [BOS, country={_ctry}, APT, schema, unit, units=1]\n"
+                            f"model.generate(prefix, max_new={_maxnew}, temperature=1.0, top_k=40, mask_fn=constrained+orthogonal)", language="python")
+
+                # ── Phase 1: 후보 N장 생성·선별 (무가이드) ──
+                st.markdown(f"### 🎲 1단계 · 후보 {_max_it}장 생성 → 가장 깨끗한 것 선택")
+                best_g, best_q, best_meta = None, -1e9, None
+                _cols = None
                 for _it in range(1, _max_it + 1):
-                    st.markdown(f"#### 🔁 반복 {_it}/{_max_it}")
-                    st.write(f"**1단계 · 생성** — `{_msel}` 에 위 조건(①프리픽스 + ②③guided)을 적용해 자기회귀 샘플링"
-                             + (" · 재생성(동일 조건)" if _it > 1 else ""))
-                    out = model.generate(torch.tensor([pre], device=dev), max_new=min(a.get("max_len", 1152) - len(pre) - 2, 1100), eos=wc.V.EOS,
+                    out = model.generate(torch.tensor([pre], device=dev), max_new=_maxnew, eos=wc.V.EOS,
                                          temperature=1.0, top_k=40, mask_fn=mask_fn)
                     row = out[0].tolist(); row = row[:row.index(wc.V.EOS) + 1] if wc.V.EOS in row else row
-                    g = wc.canon_to_graph(wc.decode(row, vocab))
+                    try:
+                        g = wc.canon_to_graph(wc.decode(row, vocab))
+                    except Exception:
+                        g = None
                     if not g or not g.get("rooms"):
-                        st.write("　⚠️ 디코드 실패 → 다음 생성"); continue
+                        continue
+                    if _use_repair:
+                        repair_graph(g, drop_bad=True, declash="wall"); snap_windows(g)
+                    estimate_scale(g, _area_m2)
                     roles = [r.get("role") for r in g["rooms"].values()]
                     nbed = sum(1 for x in roles if x in BED); nbath = sum(1 for x in roles if x in BATH)
-                    # 🤖 AI 원본 + 🔧 보정 도면을 한 줄에 나란히
-                    try:
-                        png0 = _cr.render_png(_cr.from_geomgraph(g))
-                    except Exception:
-                        png0 = None
-                    pngR = None
-                    if _use_repair:
-                        repair_graph(g, drop_bad=True, declash="wall")
-                        snap_windows(g)            # 창을 외벽으로 재배치(중간 뜸 교정)+내부방 창 드롭
-                        st.write("**2단계 · 기하 repair** — 자기교차·겹침 제거 + 직각화 + 벽 재생성")
-                        try:
-                            geomR = _cr.autocorrect(_cr.from_geomgraph(g)); pngR = _cr.render_png(geomR)
-                        except Exception:
-                            pngR = None
-                    _ic1, _ic2 = st.columns(2)
-                    if png0 is not None:
-                        _ic1.image(png0, caption=f"반복 {_it} · 🤖 AI 원본 (보정 전, 방 {len(roles)}개)", use_container_width=True)
-                    if pngR is not None:
-                        _ic2.image(pngR, caption=f"반복 {_it} · 🔧 보정 후", use_container_width=True)
-                    elif png0 is not None and not _use_repair:
-                        pass
-                    # 3단계: 검증
-                    st.write("**3단계 · 검증** — 스펙 / 기하 / 규제(법규)")
-                    _sc, _ = estimate_scale(g, _area_m2)    # 가정 척도(전용 N㎡) → 면적 규제(L4·L5·L6) 활성화
-                    if _sc:
-                        st.write(f"　📏 가정 척도: 전용 {_area_m2:.0f}㎡ → {_sc:.1f} mm/px (면적 규제 L4·L5·L6 활성)")
-                    v = verify_plan(g)
-                    try:
-                        _gok, _gd = _RG.is_clean(g) if _RG else (v['geom_ok'], {})
-                    except Exception:
-                        _gd = {}
-                    _ov = round(float(_gd.get('overlap_frac', 1.0)), 3); _sp = round(float(_gd.get('span_ratio', 99)), 1)
                     spec_ok = (nbed == want_bed and nbath == want_bath)
-                    st.write(f"　📋 스펙: 침실 {nbed}/{want_bed} {'✅' if nbed == want_bed else '❌'} · "
-                             f"욕실 {nbath}/{want_bath} {'✅' if nbath == want_bath else '❌'}")
-                    st.write(f"　📐 기하(도면답게): {'✅ 통과' if v['geom_ok'] else '❌ 실패'} · "
-                             f"clean[겹침 {_ov} · 세장비 {_sp} · 방 {len(roles)}]")
-                    # 4단계: 규제 위반 → 규제 반영(피드백) → 재검증 (★프레임워크 키포인트)
-                    if not v['legal_ok'] and v['legal_violations']:
-                        st.write(f"　⚖️ 규제 검사: ❌ **위반 {len(v['legal_violations'])}건 발견**")
-                        for _vi in v['legal_violations'][:6]:
-                            st.write(f"　　• {_vi.get('msg', _vi.get('rule', ''))}")
-                        st.write("**4단계 · 규제 반영(피드백)** — AI 도면에 위반 규제를 적용해 수정")
-                        _acts = legal_repair(g)         # 채광·환기(L1·L2): 거실/침실 창 추가
-                        _eacts = egress_repair(g)       # 동선(L3): 고립 실을 문으로 연결
-                        snap_windows(g)                 # 추가된 창 포함 전체를 외벽으로 정렬
-                        for _ac in (_acts + _eacts)[:12]:
-                            st.write(f"　　🔧 {_ac['msg']}")
-                        geom2 = _cr.autocorrect(_cr.from_geomgraph(g)); png2 = _cr.render_png(geom2)
-                        st.columns(2)[0].image(png2, caption=f"반복 {_it} · 🏛 규제 반영 후 (창·문·현관 보정)", use_container_width=True)
-                        v = verify_plan(g)  # 재검증
-                        st.write(f"　🔁 **재검증**: 규제(채광·환기·동선) {'✅ 통과 — 도면 개선됨' if v['legal_ok'] else '❌ 일부 미해결(떠있는 방·면적 등)'}")
-                    else:
-                        st.write(f"　⚖️ 규제 검사: {'✅ 통과' if v['legal_ok'] else '❌ 실패'}")
-                    # ★기하 우선 품질점수로 best 선정 — 도면다움(겹침·세장비) 최우선이라 슬리버가 best로 안 뽑힘
-                    _qual = (100 * int(v['geom_ok']) + 20 * int(v['legal_ok']) + 10 * int(spec_ok)
-                             - 30.0 * _ov - 2.0 * max(0.0, _sp - 4.0))
-                    _meta = (v['geom_ok'], v['legal_ok'], spec_ok, _ov, _sp, len(roles))
-                    if _qual > best_score:
-                        best_score, best_g, best_meta = _qual, g, _meta
-                    if spec_ok and v['geom_ok'] and v['legal_ok']:
-                        st.success(f"　✅✅ 반복 {_it}: 스펙+기하+규제 모두 통과 → **채택!**"); final_g, final_meta = g, _meta; break
-                    _fails = ([] + (["스펙 불일치(방 수)"] if not spec_ok else [])
-                              + (["기하 결함(배치)"] if not v['geom_ok'] else [])
-                              + (["규제 미해결"] if not v['legal_ok'] else []))
-                    st.warning(f"　🔁 미통과: {', '.join(_fails)} → 새로 생성해 재시도 (규제 위반은 위에서 반영함)")
-                st.divider()
-                _use = final_g or best_g
-                _um = final_meta or best_meta
-                if _use:
-                    st.markdown("### 🏁 최종 결과 (전 반복 중 기하 품질 best)")
-                    if final_g:
-                        st.success("모든 검증(스펙+기하+법규)을 통과한 도면 채택")
-                    elif _um:
-                        st.warning(f"완전 통과는 없어 — **{_max_it}회 중 가장 도면다운 것** 채택 "
-                                   f"(기하 {'✅' if _um[0] else '❌'} · 규제 {'✅' if _um[1] else '❌'} · 스펙 {'✅' if _um[2] else '❌'} · "
-                                   f"clean[겹침 {_um[3]} · 세장비 {_um[4]} · 방 {_um[5]}])")
-                    geom = _cr.autocorrect(_cr.from_geomgraph(_use)); png = _cr.render_png(geom); dxf = _cr.render_dxf(geom)
-                    st.image(png, caption="최종 채택 도면 (기하 품질 best)", use_container_width=True)
-                    st.download_button("📐 AutoCAD (DXF) — 최종 1개만", dxf, file_name="final.dxf",
-                                       mime="image/vnd.dxf", use_container_width=True)
+                    try:
+                        gok, gd = _RG.is_clean(g) if _RG else (False, {})
+                    except Exception:
+                        gok, gd = False, {}
+                    ov = round(float(gd.get('overlap_frac', 1.0)), 3); sp = round(float(gd.get('span_ratio', 99)), 1)
+                    q = 100 * int(gok) - 30 * ov - 2 * max(0.0, sp - 4.0) + 5 * int(spec_ok)
+                    if (_it - 1) % 3 == 0:
+                        _cols = st.columns(3)
+                    try:
+                        _png = _cr.render_png(_cr.autocorrect(_cr.from_geomgraph(g)))
+                        _cols[(_it - 1) % 3].image(_png, caption=f"#{_it} {'✅clean' if gok else '❌'} 겹침{ov}·세장{sp}·방{len(roles)}·침{nbed}욕{nbath}", use_container_width=True)
+                    except Exception:
+                        pass
+                    if q > best_q:
+                        best_q, best_g, best_meta = q, g, (gok, spec_ok, ov, sp, len(roles), nbed, nbath)
+                if not best_g:
+                    st.error("디코드된 후보가 없습니다. 후보 장수를 늘려보세요.")
                 else:
-                    st.error("디코드된 도면이 없습니다. 반복 횟수를 늘려보세요.")
+                    bm = best_meta
+                    st.success(f"✅ **선택**: {_max_it}장 중 가장 깨끗 — 기하 {'✅통과' if bm[0] else '❌실패'} · "
+                               f"clean[겹침 {bm[2]} · 세장 {bm[3]} · 방 {bm[4]}] · 침실 {bm[5]} · 욕실 {bm[6]}")
+                    g = best_g
+                    # ── Phase 2: 선택 도면에만 규제 검증·보정 ──
+                    st.markdown("### 🏛 2단계 · 선택 도면에 규제 검증·보정 (neuro-symbolic)")
+                    pngB = _cr.render_png(_cr.autocorrect(_cr.from_geomgraph(g)))
+                    v = verify_plan(g)
+                    if not v['legal_ok'] and v['legal_violations']:
+                        st.write(f"⚖️ 규제 위반 {len(v['legal_violations'])}건 → 도면에 반영:")
+                        for _vi in v['legal_violations'][:6]:
+                            st.write(f"　• {_vi.get('msg', _vi.get('rule', ''))}")
+                        _acts = legal_repair(g); _eacts = egress_repair(g); snap_windows(g)
+                        for _ac in (_acts + _eacts)[:12]:
+                            st.write(f"　🔧 {_ac['msg']}")
+                        v = verify_plan(g)
+                        st.write(f"🔁 재검증: 규제(채광·환기·동선) {'✅ 통과 — 개선됨' if v['legal_ok'] else '❌ 일부 미해결(떠있는 방·면적 등)'}")
+                    else:
+                        st.write("⚖️ 규제 검사: ✅ 위반 없음")
+                    geomF = _cr.autocorrect(_cr.from_geomgraph(g)); pngF = _cr.render_png(geomF); dxf = _cr.render_dxf(geomF)
+                    _fc1, _fc2 = st.columns(2)
+                    _fc1.image(pngB, caption="선택 도면 (규제 보정 전)", use_container_width=True)
+                    _fc2.image(pngF, caption="🏁 최종 도면 (규제 보정 후)", use_container_width=True)
+                    st.download_button("📐 AutoCAD (DXF) — 최종 1개", dxf, file_name="final.dxf",
+                                       mime="image/vnd.dxf", use_container_width=True)
             except Exception as _le:
                 st.error(f"반복 검증 생성 실패: {type(_le).__name__}: {_le}")
                 import traceback
