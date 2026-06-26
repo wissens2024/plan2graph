@@ -48,6 +48,18 @@ def _peak(pts):
     return max(pts, key=lambda x: x[1])
 
 
+def _section_curve(text, header_token):
+    """'## ... <header_token> ...' 헤더 다음의 표만 파싱(섹션별 곡선 분리용)."""
+    grab, rows = False, []
+    for ln in text.splitlines():
+        if ln.strip().startswith("## "):
+            grab = header_token in ln
+            continue
+        if grab and ln.strip().startswith("|"):
+            rows.append(ln)
+    return _parse_curve("\n".join(rows))
+
+
 def render(root="."):
     st.title("📈 KorPlan-AR 성능 비교")
     st.caption("clean 곡선·천장(피크)·토큰화 과정·학습 과정 데이터. 학습 진행 중이면 곡선이 자동 갱신됩니다.")
@@ -92,25 +104,39 @@ def render(root="."):
         st.caption("판정: ✅의미있음 · 🟡부분적(천장X·연결/재현O) · 🔄진행중 · ⚪의미없음")
         st.divider()
 
-    # ── 곡선 수집 ──
+    # ── 곡선 수집 (strict=도면답게 우선, 없으면 loose 폴백) ──
+    # strict 곡선 = clean(drawable): +대각선0 +꼭짓점>=4 +외곽(1덩어리·채움·볼록). loose=옛 selfint·overlap·span만.
     rep = _read(os.path.join(root, "results_report.md"))
     rperm = _read(os.path.join(root, "results_roomperm_rplan.md"))
     kgat = _read(os.path.join(root, "results_korean_gated_curve.md"))
     rg256 = _read(os.path.join(root, "results_rplan_grid256_curve.md"))
+    ftb = _read(os.path.join(root, "results_korean_g256_ftbase_curve.md"))
+    ftb100 = _read(os.path.join(root, "results_korean_g256_ftbase_b100_curve.md"))
 
     curves = {}
-    c = _parse_curve(rep, lambda l: "RPLAN ep" in l)
-    if c:
-        curves["RPLAN (grid128, no-perm)"] = c
-    c = _parse_curve(rperm, lambda l: "room-perm+seed ep" in l)
-    if c:
-        curves["RPLAN room-perm+seed42"] = c
-    c = _parse_curve(kgat)
-    if c:
-        curves["한국 gated FT (snap+tol3.5)"] = c
-    c = _parse_curve(rg256)
-    if c:
-        curves["RPLAN grid256 (rBoundary)"] = c
+    _flag = {"strict": False}
+
+    def _pref(strict_file, loose_text, loose_filter=None, section=None):
+        st = _read(os.path.join(root, strict_file))
+        if st.strip():
+            return (_section_curve(st, section) if section else _parse_curve(st)), True
+        return (_section_curve(loose_text, section) if section
+                else _parse_curve(loose_text, loose_filter)), False
+
+    def _addc(base, tup):
+        c, isstrict = tup
+        if c:
+            curves[base + (" ✦strict" if isstrict else " (loose)")] = c
+            if isstrict:
+                _flag["strict"] = True
+
+    _addc("RPLAN grid128 no-perm", _pref("results_rplan_strict.md", rep, lambda l: "RPLAN ep" in l))
+    _addc("RPLAN room-perm+seed42", _pref("results_roomperm_rplan_strict.md", rperm, lambda l: "room-perm+seed ep" in l))
+    _addc("한국 gated FT (production)", _pref("results_korean_gated_strict.md", kgat))
+    _addc("RPLAN grid256 (rBoundary)", _pref("results_rplan_grid256_strict.md", rg256))
+    _addc("한국 grid256 FT base ep90·플래토", _pref("results_korean_g256_ftbase_strict.md", ftb, section="ep90"))
+    _addc("한국 grid256 FT base ep100·플래토", _pref("results_korean_g256_ftbase_b100_strict.md", ftb100, section="ep100"))
+    _addc("한국 grid256 FT base ep110·피크", _pref("results_korean_g256_ftbase_strict.md", ftb, section="ep110"))
 
     # 잠정(가정) 곡선 — 실데이터 곡선이 아직 없을 때만 추가(점선 표시). 실데이터 생기면 자동 우선.
     proj = stats.get("projected", {})
@@ -158,6 +184,12 @@ def render(root="."):
 
     # ════ 1. 성능 곡선 + 피크 ════
     st.subheader("1. clean 곡선 & 천장(피크)")
+    if _flag["strict"]:
+        st.success("✦ **곡선 = strict clean(도면답게)** 기준. 옛 loose(selfint·overlap·span만)는 사선·틈·뭉개짐을 "
+                   "통과시켜 품질을 과대평가했음(육안 확인). strict = +대각선0 +꼭짓점≥4 +외곽(1덩어리·채움·볼록). "
+                   "예: 한국 production loose 65% → **strict 54%**.")
+    else:
+        st.caption("⏳ strict 재평가(clean drawable) 진행 중이면 끝난 곡선부터 strict로 표시됩니다(없으면 loose 폴백).")
     if curves:
         try:
             import matplotlib
@@ -194,6 +226,20 @@ def render(root="."):
             st.caption("⚠️ 점선=잠정(가정) 추세. " + stats.get("projected", {}).get("note", ""))
     else:
         st.info("아직 곡선 데이터 없음(학습/평가 진행 중). results_*.md 생성되면 표시됩니다.")
+
+    # ── 생성 샘플 montage (육안 비교) ──
+    mtg = stats.get("montages", [])
+    if mtg:
+        st.markdown("**생성 샘플 육안 (clean 도면 · 동일 seed42·n60·constrained+orthogonal)**")
+        existing = [m for m in mtg if os.path.exists(os.path.join(root, m.get("path", "")))]
+        if existing:
+            cols = st.columns(min(3, len(existing)))
+            for i, m in enumerate(existing):
+                col = cols[i % len(cols)]
+                col.image(os.path.join(root, m["path"]), caption=m.get("caption", ""),
+                          use_container_width=True)
+        if stats.get("montage_note"):
+            st.caption(stats["montage_note"])
 
     # ── GT clean(데이터 천장) vs 생성 clean(모델 피크) ──
     gvg = stats.get("gt_vs_gen", {})
@@ -244,7 +290,9 @@ def render(root="."):
                 st.table([{"ep": ep, "clean": f"{cl}%"} for ep, cl in pts])
     # loss 곡선(로그 파싱)
     for logf, lab in [("logs_ar_k_gated_ft.log", "한국 gated"),
-                      ("logs_ar_r_rb256.log", "RPLAN grid256")]:
+                      ("logs_ar_r_rb256.log", "RPLAN grid256"),
+                      ("logs_ar_k_g256_ftR_b90.log", "한국 g256 FT base ep90"),
+                      ("logs_ar_k_g256_ftR_b110.log", "한국 g256 FT base ep110")]:
         t = _read(os.path.join(root, logf))
         losses = re.findall(r"ep\s*(\d+)\s+loss\s+([\d.]+)", t)
         if losses:
@@ -262,7 +310,7 @@ def render(root="."):
     conc = stats.get("conclusions", [])
     if conc:
         st.markdown("**가설 → 상태 → 결론** (확정 / 잠정 / 검증중)")
-        badge = {"확정": "✅ 확정"}
+        badge = {"확정": "✅ 확정", "기각": "❌ 기각"}
         st.table([{"가설": c.get("가설"),
                    "상태": badge.get(c.get("상태"), "🔄 " + str(c.get("상태"))),
                    "결론": c.get("결론")} for c in conc])

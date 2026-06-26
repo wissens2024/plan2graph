@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-25",
+  "updated": "2026-06-26",
   "note": "KorPlan-AR 성능/토큰화/학습 데이터 + 실험 흐름. 곡선(clean)은 results_*.md 라이브 파싱.",
   "glossary_legend": "구분 4종: ①표준=산업/형식(ISO·OGC)·ML에서 널리 통용 ②선행연구인용=소수 논문이 쓴 용어(표준 아님, 인용일 뿐) ③우리정의=우리가 만든 제안 용어 ④외부=특정 데이터셋 필드명. ※원칙: 논문에 한 번 등장 ≠ 표준. 내가 한 번 써도 표준 아님(제안 용어).",
   "glossary": [
@@ -89,11 +89,17 @@
      "before": "no-perm 피크 46%", "after": "room-perm 피크 46% (동일)",
      "verdict": "부분적", "note": "천장 관점=의미없음. 연결성(single 74→80)·재현성=의미있음"},
     {"id": 9, "title": "grid 128→256", "question": "해상도가 천장(46%)을 깨나?",
-     "before": "grid128 RPLAN 46% 천장", "after": "학습중(B)",
-     "verdict": "진행중", "note": "한국 벽두께 셀당 94→47mm 보존. rBoundary 토큰 빌드 완료"},
+     "before": "grid128 RPLAN 46% 천장", "after": "grid256 RPLAN 피크 66%@ep110 (천장 46% 돌파). 단 한국 FT엔 미전이: grid256 한국 63% ≈ grid128 65%",
+     "verdict": "의미있음", "note": "RPLAN은 해상도가 천장이었으나 한국 천장은 해상도 아님(63≈65%, 육안도 동등). 한국 병목=표현/데이터. production은 grid128 유지"},
     {"id": 10, "title": "한국 gated 재학습 (종합 검증)", "question": "GT 품질↑이 생성 clean↑로 이어지나?",
-     "before": "ungated RPLAN→FT snap 생성 clean 20%", "after": "gated ep60(10에폭) 27%·single 62% (상승중)",
-     "verdict": "진행중", "note": "초기 긍정. 옛 50에폭 20%를 10에폭에 넘음. A 학습중(→ep150)"}
+     "before": "ungated RPLAN→FT snap 생성 clean 20%", "after": "gated 피크 clean 65%@ep130 (한국 80ep)",
+     "verdict": "의미있음", "note": "확정. 옛 ungated 20%의 3.25배, RPLAN 46%마저 초과. GT 43→100% clean이 모델 품질 결정"},
+    {"id": 11, "title": "FT 베이스 에폭 ablation (피크 vs 플래토)", "question": "RPLAN 피크 베이스가 최선 전이베이스인가?",
+     "before": "가정: 피크(grid256 ep110, 66%)가 당연히 최선 전이베이스", "after": "플래토 ep90→한국 63% > 피크 ep110→한국 57% (ep100→57%)",
+     "verdict": "의미있음", "note": "피크 베이스=RPLAN 과특화→전이 천장 낮음(초반 빠르나 낮게 수렴). '추측말고 비교'로 확정, 사용자 가설 확증"},
+    {"id": 12, "title": "출력 repair 레이어 (verify→repair)", "question": "생성 결함(자기교차·겹침)을 추론 시점에 고쳐 사용가능률을 올릴 수 있나? (재학습0)",
+     "before": "raw 생성: selfint=0 68%·overlap<.25 77%·loose 65%·drawable 54%", "after": "repair 후: selfint 100%·overlap 100%·loose 83%·drawable 58%",
+     "verdict": "의미있음", "note": "graph_repair.py=make_valid(selfint복구)+drop_bad(아티팩트드롭)+WALL declash(공유벽분할,겹침0)+벽재생성(렌더반영). 논문1 verify→repair 실증. ★천장 58%=나머지는 배치레벨(broken layout)→best-of-N 몫. eval_ar_geom --repair"}
   ],
   "params": {
     "architecture": {"d_model": 512, "n_layer": 24, "n_head": 32, "dim_ff": 1408, "params_M": 77.6, "max_len": 1152},
@@ -110,9 +116,11 @@
   "peaks": {
     "RPLAN no-perm (grid128)": {"clean_peak": 46, "ep_peak": 70},
     "RPLAN room-perm+seed42 (grid128)": {"clean_peak": 46, "ep_peak": 80},
-    "RPLAN grid256 (rBoundary)": {"clean_peak": null, "ep_peak": null, "ceiling": "B 학습중"},
+    "RPLAN grid256 (rBoundary)": {"clean_peak": 66, "ep_peak": 110, "ceiling": "grid128 천장 46% 돌파 — 확정. ep120 62%로 꺾임(과학습)"},
     "한국 ungated RPLAN→FT snap": {"clean_peak": 20, "ep_peak": 100},
-    "한국 gated RPLAN→FT (snap+게이트)": {"clean_peak": 65, "ep_peak": 130, "ceiling": "피크 65%@ep130, RPLAN 46% 초과 — 확정"}
+    "한국 gated RPLAN→FT (snap+게이트, grid128)": {"clean_peak": 65, "ep_peak": 130, "ceiling": "피크 65%@ep130, RPLAN 46% 초과 — 확정 ★production"},
+    "한국 gated grid256 FT (base ep90·플래토)": {"clean_peak": 63, "ep_peak": 80, "ceiling": "grid256 ablation 우승. 단 grid128 65%와 동등(해상도 미전이)"},
+    "한국 gated grid256 FT (base ep110·피크)": {"clean_peak": 57, "ep_peak": 80, "ceiling": "피크 베이스가 플래토(63%)보다 낮음=과특화 전이손실"}
   },
   "tokenization": {
     "korean_gate_funnel": [
@@ -152,30 +160,28 @@
     ]
   },
   "projected": {
-    "note": "⚠️ 잠정(가정) — 학습 진행 중. 실데이터 곡선(results_*.md)이 생기면 자동으로 그게 우선됨. (한국 gated는 실데이터 확정—아래 곡선 참조)",
-    "curves": {
-      "RPLAN grid256 (잠정)": [[10, 3], [20, 12], [30, 22], [40, 32], [50, 40], [60, 46], [70, 50], [80, 53], [90, 52], [100, 53]]
-    },
-    "peaks": {
-      "RPLAN grid256": {"clean_peak": 53, "ep_peak": 80, "기준": "grid128 천장 46% 대비 해상도 이득 가정(돌파). B 학습중"}
-    }
+    "note": "모든 곡선 실데이터 확정(results_*.md 라이브). 잠정(가정) 곡선 없음 — grid256 실측 66%@ep110로 옛 잠정 53% 대체됨.",
+    "curves": {},
+    "peaks": {}
   },
   "conclusions": [
     {"가설": "깨끗한 GT(43→100%)가 생성 clean을 올린다", "상태": "확정", "결론": "옛 ungated 20% → gated 피크 65%@ep130(한국80ep). RPLAN 46%마저 초과(한국 방 2배인데도). GT품질→모델품질 결정적 입증."},
-    {"가설": "grid256가 grid128 천장 46%를 깬다", "상태": "검증중(B 학습)", "결론": "한국 벽두께 보존(셀당 47mm)으로 ~53% 예상. [최종데이터 대기]"},
+    {"가설": "grid256가 grid128 천장 46%를 깬다", "상태": "확정", "결론": "RPLAN grid256 피크 66%@ep110 — 천장 46% 돌파. 단 한국 FT엔 미전이(grid256 63%≈grid128 65%, 육안도 동등). RPLAN 병목=해상도, 한국 병목≠해상도."},
+    {"가설": "RPLAN 피크 베이스가 최선 전이베이스다", "상태": "기각", "결론": "플래토 ep90→한국 63% > 피크 ep110→한국 57%. 피크=RPLAN 과특화로 전이 천장 낮음. '피크 clean=최고 전이' 자동 아님(사용자 직감 확증)."},
     {"가설": "snap 단일화가 옳다(nosnap=비연결)", "상태": "확정", "결론": "nosnap GT 연결 0% → snap 채택. 데이터로 종결."},
     {"가설": "기하게이트로 한국 GT를 RPLAN급으로", "상태": "확정", "결론": "GT 43→100% clean, 10,430 plans. 달성."},
     {"가설": "온톨로지가 아니라 변환코덱이 병목", "상태": "확정", "결론": "역할(안방)·기하(rBoundary) 건강, 코덱(snap_split) 수정으로 해결. 방향 확정."}
   ],
+  "목표_달성": "RPLAN 사전학습 → AI-Hub 파인튜닝 구성 확정 = grid128 gated FT ep130 (clean 65%). production 확정.",
   "next_plan": {
-    "목표": "RPLAN 사전학습 1개 선택 → AI-Hub 파인튜닝 (현 피크 65% 갱신 목표)",
+    "목표": "production(grid128 gated FT ep130) = 도면생성 연결 + 한국 65% 천장 추가돌파 탐색",
     "권장": [
-      "① grid 결정(최대 레버): B(grid256) 결과 먼저 — 천장 46% 깨면 grid256 베이스, 아니면 grid128.",
-      "② 변종: room-perm 권장 — 연결성 prior가 한국 연결성 문제에 유리.",
-      "③ 에폭: 근접피크 ep70 권장 — 긴 한국 FT(100ep)가 RPLAN 레이아웃 특화를 씻고 저수준 기하/유효성 prior만 전이, 그건 피크에서 최상. 단 ep50(현 65% 사용)도 좋아 ep50 vs ep70 소규모 ablation으로 확정.",
-      "⚠️ '피크 clean=최고 전이베이스'는 자동 아님 — 핵심은 기하 prior·grid이지 RPLAN 레이아웃 수렴이 아님."
+      "① grid 결정 완료: grid128 채택 (grid256는 RPLAN만 이득·한국 미전이·육안 동등으로 기각).",
+      "② FT 베이스 결정 완료: 피크 베이스 ≠ 최선(과특화). 플래토 베이스가 전이 천장 높음.",
+      "③ 한국 65% 천장의 다음 레버 = 좌표해상도(grid) 아님이 확정됐으니, 표현(벽-1급 토큰화)·데이터(보정 Corrected) 쪽 탐색 — 논문2 축과 연결.",
+      "④ production 모델을 도면생성 GUI에 연결 + neuro-symbolic verify→repair 레이어 적용(논문1 end-to-end)."
     ],
-    "상태": "B(grid256) 결과 대기 → 그 후 확정"
+    "상태": "production 확정(2026-06-26). 다음=표현/데이터 레버로 한국 천장 추가돌파."
   },
   "production": {
     "원칙": "성능비교 페이지=모델 만드는 과정의 가설·발견·실험 정리(흔적). 실제 도면생성에는 최종 선정된 1개 구성의 모델만 사용.",
@@ -183,17 +189,31 @@
       "엔진": "KorPlan-AR (wall-cycle 자기회귀)",
       "데이터": "한국 gated (snap+tol3.5, 기하게이트 10,430, GT 100% clean)",
       "학습": "RPLAN 사전학습 → 한국 FT, room-perm+seed42, d512/L24/dim_ff1408",
-      "grid": "128 (grid256 천장돌파 확인되면 256으로 승격 — B 결과 대기)",
-      "ep": "천장 ep(피크) 채택 (한국 잠정 ~ep110, 최종 곡선으로 확정)"
+      "grid": "128 — 확정. grid256는 RPLAN만 이득(46→66%), 한국 FT엔 미전이(63%≈65%)+육안 동등 → 재토큰화/큰 vocab 비용 불필요",
+      "ep": "한국 ep130 (피크 clean 65%)",
+      "ckpt": "ckpts/korplan_ar_k_gated_ft_ep130.pt (vocab=tokens_korean_gated, size520)",
+      "후처리_repair": "graph_repair.repair_graph(drop_bad,declash=wall)+벽재생성. selfint·overlap 제거→drawable 54→58%·loose 65→83%, 도면다움↑. eval_ar_geom --repair. 렌더: 창문 벽방향 정렬 수정(cadrender).",
+      "사용가능률_best_of_N": "N개 생성→repair→strict 통과 채택. 58%/sample → N5≈98% 사용가능. (다음 구현 — 배치레벨 결함은 모델이 만든 거라 repair 못 고침→여러개서 고름)"
     },
-    "비고": "RPLAN-only·nosnap·ungated·target-only 등은 실험 대조군일 뿐 생성엔 미사용."
+    "비고": "RPLAN-only·nosnap·ungated·target-only·grid256 FT(base ep90/100/110) 등은 실험 대조군일 뿐 생성엔 미사용. grid256 ablation 결론=해상도는 한국 천장 아님 + 피크 베이스는 과특화."
   },
   "key_findings": [
+    "★★지표 정직성(사용자 육안 발견): loose clean(selfint·overlap·span)은 사선·틈·외곽붕괴를 통과시켜 품질 과대평가. overlap은 '겹침'만 벌점→방이 흩어져 뭉개지면 overlap=0으로 오히려 통과. 진짜 '도면답게'=strict clean(+대각선0+꼭짓점≥4+외곽 1덩어리·채움·볼록). 한국 production loose 65% → strict 54%(seed42). 전 곡선 strict로 재평가·교체.",
+    "★출력 repair(graph_repair.py, 재학습0): 생성그래프를 추론시점 보정=논문1 verify→repair. make_valid(selfint)+drop_bad(아티팩트)+WALL declash(겹침0)+벽재생성. selfint 68→100%·overlap 77→100%·loose 65→83%·drawable 54→58%. ★중요버그수정: from_geomgraph가 g['walls']에서 그려 방만 고치면 렌더에 미반영→벽재생성 필수. 천장 58%=배치레벨(broken layout)은 못고침→best-of-N(N5≈98%사용가능)이 진짜 레버.",
     "온톨로지 불변·변환코덱만 변경: 역할(안방 위계)·기하(rBoundary)는 건강, 병목은 코덱 표현이었음.",
     "RPLAN GT 99%→천장=모델 / 한국 GT 43~51%·연결0~48%→천장=표현+소스(우리가 망친 것).",
     "snap 단일화(nosnap 연결0%=도면불가). overlap지표가 비연결 보상한 착시.",
     "코어분리 100% 소스 존재=R2G 오배치 → 코덱 아닌 기하게이트로 선별.",
     "한국 GT 43→100% clean: selfint코덱수정+tol3.5+기하게이트, ~10,430 한정(품질>수량).",
-    "★gated 효과 확정: 한국 gated 피크 clean 65%@ep130 = 옛 ungated 20%의 3.25배, RPLAN 천장 46%마저 초과(한국 방 2배인데도). 깨끗한 GT가 모델 품질을 결정."
-  ]
+    "★gated 효과 확정: 한국 gated 피크 clean 65%@ep130 = 옛 ungated 20%의 3.25배, RPLAN 천장 46%마저 초과(한국 방 2배인데도). 깨끗한 GT가 모델 품질을 결정.",
+    "★grid256: RPLAN 천장 46→66%(ep110) 돌파했으나 한국 FT엔 미전이(63%≈grid128 65%, 육안 동등). → 한국 천장의 병목은 좌표 해상도가 아님(표현/데이터 쪽). production은 grid128 유지.",
+    "★FT 베이스 ablation: 피크 베이스(ep110,66%)가 플래토(ep90,56%)보다 한국 전이 더 낮음(57%<63%). 피크=RPLAN 과특화→전이 천장↓. '피크 clean=최고 전이베이스'는 자동 아님(추측 대신 비교로 확증)."
+  ],
+  "montages": [
+    {"path": "docs/runs/montage_loose_vs_strict_g128.png", "caption": "★loose vs strict (production g128): 왼쪽=loose 통과∧strict 탈락(헤드라인 65%가 셈, 사선·뭉개짐), 오른쪽=strict 통과(진짜 도면). 같은 모델·같은 렌더, 차이는 '통과 기준'뿐."},
+    {"path": "docs/runs/montage_g128_gated_kep80.png", "caption": "grid128 gated FT ep130 (loose 산출 — 사선 포함, 옛 montage)"},
+    {"path": "docs/runs/montage_g256_b90_kep80.png", "caption": "grid256 FT base ep90·플래토 (loose 산출)"},
+    {"path": "docs/runs/montage_g256_b110_kep80.png", "caption": "grid256 FT base ep110·피크 (loose 산출, 외곽 더 들쭉=과특화)"}
+  ],
+  "montage_note": "★사용자 육안 지적(정확): loose montage에 사선·뭉개진 도면 다수. loose clean은 selfint·overlap·span만 봐서 사선·틈·외곽붕괴를 통과시킴. strict clean(+대각선0+꼭짓점≥4+외곽 1덩어리·채움·볼록)이 '도면답게'의 진짜 비율. 비교 이미지가 그 격차(loose 65%가 세지만 strict 탈락)를 직접 보여줌."
 }

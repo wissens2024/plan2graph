@@ -15,6 +15,8 @@ from plan2graph import cadrender, wallcycle_codec as wc
 from plan2graph.generators.wall_cycle import WallCycleLM, make_constraint_mask
 import diag_placement as DP
 from survey_outline import footprint_metrics
+from render_geomclean import is_clean as _strict_clean, _seg_diag as _wall_diag
+from plan2graph.graph_repair import repair_graph
 
 
 def single_pieces(g, tol_frac=0.0):
@@ -53,6 +55,8 @@ def main():
     ap.add_argument("--out", default="docs/runs/ar_geom.png")
     ap.add_argument("--seed", type=int, default=0,
                     help="재현성: >0이면 시드 고정 → 같은 모델+같은 시드 = 같은 생성·같은 clean율. 0=미설정.")
+    ap.add_argument("--repair", action="store_true",
+                    help="출력 repair(make_valid+drop_bad+WALL declash) 적용. 끄면 rectify만(옛 파이프라인).")
     args = ap.parse_args()
 
     if args.seed > 0:
@@ -73,7 +77,7 @@ def main():
            vocab["meta"] + len(wc.COUNTRIES) + len(wc.HOUSING) + 0,
            vocab["scope"] + 0, vocab["units"] + 1]
 
-    tally = dict(decoded=0, single_strict=0, single_2pct=0, selfint0=0, overlap_ok=0, span_ok=0, clean=0)
+    tally = dict(decoded=0, single_strict=0, single_2pct=0, selfint0=0, overlap_ok=0, span_ok=0, clean=0, clean_drawable=0)
     nrooms = []; clean_imgs = []
     ch = 4
     for i in range(0, args.n, ch):
@@ -88,9 +92,12 @@ def main():
                 continue
             if len(g.get("rooms") or {}) < 2:
                 continue
-            for r in g["rooms"].values():
-                if r.get("polygon"):
-                    r["polygon"] = wc.rectify_diagonals(r["polygon"])
+            if args.repair:
+                repair_graph(g, drop_bad=True, declash="wall")
+            else:
+                for r in g["rooms"].values():
+                    if r.get("polygon"):
+                        r["polygon"] = wc.rectify_diagonals(r["polygon"])
             tally["decoded"] += 1
             m = DP.metrics(g)
             nrooms.append(m["n_rooms"])
@@ -103,9 +110,13 @@ def main():
             clean = m["selfint_rooms"] == 0 and m["overlap_frac"] < 0.25 and m["span_ratio"] < 8
             if clean:
                 tally["clean"] += 1
-                if len(clean_imgs) < args.render:
+            sclean, _ = _strict_clean(g)   # 도면답게 = +대각선0 +꼭짓점>=4 +외곽(1덩어리·채움·볼록)
+            if sclean:
+                tally["clean_drawable"] += 1
+                if len(clean_imgs) < args.render:   # montage = strict 통과만 + 대각선벽 제거
                     try:
                         geom = cadrender.autocorrect(cadrender.from_geomgraph(g))
+                        geom.walls = [w for w in geom.walls if not _wall_diag(w.seg)]
                         png = cadrender.render_png(geom)
                         clean_imgs.append(Image.open(io.BytesIO(png)).convert("RGB"))
                     except Exception:
@@ -121,6 +132,7 @@ def main():
     print(f"  overlap<0.25        : {pct(tally['overlap_ok'])}", flush=True)
     print(f"  span<8              : {pct(tally['span_ok'])}", flush=True)
     print(f"  ★ clean(strict)     : {pct(tally['clean'])}", flush=True)
+    print(f"  ★ clean(drawable)   : {pct(tally['clean_drawable'])}", flush=True)
     if nrooms:
         nrooms.sort(); print(f"  rooms~ median {nrooms[len(nrooms)//2]} mean {sum(nrooms)/len(nrooms):.1f}", flush=True)
     if clean_imgs:

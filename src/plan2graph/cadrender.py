@@ -353,6 +353,18 @@ def autocorrect(geom: Geometry, max_iter: int = 5) -> Geometry:
 # ════════════════════════════════════════════════════════════════════════════
 # 렌더 ① — 생성형 도면 (matplotlib Figure; st.pyplot / savefig svg·png 겸용)
 # ════════════════════════════════════════════════════════════════════════════
+def _nearest_wall_axis(geom, pos, dflt="h"):
+    """pos에 가장 가까운 벽의 방향 → 'h'(가로벽) 또는 'v'(세로벽). 창/문 마크 정렬용."""
+    best, bd = dflt, 1e18
+    for w in geom.walls:
+        a, b = w.seg
+        d = _seg_dist(pos, a, b)
+        if d < bd:
+            bd = d
+            best = "h" if abs(b[0] - a[0]) >= abs(b[1] - a[1]) else "v"
+    return best
+
+
 def render_fig(geom: Geometry, *, dims: bool = True, labels: bool = True,
                fixtures: bool = True, figsize=(9, 9)):
     """공통 Geometry → matplotlib Figure(진짜 도면 스타일). 화면·SVG·PNG 겸용."""
@@ -381,15 +393,21 @@ def render_fig(geom: Geometry, *, dims: bool = True, labels: bool = True,
                              theta1=d.swing_deg - 45, theta2=d.swing_deg + 45,
                              color="#555", lw=1.0, zorder=4))
             ax.plot([hx, x], [hy, y], color="#555", lw=1.0, zorder=4)
-        else:
-            ax.plot([x - w / 2, x + w / 2], [y, y], color="#888", lw=1.2,
-                    zorder=4)   # 단순 개구부
+        else:                                        # 단순 개구부 (벽 방향에 정렬)
+            if _nearest_wall_axis(geom, (x, y)) == "h":
+                ax.plot([x - w / 2, x + w / 2], [y, y], color="#888", lw=1.2, zorder=4)
+            else:
+                ax.plot([x, x], [y - w / 2, y + w / 2], color="#888", lw=1.2, zorder=4)
         if d.is_entrance:
             ax.plot(x, y, marker="v", color="#c33", ms=6, zorder=5)
-    for win in geom.windows:                     # 창: 이중선 마크
+    for win in geom.windows:                     # 창: 이중선 마크 (벽 방향에 정렬)
         x, y = win.pos; w = max(win.width_px, 12)
-        ax.plot([x - w / 2, x + w / 2], [y - 1.5, y - 1.5], color="#37c", lw=1.0, zorder=4)
-        ax.plot([x - w / 2, x + w / 2], [y + 1.5, y + 1.5], color="#37c", lw=1.0, zorder=4)
+        if _nearest_wall_axis(geom, (x, y)) == "h":   # 가로벽 → 가로 이중선
+            ax.plot([x - w / 2, x + w / 2], [y - 1.5, y - 1.5], color="#37c", lw=1.0, zorder=4)
+            ax.plot([x - w / 2, x + w / 2], [y + 1.5, y + 1.5], color="#37c", lw=1.0, zorder=4)
+        else:                                          # 세로벽 → 세로 이중선
+            ax.plot([x - 1.5, x - 1.5], [y - w / 2, y + w / 2], color="#37c", lw=1.0, zorder=4)
+            ax.plot([x + 1.5, x + 1.5], [y - w / 2, y + w / 2], color="#37c", lw=1.0, zorder=4)
     if fixtures:                                 # 기구 심볼(약칭 박스)
         for r in geom.rooms:
             for f in r.fixtures:

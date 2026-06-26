@@ -52,7 +52,7 @@ def main():
     vocab = json.load(open(args.vocab, encoding="utf-8"))
     ck = torch.load(args.ckpt, map_location=dev); a = ck["args"]
     model = WallCycleLM(vocab["size"], d_model=a["d_model"], n_layer=a["n_layer"],
-                        n_head=a.get("n_head", 8), max_len=a["max_len"]).to(dev)
+                        n_head=a.get("n_head", 8), max_len=a["max_len"], dim_ff=a.get("dim_ff")).to(dev)
     model.load_state_dict(ck["model"]); model.eval()
     mask_fn = make_constraint_mask(vocab, orthogonal=True)
     bos, eos = wc.V.BOS, wc.V.EOS
