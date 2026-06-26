@@ -136,6 +136,78 @@ def legal_repair(g):
     return actions
 
 
+def _room_segs(rooms, rid):
+    """방 rid 폴리곤의 변(x1,y1,x2,y2) 목록."""
+    poly = rooms[rid].get("polygon") or []
+    n = len(poly); out = []
+    for i in range(n):
+        out.append((float(poly[i][0]), float(poly[i][1]),
+                    float(poly[(i + 1) % n][0]), float(poly[(i + 1) % n][1])))
+    return out
+
+
+def _adjacent_door_pos(segs_a, segs_b, tol=3.0, minlen=8.0):
+    """두 방이 공유하는 벽 구간(collinear+overlap) 있으면 문 위치(중점) 반환, 없으면 None."""
+    for (ax1, ay1, ax2, ay2) in segs_a:
+        for (bx1, by1, bx2, by2) in segs_b:
+            if abs(ax1 - ax2) < 1 and abs(bx1 - bx2) < 1 and abs(ax1 - bx1) < tol:   # 둘 다 수직, 같은 x
+                lo = max(min(ay1, ay2), min(by1, by2)); hi = min(max(ay1, ay2), max(by1, by2))
+                if hi - lo > minlen:
+                    return [round((ax1 + bx1) / 2, 1), round((lo + hi) / 2, 1)]
+            if abs(ay1 - ay2) < 1 and abs(by1 - by2) < 1 and abs(ay1 - by1) < tol:   # 둘 다 수평, 같은 y
+                lo = max(min(ax1, ax2), min(bx1, bx2)); hi = min(max(ax1, ax2), max(bx1, bx2))
+                if hi - lo > minlen:
+                    return [round((lo + hi) / 2, 1), round((ay1 + by1) / 2, 1)]
+    return None
+
+
+def egress_repair(g):
+    """규제 위반(동선 L3)을 *도면에 반영*: 현관에서 도달 못 하는 고립 실을,
+    벽을 공유하는 '연결된 실'과 문(door)으로 이어 피난 동선을 복원. 반환=조치 목록."""
+    actions = []
+    rooms = g.get("rooms") or {}
+    if not rooms:
+        return actions
+    G = geomgraph_to_nx(g)
+    if EXTERIOR not in G:
+        actions.append({"ok": False, "msg": "현관 없음 → 외부 피난경로 자체가 없어 동선 보정 불가"})
+        return actions
+    g.setdefault("doors", [])
+    did = len(g["doors"])
+    keymap = {}                                   # G 노드(int) → room key(str)
+    for rk in rooms:
+        nid = int(rk) if str(rk).lstrip("-").isdigit() else rk
+        keymap[nid] = rk
+    scache = {rk: _room_segs(rooms, rk) for rk in rooms}
+    for _ in range(len(rooms) + 2):
+        reach = nx.node_connected_component(G, EXTERIOR)
+        iso = [n for n in G.nodes() if n != EXTERIOR and n not in reach]
+        if not iso:
+            break
+        progressed = False
+        for n in iso:
+            rk_n = keymap.get(n)
+            if rk_n is None:
+                continue
+            for m_node in list(reach):
+                if m_node == EXTERIOR or keymap.get(m_node) is None:
+                    continue
+                rk_m = keymap[m_node]
+                pos = _adjacent_door_pos(scache[rk_n], scache[rk_m])
+                if pos:
+                    g["doors"].append({"id": f"dR{did}", "connects": [n, m_node], "via": "door", "position": pos})
+                    G.add_edge(n, m_node, via="door"); did += 1; progressed = True
+                    actions.append({"ok": True,
+                                    "msg": f"{rooms[rk_n].get('role')}#{n} ↔ {rooms[rk_m].get('role')}#{m_node} 문 추가(동선 연결)"})
+                    break
+            if progressed:
+                break
+        if not progressed:
+            actions.append({"ok": False, "msg": "벽 공유 없는 고립 실 잔존 → 추가 연결 불가(배치 결함)"})
+            break
+    return actions
+
+
 def best_of_n(gen_fn, n: int = 8, repair: bool = True):
     """rejection sampling: n개 생성→repair→verify. 채택(both_ok)·통계·best 반환.
     gen_fn() → geomgraph dict (또는 None). 논문 §4.5 draw-budget.

@@ -118,6 +118,25 @@ def check_ventilation(G: nx.Graph) -> list[dict]:
     return v
 
 
+def check_egress(G: nx.Graph) -> list[dict]:
+    """L3: 각 실에서 현관 경유 외부로 통하는 피난·접근 동선(위상 도달성). 고립 실=위반.
+    문(door) 인접 그래프에서 EXTERIOR(현관 경유)와 연결 안 된 실을 적발(scale 불요)."""
+    v = []
+    if EXTERIOR not in G:                                  # 현관/외부 연결 자체가 없음
+        v.append({"rule": "L3_egress_reachable", "node": None, "type": None,
+                  "law": "건축법 시행령 제34조",
+                  "msg": "피난 동선 없음(현관에서 외부로 통하는 경로 부재)"})
+        return v
+    reach = nx.node_connected_component(G, EXTERIOR)       # 외부와 연결된 실 집합
+    for n, d in G.nodes(data=True):
+        if n == EXTERIOR or n in reach:
+            continue
+        v.append({"rule": "L3_egress_reachable", "node": n, "type": d.get("type"),
+                  "law": "건축법 시행령 제34조",
+                  "msg": f"{d.get('type')}#{n}: 피난 동선 없음(현관에서 도달 불가, 고립)"})
+    return v
+
+
 def check_bedroom_area(G: nx.Graph, scale) -> list[dict]:
     """L4: scale 있고 기준 설정 시 침실 면적 하한 검사."""
     min_m2 = getattr(config, "LEGAL_BEDROOM_MIN_M2", None)
@@ -186,10 +205,11 @@ def check_legal(G: nx.Graph) -> dict:
     violations = []
     violations += check_daylight(G)             # L1 채광(창 보유+면적비)
     violations += check_ventilation(G)          # L2 환기(거실·침실 창)
+    violations += check_egress(G)               # L3 동선(현관→외부 피난 도달성)
     violations += check_bedroom_area(G, scale)  # L4 침실 최소면적
     violations += check_dwelling_area(G, scale)  # L5 세대 최소면적
     violations += check_refuge_area(G, scale)   # L6 대피공간 최소면적
-    applied = ["L1_daylight_window", "L2_ventilation_window"]
+    applied = ["L1_daylight_window", "L2_ventilation_window", "L3_egress_reachable"]
     skipped = []
     if scale is not None:
         applied += ["L1_daylight_ratio", "L4_bedroom_min_area",

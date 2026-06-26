@@ -1304,7 +1304,7 @@ if which.startswith("📗"):
                 from pathlib import Path
                 from plan2graph import wallcycle_codec as wc
                 from plan2graph.generators.wall_cycle import WallCycleLM, make_constraint_mask
-                from plan2graph.gen_verify import verify_plan, legal_repair
+                from plan2graph.gen_verify import verify_plan, legal_repair, egress_repair
                 from plan2graph.graph_repair import repair_graph
                 dev = "cuda" if torch.cuda.is_available() else "cpu"
                 _vp = Path(config.DATA_DIR) / "staging" / _mrow.get("vocab", "tokens_korean_gated") / "vocab.json"
@@ -1377,13 +1377,14 @@ if which.startswith("📗"):
                         for _vi in v['legal_violations'][:6]:
                             st.write(f"　　• {_vi.get('msg', _vi.get('rule', ''))}")
                         st.write("**4단계 · 규제 반영(피드백)** — AI 도면에 위반 규제를 적용해 수정")
-                        _acts = legal_repair(g)
-                        for _ac in _acts[:8]:
+                        _acts = legal_repair(g)         # 채광·환기(L1·L2): 거실/침실 창 추가
+                        _eacts = egress_repair(g)       # 동선(L3): 고립 실을 문으로 연결
+                        for _ac in (_acts + _eacts)[:12]:
                             st.write(f"　　🔧 {_ac['msg']}")
                         geom2 = _cr.autocorrect(_cr.from_geomgraph(g)); png2 = _cr.render_png(geom2)
-                        st.image(png2, caption=f"반복 {_it} · 규제 반영 후(채광창 추가)", use_container_width=True)
+                        st.image(png2, caption=f"반복 {_it} · 규제 반영 후(창·문 추가)", use_container_width=True)
                         v = verify_plan(g)  # 재검증
-                        st.write(f"　🔁 **재검증**: 규제(채광) {'✅ 통과 — 도면 개선됨' if v['legal_ok'] else '❌ 일부 미해결(내부 방 등)'}")
+                        st.write(f"　🔁 **재검증**: 규제(채광·환기·동선) {'✅ 통과 — 도면 개선됨' if v['legal_ok'] else '❌ 일부 미해결(떠있는 방·면적 등)'}")
                     else:
                         st.write(f"　⚖️ 규제 검사: {'✅ 통과' if v['legal_ok'] else '❌ 실패'}")
                     score = int(spec_ok) + int(v['geom_ok']) + int(v['legal_ok'])
