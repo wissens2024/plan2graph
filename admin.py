@@ -1326,6 +1326,27 @@ if which.startswith("📗"):
                 except Exception:
                     _RG = None
                 from plan2graph.graph_repair import repair_graph
+                # footprint 솔리드 품질(fill·convex·holes) — 가운데 구멍/gap 도면 배제용
+                try:
+                    from survey_outline import footprint_metrics as _fpm
+                    from shapely.geometry import Polygon as _Poly, MultiPolygon as _MPoly
+                    from shapely.ops import unary_union as _uunion
+
+                    def _fp_quality(_g):
+                        try:
+                            _fp = _fpm(_g)
+                            _ps = [_Poly(r["polygon"]) for r in _g.get("rooms", {}).values()
+                                   if r.get("polygon") and len(r["polygon"]) >= 3]
+                            _ps = [p for p in _ps if p.is_valid and p.area > 1]
+                            if not _fp or not _ps:
+                                return 0.0, 0.0, 9
+                            _u = _uunion(_ps); _gs = _u.geoms if isinstance(_u, _MPoly) else [_u]
+                            return _fp.get("fill", 0.0), _fp.get("convex", 0.0), sum(len(p.interiors) for p in _gs)
+                        except Exception:
+                            return 0.0, 0.0, 9
+                except Exception:
+                    def _fp_quality(_g):
+                        return 0.0, 0.0, 0
                 dev = "cuda" if torch.cuda.is_available() else "cpu"
                 _vp = Path(config.DATA_DIR) / "staging" / _mrow.get("vocab", "tokens_korean_gated") / "vocab.json"
                 vocab = _json.load(open(_vp, encoding="utf-8"))
@@ -1396,7 +1417,10 @@ if which.startswith("📗"):
                                 _cgok, _cgd = _RG.is_clean(_cg) if _RG else (False, {})
                             except Exception:
                                 _cgok, _cgd = False, {}
-                            _ciq = 100 * int(_cgok) - 30 * float(_cgd.get('overlap_frac', 1.0)) - 2 * max(0.0, float(_cgd.get('span_ratio', 99)) - 4.0)
+                            _cfl, _ccx, _chl = _fp_quality(_cg)
+                            _ciq = (100 * int(_cgok) - 30 * float(_cgd.get('overlap_frac', 1.0))
+                                    - 2 * max(0.0, float(_cgd.get('span_ratio', 99)) - 4.0)
+                                    + 25 * _cfl + 15 * _ccx - 60 * _chl)   # 솔리드·구멍없음 우대
                             if _ciq > _ibq:
                                 _ibq, g, png0 = _ciq, _cg, _craw
                     if not g:
@@ -1451,9 +1475,11 @@ if which.startswith("📗"):
                         st.write(f"　🔁 **재검증**: 규제(채광·환기·동선) {'✅ 통과 — 도면 개선됨' if v['legal_ok'] else '❌ 일부 미해결(떠있는 방·면적 등)'}")
                     else:
                         st.write(f"　⚖️ 규제 검사: {'✅ 통과' if v['legal_ok'] else '❌ 실패'}")
-                    # ★기하 우선 품질점수로 best 선정 — 도면다움(겹침·세장비) 최우선이라 슬리버가 best로 안 뽑힘
+                    # ★기하 우선 품질점수로 best 선정 — 도면다움(겹침·세장비·구멍·fill) 최우선이라 슬리버·구멍도면이 best로 안 뽑힘
+                    _gfl, _gcx, _ghl = _fp_quality(g)
                     _qual = (100 * int(v['geom_ok']) + 20 * int(v['legal_ok']) + 10 * int(spec_ok)
-                             - 30.0 * _ov - 2.0 * max(0.0, _sp - 4.0))
+                             - 30.0 * _ov - 2.0 * max(0.0, _sp - 4.0)
+                             + 25 * _gfl + 15 * _gcx - 60 * _ghl)   # 솔리드·구멍없음 우대(사람눈 일치)
                     _meta = (v['geom_ok'], v['legal_ok'], spec_ok, _ov, _sp, len(roles))
                     if _qual > best_score:
                         best_score, best_g, best_meta = _qual, g, _meta
