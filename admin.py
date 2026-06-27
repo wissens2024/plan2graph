@@ -1138,10 +1138,10 @@ if which.startswith("📗"):
     # strict=도면답게(eval n200 seed42). ※"실생성 best-of"는 실시간 생성 시 깨끗할 확률(grid128 23%≫grid256 6%, 굵은격자=타일링).
     _MODELS = [
         {"name": "★KorPlan-AR-RK · grid128 (production·RPLAN→한국 FT)", "engine": "B",
-         "ckpt": "ckpts/korplan_ar_k_gated_ft_ep130.pt", "vocab": "tokens_korean_gated", "country": 0, "grid": 128,
-         "graphs": "10,485 (게이트 통과)", "gt_clean": "100%", "tokens": "10,430", "peak_ep": "한국 ep80 (FT ep130)",
-         "strict": "54% (eval; 실생성 best-of≈23%)", "repair": "58%",
-         "status": "✅ production (현 working RK·옛 room_perm無 → 정본 RK 학습완료 시 교체예정)"},
+         "ckpt": "ckpts/korplan_ar_rk_gated_seed42_roomperm_ep180.pt", "vocab": "tokens_korean_gated", "country": 0, "grid": 128,
+         "graphs": "10,485 (게이트 통과)", "gt_clean": "100%", "tokens": "10,430", "peak_ep": "한국 FT ep180 (R_ep80→FT)",
+         "strict": "47% (정본·n200·seed42)", "repair": "—",
+         "status": "✅ 정본 production RK (RPLAN→AI-Hub FT·seed42·room_perm·ep180 — 논문 데이터)"},
         {"name": "KorPlan-AR-K · grid128 (한국 AI-Hub 단독·target-only)", "engine": "B",
          "ckpt": "ckpts/korplan_ar_k_gated_targetonly_ep80.pt", "vocab": "tokens_korean_gated", "country": 0, "grid": 128,
          "graphs": "10,485 (게이트)", "gt_clean": "100%", "tokens": "10,430", "peak_ep": "ep80 (peak)",
