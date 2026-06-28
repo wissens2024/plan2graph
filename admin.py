@@ -1536,6 +1536,40 @@ elif which.startswith("⚖️"):
 if which.startswith("📜"):
     import json as _json
     st.header("📜 법령 DB 관리")
+    # ── 논문·repair 사용 법령 요약표 (상단) ──
+    st.subheader("📋 논문·repair에 사용한 법령")
+    _rules_path = ROOT / "legal" / "rules.json"
+    if _rules_path.exists():
+        _rj = _json.loads(_rules_path.read_text(encoding="utf-8"))
+        _REF = {"피난·방화구조": "[34, 37]", "건축법 시행령": "[35]", "설비기준": "[36]"}
+        _REPAIR = {"L1_daylight_window", "L2_ventilation_window", "L3_egress_reachable"}
+        _STAT = {"confirmed": "✅ 적용 (scale-free)", "needs_expert": "✅ 적용 (가정 척도·참고값)",
+                 "needs_window_area": "✅ 적용 (창 보유)", "estimate_scale": "✅ 적용 (가정 척도)"}
+        _rows = []
+        for _r in _rj["rules"]:
+            _law = _r["law"].split("/")[0].strip()
+            _ref = next((v for k, v in _REF.items() if k in _r["law"]),
+                        "[38]" if "최저주거" in _r["law"] else "—")
+            _rows.append({
+                "규칙": _r["name"],
+                "법령 · 조문": _law + " " + _r["article"],
+                "MST": _r["mst"] or "—(고시)",
+                "기준 요약": (_r["basis"][:42] + "…") if len(_r["basis"]) > 42 else _r["basis"],
+                "적용·방식": _STAT.get(_r["status"], _r["status"]),
+                "repair": "✓ 보정" if _r["id"] in _REPAIR else "검증만",
+                "논문 ref": _ref,
+            })
+        st.dataframe(_rows, use_container_width=True, hide_index=True)
+        st.caption(
+            "모든 규칙은 평가 파이프라인에서 적용됨(논문 per-rule 표 applicable과 일치). "
+            "scale-free = 라벨·개구부·위상만으로 판정(채광·환기·동선, repair 대상) · "
+            "가정 척도 = 전용 84㎡를 가정해 면적·거리 규칙을 활성화(Phase 2에서 실측 척도로 정밀화) · "
+            "참고값 = 침실 1실 7㎡는 비법령 설계값(최저주거기준 고시 미규정) · "
+            "repair ✓ = 위반 시 자동 보정(채광·환기창 추가, 피난동선 연결) · "
+            "원문 XML: legal/law_cache/law_<MST>.xml")
+    else:
+        st.info("legal/rules.json 없음 — rules_legal.export_rule_db() 실행 필요.")
+    st.divider()
     cat_path = ROOT / "legal" / "catalog.json"
 
     @st.cache_data(show_spinner=False)

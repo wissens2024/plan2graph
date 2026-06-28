@@ -60,7 +60,7 @@
       "law": "주거기본법/최저주거기준 고시",
       "article": "최저주거기준",
       "mst": null,
-      "basis": "침실 면적 ≥ 7.0㎡(참고값). 수치 전문가 확인 필요.",
+      "basis": "침실 면적 ≥ 7.0㎡(설계 참고값). 최저주거기준 고시는 방 개수만 규정하고 침실 1실 면적은 미규정 → 전문가 확인 필요.",
       "status": "needs_expert",
       "needs_scale": true,
       "law_source_xml": null
@@ -68,14 +68,14 @@
     {
       "id": "L5_dwelling_min_area",
       "name": "세대 최소 전용면적",
-      "category": "강행(전문가확인)",
-      "law": "주거기본법/최저주거기준 고시",
-      "article": "최저주거기준",
-      "mst": null,
-      "basis": "세대 거주실 면적 합 ≥ 14.0㎡(1인 참고값).",
-      "status": "needs_expert",
+      "category": "강행",
+      "law": "주거기본법 / 최저주거기준 고시",
+      "article": "제17조(최저주거기준)",
+      "mst": "280141",
+      "basis": "가구원수별 최소 주거면적(1인 14.0㎡ 등) — 주거기본법 §17이 위임한 최저주거기준 고시(행정규칙 2000000059613)에 명시. 면적검사는 도면 scale 필요.",
+      "status": "estimate_scale",
       "needs_scale": true,
-      "law_source_xml": null
+      "law_source_xml": "data/interim/law_cache/law_280141.xml"
     },
     {
       "id": "L6_refuge_area",

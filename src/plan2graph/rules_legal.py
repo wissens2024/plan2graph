@@ -54,13 +54,15 @@ RULES: list[Rule] = [
          f"창 면적 ≥ 바닥 {config.LEGAL_DAYLIGHT_RATIO}. 창높이 {config.WINDOW_EST_HEIGHT_M}m 추정(폭만 라벨).",
          "estimate_scale", True),
     Rule("L4_bedroom_min_area", "침실 최소 면적", "강행(전문가확인)",
-         "주거기본법/최저주거기준 고시", "최저주거기준",  None,
-         f"침실 면적 ≥ {config.LEGAL_BEDROOM_MIN_M2}㎡(참고값). 수치 전문가 확인 필요.",
-         "needs_expert", True),
-    Rule("L5_dwelling_min_area", "세대 최소 전용면적", "강행(전문가확인)",
          "주거기본법/최저주거기준 고시", "최저주거기준", None,
-         f"세대 거주실 면적 합 ≥ {config.LEGAL_MIN_DWELLING_M2}㎡(1인 참고값).",
+         f"침실 면적 ≥ {config.LEGAL_BEDROOM_MIN_M2}㎡(설계 참고값). 최저주거기준 고시는 방 개수만 "
+         "규정하고 침실 1실 면적은 미규정 → 전문가 확인 필요.",
          "needs_expert", True),
+    Rule("L5_dwelling_min_area", "세대 최소 전용면적", "강행",
+         "주거기본법 / 최저주거기준 고시", "제17조(최저주거기준)", "280141",
+         f"가구원수별 최소 주거면적(1인 {config.LEGAL_MIN_DWELLING_M2}㎡ 등) — 주거기본법 §17이 위임한 "
+         "최저주거기준 고시(행정규칙 2000000059613)에 명시. 면적검사는 도면 scale 필요.",
+         "estimate_scale", True),
     Rule("L6_refuge_area", "발코니 대피공간 최소 면적", "강행",
          "건축법 시행령", "제46조제4항·제5항", "273503",
          f"대피공간 세대별 ≥ {config.LEGAL_REFUGE_MIN_M2}㎡(인접세대 공동설치 3㎡). "
