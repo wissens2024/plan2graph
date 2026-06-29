@@ -409,6 +409,10 @@ if which.startswith("🧮"):
 
     st.caption("**도면(받은 원본) 단위** · AI-Hub · CubiCasa5k · RPLAN 처분 비교. "
                "각 출처 합 = 다운로드 원본 수. 개별 검수는 각 도면검수 메뉴에서.")
+    st.info("📌 **Parsed(AI-Hub) 데이터 funnel (g-0.4 정본)** — 그래프는 최대로 빌드하고 그중 "
+            "클린/게이트만 학습에 씀. 빌드 **41,409세대(18,936도면)** → 클린 **13,325(7,250도면)** → "
+            "게이트·학습 **10,489세대(6,292도면)** (토큰 10,430). 즉 **'사용'=게이트 통과분**이고, "
+            "빌드 전체수는 커버리지일 뿐 사용수가 아님. (상단 표의 AI-Hub 처분은 옛 0.1 빌드 집계라 수치가 다를 수 있음 — g-0.4로 통일 예정.)")
     SRC = [("aihub", "🏢 AI-Hub"), ("cubicasa5k", "🏠 CubiCasa5k"), ("rplan", "📐 RPLAN")]
     if st.button("🔄 재집계(캐시 비움)", help="재변환·dedup 후 현황을 다시 집계(디스크 캐시도 삭제)"):
         for sid, _ in SRC:     # 디스크 영속 캐시까지 지워야 내용변경(재변환)이 반영됨
@@ -527,7 +531,7 @@ if which.startswith("🏢"):
     from PIL import Image as _PImage
     from plan2graph import inspect_excluded as _ix
 
-    st.title("🏢 AI-Hub 검수 (T) — 자동변환 그래프")
+    st.title("🏢 AI-Hub 검수 (Parsed) — 자동변환 그래프")
     # 상단 데이터셋 합계(사용/보정필요/제외)는 종합현황에 있어 중복 → 제거. 검수 본연(원본 육안)만.
     # (_aim_t 정의는 아래 '변환 보정' 기능에서 쓰이므로 유지 — 메트릭 렌더만 제거)
     _aim_t = config.DATA_DIR / "staging" / "aihub" / "manifest.jsonl"
