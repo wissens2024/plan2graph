@@ -270,14 +270,26 @@ def load_record(graph_id: str, processed_dir: Path = config.PROCESSED_DIR) -> di
 
 
 def record_to_graph(record: dict) -> nx.Graph:
-    """저장된 레코드(layout) → networkx 그래프 복원(렌더용)."""
-    G = nx.Graph(graph_id=record["graph_id"])
-    for nd in record["layout"]["nodes"]:
-        G.add_node(nd["id"], type=nd.get("type"), hierarchy=nd.get("hierarchy"),
-                   centroid=nd.get("centroid_px"), is_entrance=nd.get("is_entrance"))
-    for e in record["layout"]["edges"]:
-        G.add_edge(e["source"], e["target"], via=e.get("via"),
-                   door_type=e.get("door_type"))
+    """저장된 레코드 → networkx 그래프(렌더용). 0.1(layout) / g-0.4(rooms+edges) 둘 다 지원."""
+    G = nx.Graph(graph_id=record.get("graph_id") or record.get("plan_id") or record.get("unit_id"))
+    if isinstance(record.get("layout"), dict):          # 옛 0.1(Parsed) 스키마
+        for nd in record["layout"]["nodes"]:
+            G.add_node(nd["id"], type=nd.get("type"), hierarchy=nd.get("hierarchy"),
+                       centroid=nd.get("centroid_px"), is_entrance=nd.get("is_entrance"))
+        for e in record["layout"]["edges"]:
+            G.add_edge(e["source"], e["target"], via=e.get("via"),
+                       door_type=e.get("door_type"))
+        return G
+    # g-0.4(geomgraph): rooms dict(노드) + edges list(위상). 키 문자열, edge from/to int → str 정규화.
+    for nid, rm in (record.get("rooms") or {}).items():
+        G.add_node(str(nid), type=(rm.get("role") or rm.get("base")),
+                   hierarchy=rm.get("privacy"), centroid=rm.get("centroid"),
+                   is_entrance=bool(rm.get("is_entrance") or rm.get("role") == "현관"))
+    for e in (record.get("edges") or []):
+        a, b = e.get("from"), e.get("to")
+        if a is None or b is None:
+            continue
+        G.add_edge(str(a), str(b), via=e.get("via"), door_type=e.get("boundary"))
     return G
 
 
