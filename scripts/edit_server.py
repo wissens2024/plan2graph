@@ -36,13 +36,13 @@ try:
     ROLES = list(topoedit.ROLES)
     ROLE_COLOR = dict(topoedit.ROLE_COLOR)
 except Exception:  # noqa: BLE001
-    GRAPHS = os.path.expanduser("~/plan2graph/data/staging/corrected/graphs")
+    GRAPHS = os.path.expanduser("~/plan2graph/data/staging/parsed/graphs")
     ROLES = ["거실", "주방", "현관", "침실", "안방", "욕실", "파우더룸", "발코니",
              "드레스룸", "다목적공간", "복도", "펜트리", "기타", "알파룸"]
     ROLE_COLOR = {}
 
-_BASE = os.path.dirname(GRAPHS)                 # data/staging/corrected
-EDITS = os.path.join(_BASE, "edits")    # 사람 편집본(graphs/ 밖)
+_BASE = os.path.dirname(GRAPHS)                 # data/staging/parsed (graphs 위치)
+EDITS = os.path.join(os.path.dirname(_BASE), "corrected", "edits")    # 사람 편집본 = staging/corrected/edits(고정)
 PNG_CACHE = os.path.join(_BASE, "png")          # PNG 추출 캐시
 PNG_INDEX = os.path.join(_BASE, "_png_index.json")
 for d in (EDITS, PNG_CACHE):

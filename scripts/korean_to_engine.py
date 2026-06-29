@@ -464,7 +464,7 @@ def _iter_graph_files():
         from plan2graph import topoedit
         gdir = str(topoedit.GRAPHS_DIR)
     except Exception:
-        gdir = os.path.expanduser("~/plan2graph/data/staging/corrected/graphs")
+        gdir = os.path.expanduser("~/plan2graph/data/staging/parsed/graphs")
     for fn in sorted(os.listdir(gdir)):
         if fn.startswith("APT_") and fn.endswith(".json"):
             yield os.path.join(gdir, fn)

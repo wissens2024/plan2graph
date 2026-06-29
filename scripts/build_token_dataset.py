@@ -8,7 +8,7 @@ Corrected(인간보정)는 별도 빌드(--use-edits) — Phase2. 지금은 Pars
 
 사용(서버 115):
   PYTHONPATH=src python scripts/build_token_dataset.py \
-    --dir data/staging/corrected/graphs --out data/staging/tokens_parsed_apt --grid 128 --max-rooms 25
+    --dir data/staging/parsed/graphs --out data/staging/tokens_parsed_apt --grid 128 --max-rooms 25
 """
 from __future__ import annotations
 

@@ -899,7 +899,7 @@ if which.startswith("🗂"):
     st.caption("데이터셋(=그래프)을 골라 필터하고, 하나를 선택하면 **왼쪽=생성 도면+DXF, 오른쪽=원본 도면**. "
                "검수처럼 콤보·이전/다음으로 한 장씩 본다.")
 
-    _CG = str(config.DATA_DIR / "staging" / "corrected" / "graphs")
+    _CG = str(config.DATA_DIR / "staging" / "parsed" / "graphs")
     _PNG_CACHE = config.DATA_DIR / "staging" / "corrected" / "png"
     _PNG_INDEX = config.DATA_DIR / "staging" / "corrected" / "_png_index.json"
     # 4개 데이터셋 — 현재 geomgraph 렌더 가능 = AI-Hub(자동/보정 같은 corrected 폴더, ADR-0009).

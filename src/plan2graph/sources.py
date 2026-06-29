@@ -86,7 +86,9 @@ def staging_root(source_id: str) -> Path:
 
 
 def graphs_dir(source_id: str) -> Path:
-    """그래프 디렉터리. staging/<id>/graphs 우선, 없으면 레거시 위치."""
+    """그래프 디렉터리. aihub=parsed/graphs(g-0.4 정본), 그 외 staging/<id>/graphs 우선."""
+    if source_id == "aihub":
+        return config.DATA_DIR / "staging" / "parsed" / "graphs"
     s = staging_root(source_id) / "graphs"
     if s.is_dir():
         return s

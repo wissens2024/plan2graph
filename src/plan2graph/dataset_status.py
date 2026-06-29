@@ -44,7 +44,7 @@ def _acct_key(graphs_dir: Path) -> list:
 
 def _edits_dir(graphs_dir: Path) -> Path:
     """사람 편집본 폴더(ADR-0008 폴더분리) — graphs/(원본) 옆 edits/(작업)."""
-    return graphs_dir.parent / "edits"
+    return graphs_dir.parent.parent / "corrected" / "edits"   # graphs=parsed/, edits=corrected/(고정 분리)
 
 
 def _edits_ids(graphs_dir: Path) -> set:

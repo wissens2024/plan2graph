@@ -5,7 +5,7 @@ geomgraph가 계산한 interior 벽(rooms=[a,b], segment=두 방 공유 경계)�
 1차 근사(코너 정합 미완) — gap이 줄어드는지 before/after로 검증.
 
 사용:
-  PYTHONPATH=src python scripts/centerline_proto.py --dir data/staging/corrected/graphs --out /tmp/cl_proto
+  PYTHONPATH=src python scripts/centerline_proto.py --dir data/staging/parsed/graphs --out /tmp/cl_proto
 """
 from __future__ import annotations
 

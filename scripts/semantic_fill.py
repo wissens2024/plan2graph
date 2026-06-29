@@ -17,7 +17,7 @@ from plan2graph.semantic_fill import (  # noqa: F401  단일소스
 )
 
 DEFAULT_PLAN = "APT_FP_f81f810a_17446927_u3"
-GRAPHS_DIR = Path("/home/ju/plan2graph/data/staging/corrected/graphs")
+GRAPHS_DIR = Path("/home/ju/plan2graph/data/staging/parsed/graphs")
 
 
 def build(plan_id: str):

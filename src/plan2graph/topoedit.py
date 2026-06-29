@@ -40,7 +40,8 @@ from plan2graph.geometry import assemble_drawing, Drawing  # noqa: E402
 OUT_DIR = config.DATA_DIR / "staging" / "corrected"
 REC_DIR = OUT_DIR / "records"
 LEDGER = OUT_DIR / "_ledger.jsonl"
-GRAPHS_DIR = OUT_DIR / "graphs"      # 자동+사람보정 공존. 사람 보정완료=corrected=true(= 사용 확정)
+PARSED_DIR = config.DATA_DIR / "staging" / "parsed"   # parsed 정본(g-0.4) 분리
+GRAPHS_DIR = PARSED_DIR / "graphs"   # ← parsed/graphs. edits/records/ledger/cache는 corrected(OUT_DIR) 유지
 _CACHE_DIR = OUT_DIR / "_cache"      # 무거운 집계 디스크 캐시(재기동에도 유지 → 30초 멈춤 방지)
 
 

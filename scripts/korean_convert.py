@@ -332,7 +332,7 @@ def convert_plan(d):
 
 
 def main():
-    src_glob = os.path.expanduser("~/plan2graph/data/staging/corrected/graphs/APT_*.json")
+    src_glob = os.path.expanduser("~/plan2graph/data/staging/parsed/graphs/APT_*.json")
     limit = int(sys.argv[1]) if len(sys.argv) > 1 else 1500
     out_path = sys.argv[2] if len(sys.argv) > 2 else "dataset/dataset_json/data_korean.json"
 

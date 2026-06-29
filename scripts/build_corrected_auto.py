@@ -54,7 +54,7 @@ from plan2graph import geomgraph as GG  # noqa: E402
 from plan2graph import topology as TP  # noqa: E402
 from plan2graph.topoedit import Node, State  # noqa: E402
 
-OUT_DIR = config.DATA_DIR / "staging" / "corrected"      # G 단일 진실(ADR-0003): 자동+사람 보정 공존
+OUT_DIR = config.DATA_DIR / "staging" / "parsed"      # Parsed 정본(g-0.4) 출력. 사람보정(edits)은 corrected/ 별개
 GRAPHS_DIR = OUT_DIR / "graphs"                       # topoedit(사람)도 같은 폴더에 corrected=true 저장
 MANIFEST = OUT_DIR / "_manifest.json"
 

@@ -5,7 +5,7 @@ APT+현관1+방수≤25+validation통과(Phase1 학습 대상)에서 샘플.
 
 사용:
   PYTHONPATH=src python scripts/render_data_samples.py \
-    --dir data/staging/corrected/graphs --out /tmp/data_samples --n 6
+    --dir data/staging/parsed/graphs --out /tmp/data_samples --n 6
 """
 from __future__ import annotations
 
