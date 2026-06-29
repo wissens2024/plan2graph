@@ -164,14 +164,17 @@ def _graph_review(source_id, recs, render_original, graph_id_of):
                   node_size=2200, font_size=12, layout="spatial"),
                   use_container_width=True)
     st.caption(LEGEND)
-    m = rec["meta"]; cst = rec["constraints"]
-    st.markdown(f"**방 {m.get('n_rooms')} · 문 {m.get('n_doors')} · 무결성 "
-                f"{'✅통과' if rec['validation'].get('passed') else '❌위반'}** · "
+    m = rec.get("meta") or {}; cst = rec.get("constraints") or {}   # g-0.4엔 constraints 없음
+    n_rooms = rec.get("n_rooms", m.get("n_rooms")); n_doors = rec.get("n_doors", m.get("n_doors"))
+    passed = (rec.get("validation") or {}).get("passed")
+    st.markdown(f"**방 {n_rooms} · 문 {n_doors} · 무결성 "
+                f"{'✅통과' if passed else '❌위반'}** · "
                 f"role=`{m.get('role')}` tier=`{m.get('tier')}` status=`{m.get('status')}`")
     st.caption(ORIGIN_NOTE)
-    cc1, cc2 = st.columns(2)
-    cc1.markdown("**program (방 구성)**"); cc1.json(cst["program"])
-    cc2.markdown("**adjacency (인접 요구)**"); cc2.write(cst["adjacency"])
+    if cst:                          # program/adjacency는 0.1 스키마에만
+        cc1, cc2 = st.columns(2)
+        cc1.markdown("**program (방 구성)**"); cc1.json(cst.get("program"))
+        cc2.markdown("**adjacency (인접 요구)**"); cc2.write(cst.get("adjacency"))
 
     note = st.text_input("결정 메모(선택)", key=f"{key}_note")
     led = sources.ledger_path(source_id)
