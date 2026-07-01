@@ -797,6 +797,18 @@ function updatePageInfo(){
   if(pp)pp.disabled=(OFFSET<=0);
   if(pn)pn.disabled=(OFFSET+NPP>=MATCHED);
 }
+function markInList(id,kind){   // 저장/보류 후 재조회(필터 재판정으로 항목이 사라짐) 대신 현재 항목 상태만 제자리 갱신
+  const it=LIST.find(o=>o.id===id); if(!it){renderList();return;}
+  const wasDone=it.corrected&&!it.held;
+  if(kind==='held'){it.held=true;it.corrected=false;} else {it.held=false;it.corrected=true;}
+  const nowDone=it.corrected&&!it.held;
+  if(nowDone!==wasDone){       // 보정 완료 카운트/진행바 로컬 반영
+    const pd=document.getElementById('pdone');
+    if(pd){const v=Math.max(0,(parseInt(pd.textContent,10)||0)+(nowDone?1:-1));pd.textContent=v;
+      const tot=parseInt(document.getElementById('ptot').textContent,10)||0;
+      const pb=document.getElementById('pbar');if(pb&&tot)pb.style.width=(100*v/tot).toFixed(1)+'%';}}
+  renderList();
+}
 async function loadGraph(id){
   const r=await(await fetch('api/graph/'+id)).json();
   if(r.error){toast('로드 실패: '+r.error);return;}
@@ -1216,13 +1228,14 @@ async function save(){if(!G)return;
   delete G.meta.review_status;                       // 일반 저장 = 보정완료(보류 해제)
   const r=await(await fetch('api/graph/'+GID,{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(G)})).json();
-  setDirty(false);if(r.status)showStatus(r.status);toast('저장됨 → edits/');loadList(document.getElementById('search').value.trim(),OFFSET);}
+  setDirty(false);if(r.status)showStatus(r.status);toast('저장됨 → edits/');
+  markInList(GID,'done');}                                                 // 재조회 없이 제자리 ✔ (필터 탈락 방지)
 async function hold(){if(!G){toast('도면 없음');return;}
   G.meta=G.meta||{};G.meta.notes=document.getElementById('memo').value.trim();
   G.meta.review_status='모호';
   await fetch('api/graph/'+GID,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(G)});
   setDirty(false);toast('🔖 보류(모호) 저장 → 다음 도면');
-  await loadList(document.getElementById('search').value.trim(),OFFSET);   // 같은 페이지 갱신(마크 반영)
+  markInList(GID,'held');                                                  // 제자리 🔖 (재조회로 사라지지 않게)
   await move(1);}                                                          // 다음 도면으로(페이지 경계도 넘김)
 document.getElementById('hold').onclick=hold;
 document.getElementById('save').onclick=save;
