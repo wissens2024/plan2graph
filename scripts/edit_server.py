@@ -503,6 +503,8 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
  .nav button{flex:1;padding:8px;border-radius:8px;border:1px solid var(--line2);background:var(--panel2);
    color:var(--txt);cursor:pointer;font-size:12.5px;font-weight:600}
  .nav button:hover{background:#2a303c;border-color:var(--accent)}
+ .nav.pager button{flex:0 0 auto;min-width:34px;padding:8px 6px}
+ .nav.pager #pageinfo{flex:1;text-align:center;align-self:center;font-size:12px;font-weight:600;color:var(--accent2);white-space:nowrap}
 
  /* 상태 pill */
  #stat{display:none}   /* 보정필요 정보창 숨김 — 공간 확보(JS는 계속 참조 가능) */
@@ -677,7 +679,13 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
    </div>
    <label class="holdchk"><input type="checkbox" id="fHold"> 🔖 모호(보류)만 보기</label>
    <input id="search" placeholder="ID 일부로 검색 (예: cb4a)">
-   <div class="nav"><button id="prev">◀ 이전</button><button id="next">다음 ▶</button></div>
+   <div class="nav pager">
+     <button id="pprev" title="이전 100개">◀◀</button>
+     <button id="prev" title="이전">◀</button>
+     <span id="pageinfo" title="">1 / 1</span>
+     <button id="next" title="다음">▶</button>
+     <button id="pnext" title="다음 100개">▶▶</button>
+   </div>
    <div id="listcount" class="fcount"></div>
    <div id="list"></div>
 
@@ -721,6 +729,7 @@ let rulerPts=[];                              // 스케일 측정 2점
 let addPts=[],addRole='실외기실',addSnap=true;  // 신규 노드: 사각형 대각 2점 + 기본 역할 + 코너 스냅
 let overlayOn=true;                           // 주석 겹쳐보기(H로 토글)
 let LIST=[],undoStack=[];
+let OFFSET=0,MATCHED=0;const NPP=100;   // 페이지네이션: 현재 페이지 시작인덱스 / 결과셋 총개수 / 페이지당 개수
 function evToUser(ev){const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;
   const u=pt.matrixTransform(svg.getScreenCTM().inverse());return [u.x,u.y];}
 // 컷 직각 스냅: 시작점 p0 기준, 우세축으로 끝점을 수평/수직 정렬(박스형). Shift=자유각.
@@ -751,13 +760,16 @@ function toggleOverlay(){overlayOn=!overlayOn;svg.classList.toggle('noov',!overl
   toast('주석 겹쳐보기 '+(overlayOn?'켜짐':'꺼짐 — 원본만'));}
 
 // ── 목록/검색 ───────────────────────────────────────────────────────────────
-async function loadList(q){
+async function loadList(q,off){
+  OFFSET=(off==null?0:off);
   const fh=document.getElementById('fHouse').value, fk=document.getElementById('fScope').value;
   const hold=document.getElementById('fHold')&&document.getElementById('fHold').checked;
-  let url='api/graphs?n=250'+(q?'&q='+encodeURIComponent(q):'')
+  let url='api/graphs?n='+NPP+'&offset='+OFFSET+(q?'&q='+encodeURIComponent(q):'')
     +(fh?'&house='+encodeURIComponent(fh):'')+(fk?'&scope='+encodeURIComponent(fk):'')+(hold?'&hold=1':'');
   const r=await(await fetch(url)).json();
   LIST=r.items;
+  MATCHED=(r.matched!=null?r.matched:r.total);
+  if(r.offset!=null)OFFSET=r.offset;                 // 서버가 마지막 페이지로 클램프했을 수 있음
   document.getElementById('pdone').textContent=r.corrected;
   document.getElementById('ptot').textContent=r.total;
   document.getElementById('pbar').style.width=(r.total?100*r.corrected/r.total:0).toFixed(1)+'%';
@@ -765,16 +777,25 @@ async function loadList(q){
   const lbl=document.getElementById('listcount');
   const extra=(r.held)?(' · 🔖 보류 '+r.held):'';
   if(lbl)lbl.textContent=((r.filtered!=null&&(fh||fk||hold))?('검색결과 '+r.filtered+'개'+(r.indexing?' · 인덱싱중…':'')):'')+extra;
-  renderList();
+  renderList();updatePageInfo();
   if(!GID&&LIST.length)loadGraph(LIST[0].id);
 }
 function renderList(){
   const box=document.getElementById('list');box.innerHTML='';
-  LIST.forEach((o,i)=>{const d=document.createElement('div');
+  LIST.forEach((o,i)=>{const gi=OFFSET+i+1;const d=document.createElement('div');   // gi = 전체 기준 번호
     d.className='opt'+(o.held?' held':o.corrected?' done':'')+(o.id===GID?' on':'');
     d.innerHTML='<span class="ck">'+(o.held?'🔖':o.corrected?'✔':'·')+'</span>'
-      +'<span class="ix">'+(i+1)+'.</span>'+o.id.replace(/^(APT|DEH|ROW)_FP_/,'');
-    d.title='#'+(i+1)+'  '+o.id;d.onclick=()=>{vb=null;loadGraph(o.id);};box.appendChild(d);});
+      +'<span class="ix">'+gi+'.</span>'+o.id.replace(/^(APT|DEH|ROW)_FP_/,'');
+    d.title='#'+gi+'  '+o.id;d.onclick=()=>{vb=null;loadGraph(o.id);};box.appendChild(d);});
+}
+function updatePageInfo(){
+  const pi=document.getElementById('pageinfo');
+  const pp=document.getElementById('pprev'),pn=document.getElementById('pnext');
+  const pages=Math.max(1,Math.ceil(MATCHED/NPP)),cur=Math.floor(OFFSET/NPP)+1;
+  if(pi){pi.textContent=cur+' / '+pages;
+    pi.title=MATCHED?((OFFSET+1)+'–'+Math.min(OFFSET+NPP,MATCHED)+' / '+MATCHED):'';}
+  if(pp)pp.disabled=(OFFSET<=0);
+  if(pn)pn.disabled=(OFFSET+NPP>=MATCHED);
 }
 async function loadGraph(id){
   const r=await(await fetch('api/graph/'+id)).json();
@@ -1167,11 +1188,21 @@ document.addEventListener('keydown',ev=>{
   }
 });
 
-// ── prev/next/검색/복사/저장 ─────────────────────────────────────────────────
-function move(d){const i=LIST.findIndex(o=>o.id===GID);const n=i+d;
-  if(n>=0&&n<LIST.length){vb=null;loadGraph(LIST[n].id);}}
+// ── prev/next/페이지/검색/복사/저장 ──────────────────────────────────────────
+async function move(d){const i=LIST.findIndex(o=>o.id===GID);const n=i+d;
+  if(n>=0&&n<LIST.length){vb=null;loadGraph(LIST[n].id);return;}
+  // 현재 페이지 끝을 넘으면 다음/이전 페이지로 이어서 이동
+  const q=document.getElementById('search').value.trim();
+  if(d>0&&OFFSET+NPP<MATCHED){await loadList(q,OFFSET+NPP);if(LIST.length){vb=null;loadGraph(LIST[0].id);}}
+  else if(d<0&&OFFSET>0){await loadList(q,OFFSET-NPP);if(LIST.length){vb=null;loadGraph(LIST[LIST.length-1].id);}}}
+async function pageMove(dir){const off=OFFSET+dir*NPP;
+  if(off<0||off>=MATCHED)return;
+  await loadList(document.getElementById('search').value.trim(),off);
+  if(LIST.length){vb=null;loadGraph(LIST[0].id);}}
 document.getElementById('prev').onclick=()=>move(-1);
 document.getElementById('next').onclick=()=>move(1);
+document.getElementById('pprev').onclick=()=>pageMove(-1);
+document.getElementById('pnext').onclick=()=>pageMove(1);
 let st;document.getElementById('search').oninput=e=>{clearTimeout(st);
   st=setTimeout(()=>loadList(e.target.value.trim()),220);};
 document.getElementById('copyId').onclick=async()=>{
@@ -1185,17 +1216,14 @@ async function save(){if(!G)return;
   delete G.meta.review_status;                       // 일반 저장 = 보정완료(보류 해제)
   const r=await(await fetch('api/graph/'+GID,{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(G)})).json();
-  setDirty(false);if(r.status)showStatus(r.status);toast('저장됨 → edits/');loadList(document.getElementById('search').value.trim());}
+  setDirty(false);if(r.status)showStatus(r.status);toast('저장됨 → edits/');loadList(document.getElementById('search').value.trim(),OFFSET);}
 async function hold(){if(!G){toast('도면 없음');return;}
   G.meta=G.meta||{};G.meta.notes=document.getElementById('memo').value.trim();
   G.meta.review_status='모호';
-  const ids=LIST.map(o=>o.id),idx=ids.indexOf(GID);
-  const nextId=(idx>=0&&idx+1<ids.length)?ids[idx+1]:null;
   await fetch('api/graph/'+GID,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(G)});
   setDirty(false);toast('🔖 보류(모호) 저장 → 다음 도면');
-  await loadList(document.getElementById('search').value.trim());
-  if(nextId&&LIST.some(o=>o.id===nextId))loadGraph(nextId);
-  else if(LIST.length)loadGraph(LIST[0].id);}
+  await loadList(document.getElementById('search').value.trim(),OFFSET);   // 같은 페이지 갱신(마크 반영)
+  await move(1);}                                                          // 다음 도면으로(페이지 경계도 넘김)
 document.getElementById('hold').onclick=hold;
 document.getElementById('save').onclick=save;
 document.getElementById('undo').onclick=undo;
@@ -1214,7 +1242,9 @@ document.getElementById('undo').onclick=undo;
   fh.innerHTML='<option value="">주거형태 전체</option>'+HOUSES.map(h=>'<option value="'+h[0]+'">'+h[1]+'</option>').join('');
   const fk=document.getElementById('fScope');
   fk.innerHTML='<option value="">단위/층 전체</option>'+scOpt;
-  fh.onchange=fk.onchange=()=>loadList(document.getElementById('search').value.trim());
+  const _reload=()=>loadList(document.getElementById('search').value.trim());
+  fh.onchange=fk.onchange=_reload;
+  const _fHold=document.getElementById('fHold');if(_fHold)_fHold.onchange=_reload;   // 모호 체크박스도 즉시 반영
 })();
 
 // ── 팬/줌 ──────────────────────────────────────────────────────────────────
@@ -1277,7 +1307,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, _html(), "text/html; charset=utf-8")
         if p == "/api/graphs":
             qs = parse_qs(u.query)
-            n = int(qs.get("n", ["250"])[0])
+            n = int(qs.get("n", ["100"])[0])
+            offset = int(qs.get("offset", ["0"])[0])
             q = (qs.get("q", [""])[0] or "").lower()
             house_f = qs.get("house", [""])[0]
             scope_f = qs.get("scope", [""])[0]
@@ -1328,10 +1359,17 @@ class H(BaseHTTPRequestHandler):
                 ids = [i for i in ids if i in held]
                 filtered = len(ids)
             ids.sort()
+            matched = len(ids)                         # 검색·필터 적용 후 결과셋 전체 크기 = 페이지 계산 기준
+            if offset < 0:
+                offset = 0
+            if matched and offset >= matched:          # 범위 밖이면 마지막 페이지로 클램프
+                offset = (matched - 1) // n * n
+            page = ids[offset:offset + n]
             items = [{"id": i, "corrected": (i in done and i not in held),
-                      "held": i in held} for i in ids[:n]]
+                      "held": i in held} for i in page]
             out = {"total": total, "corrected": len(done) - len(held), "held": len(held),
-                   "items": items, "filtered": filtered, "indexing": indexing}
+                   "items": items, "filtered": filtered, "matched": matched,
+                   "offset": offset, "n": n, "indexing": indexing}
             return self._send(200, json.dumps(out, ensure_ascii=False))
         if p.startswith("/api/graph/"):
             gid = p[len("/api/graph/"):]
