@@ -504,7 +504,13 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
    color:var(--txt);cursor:pointer;font-size:12.5px;font-weight:600}
  .nav button:hover{background:#2a303c;border-color:var(--accent)}
  .nav.pager button{flex:0 0 auto;min-width:34px;padding:8px 6px}
- .nav.pager #pageinfo{flex:1;text-align:center;align-self:center;font-size:12px;font-weight:600;color:var(--accent2);white-space:nowrap}
+ .nav.pager #pageinfo{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;
+   font-size:12px;font-weight:600;color:var(--accent2);white-space:nowrap}
+ .nav.pager #pagenum{width:46px;text-align:center;background:var(--panel);color:var(--accent2);
+   border:1px solid var(--line2);border-radius:6px;padding:5px 3px;font-size:12px;font-weight:700;
+   outline:none;font-variant-numeric:tabular-nums;-moz-appearance:textfield}
+ .nav.pager #pagenum:focus{border-color:var(--accent)}
+ .nav.pager #pagenum::-webkit-inner-spin-button,.nav.pager #pagenum::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 
  /* 상태 pill */
  #stat{display:none}   /* 보정필요 정보창 숨김 — 공간 확보(JS는 계속 참조 가능) */
@@ -682,7 +688,10 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
    <div class="nav pager">
      <button id="pprev" title="이전 100개">◀◀</button>
      <button id="prev" title="이전">◀</button>
-     <span id="pageinfo" title="">1 / 1</span>
+     <span id="pageinfo" title="페이지 번호 입력 후 Enter로 바로 이동">
+       <input id="pagenum" type="number" min="1" value="1" title="페이지 번호 입력 후 Enter">
+       <span>/ <b id="pagetot">1</b></span>
+     </span>
      <button id="next" title="다음">▶</button>
      <button id="pnext" title="다음 100개">▶▶</button>
    </div>
@@ -723,6 +732,15 @@ const PALETTE=__PAL__, ROLE_COLOR=__COL__, HOUSES=__HOUSE__, SCOPES=__SCOPES__;
 const SCOPE_KO=Object.fromEntries(SCOPES), SCOPE_VALS=SCOPES.map(s=>s[0]);
 const HOUSING_NORM={APT:'apartment',DEH:'detached',ROW:'rowhouse'};
 const MODES={role:'🎨 역할',merge:'⛓ 합치기',del:'🗑 삭제',split:'✂ 나누기',add:'➕ 신규',scale:'📏 스케일'};
+// 역할 단축키 — 모드/전역 핫키와 충돌하지 않게 숫자 1..0 후 '안전한' 문자만 순서대로 배정.
+//   칩 라벨(renderCtx)과 키 핸들러가 같은 배열(PKEYS/PKEY2I)을 공유 → "라벨=실제동작".
+//   기존 버그: 파우더룸=d(삭제모드), 기타=e(현관), 구조물=f(맞춤), 엘리베이터홀=h(오버레이) 등이
+//   전역 핫키에 가려 무반응. 예약키를 배정 풀에서 빼서 근본 차단.
+const RESERVED_KEYS=new Set(['f','h','n','r','m','d','s','l','o']);   // 모드/전역 단일문자 핫키
+const _SAFE_LETTERS=[];for(let _c=97;_c<=122;_c++){const _ch=String.fromCharCode(_c);if(!RESERVED_KEYS.has(_ch))_SAFE_LETTERS.push(_ch);}
+const _DIGITS=['1','2','3','4','5','6','7','8','9','0'];
+const PKEYS=PALETTE.map((r,i)=> i<10 ? _DIGITS[i] : (_SAFE_LETTERS[i-10]||''));   // 팔레트 index→키
+const PKEY2I={};PKEYS.forEach((k,i)=>{if(k)PKEY2I[k]=i;});                          // 키→index(역인덱스)
 let G=null,GID=null,dirty=false,mode='role',sel=null,adjA=null,mergeSel=[],vb=null;
 let splitSel=null,cutPts=[],splitRoles=null,snapOrtho=true;
 let rulerPts=[];                              // 스케일 측정 2점
@@ -792,8 +810,11 @@ function updatePageInfo(){
   const pi=document.getElementById('pageinfo');
   const pp=document.getElementById('pprev'),pn=document.getElementById('pnext');
   const pages=Math.max(1,Math.ceil(MATCHED/NPP)),cur=Math.floor(OFFSET/NPP)+1;
-  if(pi){pi.textContent=cur+' / '+pages;
-    pi.title=MATCHED?((OFFSET+1)+'–'+Math.min(OFFSET+NPP,MATCHED)+' / '+MATCHED):'';}
+  const inp=document.getElementById('pagenum'),tot=document.getElementById('pagetot');
+  if(inp&&document.activeElement!==inp){inp.value=cur;}   // 편집 중이면 덮어쓰지 않음
+  if(inp)inp.max=pages;
+  if(tot)tot.textContent=pages;
+  if(pi)pi.title=MATCHED?((OFFSET+1)+'–'+Math.min(OFFSET+NPP,MATCHED)+' / '+MATCHED):'';
   if(pp)pp.disabled=(OFFSET<=0);
   if(pn)pn.disabled=(OFFSET+NPP>=MATCHED);
 }
@@ -1083,10 +1104,10 @@ function renderCtx(){
   const c=document.getElementById('ctx');
   if(mode==='role'){
     let h='<div class="ctitle">방 선택 후 역할 지정 (숫자/문자키 가능)</div><div class="pal">';
-    PALETTE.forEach((r,i)=>{const key=i<9?(i+1):(i===9?'0':String.fromCharCode(97+i-10));
+    PALETTE.forEach((r,i)=>{const key=PKEYS[i]||'';
       h+='<span class="chip" data-r="'+r+'"><span class="sw" style="background:'+colorOf(r)+'"></span>'
-        +r+' <span class="k">'+key+'</span></span>';});
-    h+='</div><div class="help">선택 방에 <kbd>E</kbd> = 현관 지정</div>';
+        +r+(key?' <span class="k">'+key+'</span>':'')+'</span>';});
+    h+='</div><div class="help">방 클릭 후 칩의 <b>키</b>(숫자·문자)로 바로 지정</div>';
     c.innerHTML=h;
     c.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>setRole(ch.dataset.r));
   }else if(mode==='merge'){
@@ -1115,7 +1136,7 @@ function renderCtx(){
       +'<button class="bigbtn ghost" id="sclr">선택 취소 (Esc)</button>';}
     else{const roles=splitRoles||defaultRoles(G.rooms[splitSel].role);
       const opt=(sel)=>PALETTE.map(r=>'<option value="'+r+'"'+(r===sel?' selected':'')+'>'+r+'</option>').join('');
-      h+='<div class="help">컷 방향 기준 좌/우 역할을 지정하세요.</div>'
+      h+='<div class="help">컷 방향 기준 좌/우 역할을 지정하세요. · 좌우 교체 <kbd>Tab</kbd></div>'
         +'<div style="display:flex;gap:6px;align-items:center;margin:6px 0">'
         +'<span class="cut-sw" style="display:inline-block;width:13px;height:13px;border-radius:3px;background:'+colorOf(roles[0])+'"></span>'
         +'<b style="color:var(--split);width:16px">좌</b><select id="sL" style="flex:1">'+opt(roles[0])+'</select></div>'
@@ -1176,6 +1197,15 @@ document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>setMode(b.data
 
 // ── 키보드 ──────────────────────────────────────────────────────────────────
 document.addEventListener('keydown',ev=>{
+  // 나누기(S) 좌↔우 역할 즉시 교체 — Tab. 거실/복도처럼 좌우만 바꾸면 될 때 클릭 없이 한 번에.
+  // (역할 select 포커스 상태에서도 되도록 입력창 early-return 앞에서 처리. 텍스트 입력 중엔 제외.)
+  if(ev.key==='Tab'&&mode==='split'&&splitSel&&cutPts.length===2
+     &&ev.target.tagName!=='INPUT'&&ev.target.tagName!=='TEXTAREA'){
+    ev.preventDefault();
+    const cur=splitRoles||defaultRoles(G.rooms[splitSel].role);
+    splitRoles=[cur[1],cur[0]];render();renderCtx();
+    toast('좌우 교체 → 좌 '+splitRoles[0]+' / 우 '+splitRoles[1]);return;
+  }
   const tag=ev.target.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT')return;
   if((ev.ctrlKey||ev.metaKey)&&ev.key.toLowerCase()==='z'){ev.preventDefault();undo();return;}
   if((ev.ctrlKey||ev.metaKey)&&ev.key.toLowerCase()==='s'){ev.preventDefault();save();return;}
@@ -1193,10 +1223,8 @@ document.addEventListener('keydown',ev=>{
   if(mode==='add'){if(ev.key==='Escape'){addPts=[];render();renderCtx();return;}
     if(k==='o'){addSnap=!addSnap;renderCtx();toast('코너 스냅 '+(addSnap?'켜짐':'꺼짐'));return;}}
   if(mode==='role'){
-    if(k==='e'){if(sel){pushUndo();G.rooms[sel].role='현관';setDirty(true);render();toast('현관 지정');}return;}
-    let i=-1;if(ev.key>='1'&&ev.key<='9')i=+ev.key-1;else if(ev.key==='0')i=9;
-    else if(k>='a'&&k<='f')i=10+k.charCodeAt(0)-97;
-    if(i>=0&&i<PALETTE.length)setRole(PALETTE[i]);
+    const kk=(ev.key&&ev.key.length===1)?ev.key.toLowerCase():'';   // 칩과 동일한 통합 매핑
+    if(kk&&(kk in PKEY2I)){setRole(PALETTE[PKEY2I[kk]]);return;}
   }
 });
 
@@ -1211,10 +1239,19 @@ async function pageMove(dir){const off=OFFSET+dir*NPP;
   if(off<0||off>=MATCHED)return;
   await loadList(document.getElementById('search').value.trim(),off);
   if(LIST.length){vb=null;loadGraph(LIST[0].id);}}
+// 페이지 번호 직접 이동 — 입력값을 [1..pages]로 클램프 후 해당 페이지 첫 도면 로드.
+async function gotoPage(p){
+  const pages=Math.max(1,Math.ceil(MATCHED/NPP));
+  p=Math.max(1,Math.min(pages,parseInt(p,10)||1));
+  await loadList(document.getElementById('search').value.trim(),(p-1)*NPP);
+  if(LIST.length){vb=null;loadGraph(LIST[0].id);}}
 document.getElementById('prev').onclick=()=>move(-1);
 document.getElementById('next').onclick=()=>move(1);
 document.getElementById('pprev').onclick=()=>pageMove(-1);
 document.getElementById('pnext').onclick=()=>pageMove(1);
+(function(){const pg=document.getElementById('pagenum');if(!pg)return;
+  pg.onkeydown=(e)=>{if(e.key==='Enter'){e.preventDefault();gotoPage(pg.value);pg.blur();}};
+  pg.onfocus=()=>pg.select();})();
 let st;document.getElementById('search').oninput=e=>{clearTimeout(st);
   st=setTimeout(()=>loadList(e.target.value.trim()),220);};
 document.getElementById('copyId').onclick=async()=>{
