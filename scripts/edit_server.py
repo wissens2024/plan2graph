@@ -438,6 +438,14 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>정보 보정 에디터</title>
 <style>
+.gtag{color:#8fc3ff;font-size:11px}
+.opt .cp{color:#ffb454;font-size:11px;margin-left:4px}
+.sibbox{margin:4px 0;padding:6px 8px;border-radius:6px;background:#24303f;
+  font-size:12px;line-height:1.5;display:none}
+.sibbox b{color:#ffb454}
+.sibbox button{width:100%;margin-top:5px;padding:5px;border-radius:6px;cursor:pointer;
+  background:#1d4ed8;border:1px solid #1d4ed8;color:#fff;font:inherit}
+.sibbox button:disabled{opacity:.45;cursor:not-allowed}
 a.dedup{display:block;text-align:center;margin:4px 0;padding:5px;border-radius:6px;
   background:#243044;color:#8fc3ff;text-decoration:none;font-size:12px}
 a.dedup:hover{background:#2c3d58}
@@ -686,7 +694,10 @@ a.dedup:hover{background:#2c3d58}
      <select id="fHouse" title="주거형태로 거르기"><option value="">주거형태 전체</option></select>
      <select id="fScope" title="단위세대/층평면도로 거르기"><option value="">단위/층 전체</option></select>
    </div>
+   <label class="holdchk"><input type="checkbox" id="fGroup" checked>
+     🔁 같은 도면 묶기 <span id="grpinfo" class="gtag"></span></label>
    <label class="holdchk"><input type="checkbox" id="fHold"> 🔖 모호(보류)만 보기</label>
+   <div id="sibbox" class="sibbox"></div>
    <a class="dedup" href="dedup" target="_blank"
       title="같은 도면 사본을 묶어 비교·전파">🔁 중복 검수</a>
    <input id="search" placeholder="ID 일부로 검색 (예: cb4a)">
@@ -787,7 +798,8 @@ async function loadList(q,off){
   OFFSET=(off==null?0:off);
   const fh=document.getElementById('fHouse').value, fk=document.getElementById('fScope').value;
   const hold=document.getElementById('fHold')&&document.getElementById('fHold').checked;
-  let url='api/graphs?n='+NPP+'&offset='+OFFSET+(q?'&q='+encodeURIComponent(q):'')
+  const grp=document.getElementById('fGroup')&&document.getElementById('fGroup').checked;
+  let url='api/graphs?n='+NPP+'&offset='+OFFSET+(grp?'&group=1':'')+(q?'&q='+encodeURIComponent(q):'')
     +(fh?'&house='+encodeURIComponent(fh):'')+(fk?'&scope='+encodeURIComponent(fk):'')+(hold?'&hold=1':'');
   const r=await(await fetch(url)).json();
   LIST=r.items;
@@ -800,6 +812,8 @@ async function loadList(q,off){
   const lbl=document.getElementById('listcount');
   const extra=(r.held)?(' · 🔖 보류 '+r.held):'';
   if(lbl)lbl.textContent=((r.filtered!=null&&(fh||fk||hold))?('검색결과 '+r.filtered+'개'+(r.indexing?' · 인덱싱중…':'')):'')+extra;
+  const gi=document.getElementById('grpinfo');
+  if(gi)gi.textContent=r.grouped?('고유 '+MATCHED.toLocaleString()+'건'):(r.dedup?'':'(인덱스 없음)');
   renderList();updatePageInfo();
   if(!GID&&LIST.length)loadGraph(LIST[0].id);
 }
@@ -808,8 +822,9 @@ function renderList(){
   LIST.forEach((o,i)=>{const gi=OFFSET+i+1;const d=document.createElement('div');   // gi = 전체 기준 번호
     d.className='opt'+(o.held?' held':o.corrected?' done':'')+(o.id===GID?' on':'');
     d.innerHTML='<span class="ck">'+(o.held?'🔖':o.corrected?'✔':'·')+'</span>'
-      +'<span class="ix">'+gi+'.</span>'+o.id.replace(/^(APT|DEH|ROW)_FP_/,'');
-    d.title='#'+gi+'  '+o.id;d.onclick=()=>{vb=null;loadGraph(o.id);};box.appendChild(d);});
+      +'<span class="ix">'+gi+'.</span>'+o.id.replace(/^(APT|DEH|ROW)_FP_/,'')
+      +(o.copies>1?'<span class="cp">×'+o.copies+'</span>':'');
+    d.title='#'+gi+'  '+o.id+(o.copies>1?('\n같은 도면 '+o.copies+'장 (미보정 '+o.pending+')'):'');d.onclick=()=>{vb=null;loadGraph(o.id);};box.appendChild(d);});
 }
 function updatePageInfo(){
   const pi=document.getElementById('pageinfo');
@@ -839,6 +854,7 @@ async function loadGraph(id){
   const r=await(await fetch('api/graph/'+id)).json();
   if(r.error){toast('로드 실패: '+r.error);return;}
   G=r.graph;GID=id;sel=null;adjA=null;mergeSel=[];rulerPts=[];undoStack=[];
+  showSiblings(id);
   document.getElementById('undo').disabled=true;setDirty(false);
   document.getElementById('pid').textContent=id;
   document.getElementById('memo').value=(G.meta&&G.meta.notes)||'';
@@ -888,6 +904,41 @@ function showStatus(st){
   if(!st||st.clean===null){e.className='na';e.textContent='판정 불가';return;}
   if(st.clean){e.className='ok';e.innerHTML='✅ 변환 통과 — 사용가능';}
   else{e.className='bad';e.innerHTML='❌ 보정 필요<div class="why">'+(st.reasons||[]).join(' · ')+'</div>';}
+}
+
+// ── 형제 도면(같은 도면 사본) 전파 ──────────────────────────────────────────
+//    보정 1건 → 나머지 사본에 좌표 변환으로 복사. 기존 보정은 안 건드림(fill 모드).
+let SIB=null;
+async function showSiblings(id){
+  const box=document.getElementById('sibbox');if(!box)return;
+  SIB=null;box.style.display='none';box.innerHTML='';
+  const it=LIST.find(o=>o.id===id);
+  let sig=it&&it.sig;
+  if(!sig){try{sig=(await(await fetch('api/dedup/find/'+encodeURIComponent(id))).json()).sig;}
+           catch(e){return;}}
+  if(!sig)return;
+  let g;try{g=await(await fetch('api/dedup/group/'+sig)).json();}catch(e){return;}
+  if(!g||g.error||!g.n||g.n<2)return;
+  SIB={sig,pending:g.pending};
+  box.style.display='block';
+  box.innerHTML='🔁 같은 도면 <b>'+g.n+'장</b> · 미보정 <b>'+g.pending+'</b>건'
+    +'<button id="sibgo"'+(g.pending?'':' disabled')+'>'
+    +(g.pending?('이 보정을 형제 '+g.pending+'건에 복사'):'미보정 형제 없음')+'</button>';
+  const b=document.getElementById('sibgo');
+  if(b)b.onclick=()=>propagateSiblings();
+}
+async function propagateSiblings(){
+  if(!SIB||!GID)return;
+  if(dirty){toast('먼저 저장하세요 — 저장된 보정만 복사됩니다');return;}
+  if(!confirm('아직 보정 안 된 같은 도면 '+SIB.pending+'건에 이 보정을 복사합니다.\n'
+             +'다른 사람이 이미 보정한 건 건드리지 않습니다.\n진행할까요?'))return;
+  const b=document.getElementById('sibgo');if(b){b.disabled=true;b.textContent='복사 중…';}
+  const r=await(await fetch('api/dedup/propagate',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({sig:SIB.sig,source:GID,mode:'fill'})})).json();
+  if(r.error){toast('❌ '+r.error);if(b){b.disabled=false;}return;}
+  toast('✅ 형제 '+r.written+'건에 복사'+(r.n_skipped?(' · 스킵 '+r.n_skipped):''));
+  showSiblings(GID);
 }
 
 // ── 캔버스 ──────────────────────────────────────────────────────────────────
@@ -1297,8 +1348,10 @@ document.getElementById('undo').onclick=undo;
   fh.innerHTML='<option value="">주거형태 전체</option>'+HOUSES.map(h=>'<option value="'+h[0]+'">'+h[1]+'</option>').join('');
   const fk=document.getElementById('fScope');
   fk.innerHTML='<option value="">단위/층 전체</option>'+scOpt;
+  fh.value='APT';fk.value='unit';        // 기본 = APT·단위세대 (필터로 전환 가능)
   const _reload=()=>loadList(document.getElementById('search').value.trim());
   fh.onchange=fk.onchange=_reload;
+  const _fGrp=document.getElementById('fGroup');if(_fGrp)_fGrp.onchange=_reload;
   const _fHold=document.getElementById('fHold');if(_fHold)_fHold.onchange=_reload;   // 모호 체크박스도 즉시 반영
 })();
 
@@ -1361,6 +1414,18 @@ def _dedup_ctx():
             "ROLE_COLOR": ROLE_COLOR, "PNG": _png_bytes}
 
 
+def _dedup_group_of():
+    """dedup 인덱스 → (sig_of, groups). 없으면 (None, None) — 그러면 큐는 옛 동작 그대로."""
+    try:
+        from plan2graph import dedup_review
+        idx = dedup_review.load_index(_dedup_ctx())
+        if not idx:
+            return None, None
+        return idx.get("sig_of") or {}, idx.get("groups") or {}
+    except Exception:  # noqa: BLE001
+        return None, None
+
+
 def _dedup_route(kind, *a):
     try:
         from plan2graph import dedup_review
@@ -1397,6 +1462,8 @@ class H(BaseHTTPRequestHandler):
             house_f = qs.get("house", [""])[0]
             scope_f = qs.get("scope", [""])[0]
             hold_f = qs.get("hold", [""])[0]
+            group_f = qs.get("group", [""])[0]
+            sig_of, grp_of = _dedup_group_of()
             done = set()
             if os.path.isdir(EDITS):
                 done = {f[:-5] for f in os.listdir(EDITS) if f.endswith(".json")}
@@ -1433,8 +1500,18 @@ class H(BaseHTTPRequestHandler):
                     house = (m or {}).get("house_type") or base.get("house") or gid.split("_")[0]
                     if house_f and house != house_f:
                         return False
-                    if scope_f and _scope_of(base.get("ent", 1), m) != scope_f:
-                        return False
+                    if scope_f:
+                        # 평면 구분은 dedup 인덱스가 단일 진실. 옛 _scope_of 는 현관 수만 보는데
+                        # 전실이 현관으로 오라벨돼 있어 parsed 현관=2 중 절반 이상이 실은
+                        # 단위세대였다(실측). 인덱스가 없을 때만 옛 규칙으로 폴백.
+                        sc = None
+                        if sig_of is not None:
+                            g0 = grp_of.get(sig_of.get(gid) or "")
+                            sc = (g0 or {}).get("scope")
+                        if sc is None:
+                            sc = _scope_of(base.get("ent", 1), m)
+                        if sc != scope_f:
+                            return False
                     return True
 
                 ids = [i for i in ids if _passes(i)]
@@ -1442,6 +1519,20 @@ class H(BaseHTTPRequestHandler):
             if hold_f:
                 ids = [i for i in ids if i in held]
                 filtered = len(ids)
+            copies = {}
+            if group_f and sig_of:
+                # 같은 도면 사본을 1줄로 접는다. 대표 = 아직 보정 안 한 사본 우선
+                # (알바가 이미 끝난 걸 또 열지 않게). 사본 수·미보정 수는 그룹 전체 기준.
+                buckets = {}
+                for i in ids:
+                    buckets.setdefault(sig_of.get(i) or ("~" + i), []).append(i)
+                ids = []
+                for sg, ms in buckets.items():
+                    ms.sort()
+                    rep = next((m for m in ms if m not in done), ms[0])
+                    ids.append(rep)
+                    g0 = grp_of.get(sg) or {}
+                    copies[rep] = (g0.get("n") or len(ms), g0.get("pending", 0), sg)
             ids.sort()
             matched = len(ids)                         # 검색·필터 적용 후 결과셋 전체 크기 = 페이지 계산 기준
             if offset < 0:
@@ -1450,10 +1541,14 @@ class H(BaseHTTPRequestHandler):
                 offset = (matched - 1) // n * n
             page = ids[offset:offset + n]
             items = [{"id": i, "corrected": (i in done and i not in held),
-                      "held": i in held} for i in page]
+                      "held": i in held,
+                      "copies": copies.get(i, (1, 0, None))[0],
+                      "pending": copies.get(i, (1, 0, None))[1],
+                      "sig": copies.get(i, (1, 0, None))[2]} for i in page]
             out = {"total": total, "corrected": len(done) - len(held), "held": len(held),
                    "items": items, "filtered": filtered, "matched": matched,
-                   "offset": offset, "n": n, "indexing": indexing}
+                   "offset": offset, "n": n, "indexing": indexing,
+                   "grouped": bool(group_f and sig_of), "dedup": sig_of is not None}
             return self._send(200, json.dumps(out, ensure_ascii=False))
         if p.startswith("/api/graph/"):
             gid = p[len("/api/graph/"):]
