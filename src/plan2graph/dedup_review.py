@@ -565,8 +565,7 @@ async function openGroup(sig){
       ${g.scope==='unknown'?`<span class="badge warn" title="parsed 현관 ${g.parsed_ent}개 — 전실 오라벨일 수 있어 단정 못 함">평면 구분 미확정</span>`:''}
       ${g.verts&&g.verts<20?`<span class="badge warn">서명 약함(좌표 ${g.verts}개) — 다른 도면이 섞였는지 눈으로 확인</span>`:''}
       ${g.pixel?`<span class="badge${g.pixel==='other'?' warn':''}">원본 픽셀: ${PIX_KO[g.pixel]||g.pixel}</span>`:''}
-      ${g.n_bad?`<span class="badge warn" title="${g.bad.join('
-')}">주석-그림 어긋남 ${g.n_bad}장 — 전파에서 자동 제외</span>`:''}
+      ${g.n_bad?`<span class="badge warn" title="${g.bad.join(', ')}">주석-그림 어긋남 ${g.n_bad}장 — 전파에서 자동 제외</span>`:''}
       ${g.stale?'<span class="badge warn">전파됨 · 인덱스 재계산 필요</span>':''}
     </div>
     <p class="note">아래 카드가 <b>같은 도면인데 서로 다르게 보정된 결과</b>입니다.
