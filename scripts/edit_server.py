@@ -438,6 +438,9 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>정보 보정 에디터</title>
 <style>
+a.dedup{display:block;text-align:center;margin:4px 0;padding:5px;border-radius:6px;
+  background:#243044;color:#8fc3ff;text-decoration:none;font-size:12px}
+a.dedup:hover{background:#2c3d58}
  :root{
    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a; --line2:#363c49;
    --txt:#e6e8ee; --muted:#9aa3b2; --accent:#3b82f6; --accent2:#22d3ee;
@@ -684,6 +687,8 @@ _HTML = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
      <select id="fScope" title="단위세대/층평면도로 거르기"><option value="">단위/층 전체</option></select>
    </div>
    <label class="holdchk"><input type="checkbox" id="fHold"> 🔖 모호(보류)만 보기</label>
+   <a class="dedup" href="/dedup" target="_blank"
+      title="같은 도면 사본을 묶어 비교·전파">🔁 중복 검수</a>
    <input id="search" placeholder="ID 일부로 검색 (예: cb4a)">
    <div class="nav pager">
      <button id="pprev" title="이전 100개">◀◀</button>
@@ -1336,8 +1341,33 @@ svg.addEventListener('mousemove',ev=>{
     r.setAttribute('x',Math.min(p[0],u[0]));r.setAttribute('y',Math.min(p[1],u[1]));
     r.setAttribute('width',Math.abs(u[0]-p[0]));r.setAttribute('height',Math.abs(u[1]-p[1]));}});
 
-renderCtx();loadList('');
+renderCtx();
+(async()=>{const _g=new URLSearchParams(location.search).get('gid');
+  if(_g){document.getElementById('search').value=_g;await loadList(_g);loadGraph(_g);}
+  else{await loadList('');}})();
 </script></body></html>"""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 중복 검수(🔁) — 같은 도면 사본을 묶어 비교·전파. 자립 모듈(plan2graph.dedup_review)에
+#   위임해 기존 에디터 화면/저장 경로는 손대지 않는다(에디터 회귀 위험 차단).
+#   인덱스는 scripts/dedup_index.py 가 만든 data/staging/dedup_index.json.
+# ─────────────────────────────────────────────────────────────────────────────
+DEDUP_INDEX = os.path.join(os.path.dirname(_BASE), "dedup_index.json")
+
+
+def _dedup_ctx():
+    return {"GRAPHS": GRAPHS, "EDITS": EDITS, "INDEX": DEDUP_INDEX,
+            "ROLE_COLOR": ROLE_COLOR, "PNG": _png_bytes}
+
+
+def _dedup_route(kind, *a):
+    try:
+        from plan2graph import dedup_review
+        fn = dedup_review.handle_get if kind == "get" else dedup_review.handle_post
+        return fn(*a, _dedup_ctx())
+    except Exception as e:  # noqa: BLE001
+        return 500, json.dumps({"error": f"dedup: {e}"}, ensure_ascii=False), "application/json"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1353,6 +1383,10 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         p = u.path
+        if p == "/dedup" or p.startswith("/api/dedup"):
+            r = _dedup_route("get", p, parse_qs(u.query))
+            if r:
+                return self._send(r[0], r[1], r[2])
         if p in ("/", "/index.html"):
             return self._send(200, _html(), "text/html; charset=utf-8")
         if p == "/api/graphs":
@@ -1442,6 +1476,10 @@ class H(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         ln = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(ln).decode("utf-8") if ln else "{}"
+        if u.path.startswith("/api/dedup"):
+            r = _dedup_route("post", u.path, raw)
+            if r:
+                return self._send(r[0], r[1], r[2])
         if u.path == "/api/merge":
             try:
                 body = json.loads(raw)
