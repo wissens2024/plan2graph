@@ -23,7 +23,8 @@ import shutil
 import threading
 import time
 
-from plan2graph.dedup import alignment_error, shape_sig, transform_graph
+from plan2graph.dedup import (alignment_error, corr_cells, same_correction, shape_sig,
+                              transform_graph)
 
 _IDX = None
 _IDX_MTIME = None
@@ -133,8 +134,10 @@ def thumb_png(ctx, gid, w=_THUMB_W):
 def propagate(ctx, sig, source, mode="fill", limit=None):
     """source 의 보정을 그룹 sig 의 형제 도면에 복사.
 
-    mode="fill"  : 아직 보정 없는 형제에만 채운다(기존 사람 보정 절대 안 건드림).
-    mode="unify" : 그룹 전체를 이 보정으로 통일(다른 변종 보정을 덮어씀 — 백업 후).
+    mode="fill"  : 아직 보정 없는 형제에만 채운다. 기존 사람 보정은 절대 안 건드림.
+    mode="unify" : 위 + **다르게 보정된** 형제까지 이 보정으로 덮어씀(백업 후).
+                   이미 같은 보정인 형제는 건너뛴다 — 내용이 같은데 덮어쓰면 사람 보정
+                   이력이 propagated 로 바뀌고 백업만 쌓이기 때문.
 
     반환 {written, skipped, overwritten, backup, errors}
     """
@@ -166,6 +169,7 @@ def propagate(ctx, sig, source, mode="fill", limit=None):
     if limit:
         targets = targets[:int(limit)]
 
+    src_cells, _roles = corr_cells(src_corr, t_src)     # unify 시 '이미 같은 보정' 판별용
     stamp = time.strftime("%Y%m%d_%H%M%S")
     backup = os.path.join(os.path.dirname(EDITS), "_dedup_backup", f"{stamp}_{sig[:8]}")
     written, skipped, overwritten, errors = [], [], [], []
@@ -182,14 +186,27 @@ def propagate(ctx, sig, source, mode="fill", limit=None):
             if not (err <= _ALIGN_TOL):        # inf/NaN 도 여기서 걸림
                 skipped.append([tid, f"정렬오차 {err:.1f}px"])
                 continue
+            dst = os.path.join(EDITS, tid + ".json")
+            if mode == "unify" and os.path.exists(dst):
+                try:
+                    with open(dst, encoding="utf-8") as fh:
+                        cur, _r = corr_cells(json.load(fh), t_tgt)
+                    if same_correction(src_cells, cur, 10.0):
+                        skipped.append([tid, "이미 같은 보정"])
+                        continue
+                except Exception:  # noqa: BLE001
+                    pass                       # 못 읽으면 그냥 덮어쓴다(백업은 아래서 뜸)
             g = transform_graph(src_corr, t_src, t_tgt, tid)
             meta = g.setdefault("meta", {})
+            # meta.propagated 는 옛 표본 전파(2026-08-05, 12건)와 공통인 유일한 플래그 —
+            # 옛 것은 correction_source 에 '출처 plan_id'를, 새 것은 문자열 'propagated'를
+            # 넣어 같은 키가 두 의미로 쓰인다. 판별은 항상 meta.propagated 로 할 것.
+            meta["propagated"] = True
             meta["correction_source"] = "propagated"
             meta["propagated_from"] = source
             meta["propagated_at"] = stamp
             meta["dedup_group"] = sig
             g["corrected"] = True
-            dst = os.path.join(EDITS, tid + ".json")
             if os.path.exists(dst):            # 사람 보정 덮어쓰기 = 반드시 백업
                 os.makedirs(backup, exist_ok=True)
                 shutil.copy2(dst, os.path.join(backup, tid + ".json"))
@@ -301,6 +318,7 @@ def handle_get(path, qs, ctx):
         uncorrected = [m for m in r["members"] if m not in set(r.get("corrected") or [])]
         return 200, json.dumps({"sig": sig, "n": r["n"], "status": r.get("status"),
                                 "pending": r.get("pending", 0),
+                                "corrected": len(r.get("corrected") or []),
                                 "entrance": r.get("n_entrance", 0),
                                 "verts": r.get("verts", 0),
                                 "house": r.get("house"), "scope": r.get("scope"),
@@ -521,7 +539,8 @@ async function openGroup(sig){
          <span class="p">${v.plus.join(' ')}</span> <span class="m">${v.minus.join(' ')}</span></div>`:''}
       <div class="tools">
         <button class="fill">미보정 ${g.pending}건 채우기</button>
-        <button class="unify danger">그룹 전체 통일 (${g.n-1}건)</button>
+        <button class="unify danger" title="미보정 ${g.pending}건 + 다르게 보정된 ${g.corrected-v.count}건">
+          그룹 전체 통일 (${g.pending+g.corrected-v.count}건)</button>
       </div>`;
     wrap.appendChild(c);
     c.querySelector('.pid').onclick=()=>window.open('./?gid='+v.rep,'_blank');
