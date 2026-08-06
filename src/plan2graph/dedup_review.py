@@ -252,11 +252,19 @@ def handle_get(path, qs, ctx):
         sort = qs.get("sort", ["corrected"])[0]
         n = int(qs.get("n", ["60"])[0])
         offset = int(qs.get("offset", ["0"])[0])
-        rows = []
+        house_f = qs.get("house", [""])[0]
+        scope_f = qs.get("scope", [""])[0]
+        rows, seen = [], {"conflict": 0, "agree": 0, "single": 0, "none": 0}
         for s, r in idx["groups"].items():
+            if house_f and r.get("house") != house_f:
+                continue
+            if scope_f and r.get("scope") != scope_f:
+                continue
+            seen[r.get("status")] = seen.get(r.get("status"), 0) + 1   # 필터 적용 후 요약
             if status != "all" and r.get("status") != status:
                 continue
             rows.append({"sig": s, "n": r["n"], "corrected": len(r.get("corrected") or []),
+                         "house": r.get("house"), "scope": r.get("scope"),
                          "variants": len(r.get("variants") or []),
                          "pending": r.get("pending", 0),
                          "entrance": r.get("n_entrance", 0), "verts": r.get("verts", 0),
@@ -269,10 +277,12 @@ def handle_get(path, qs, ctx):
         total = len(rows)
         return 200, json.dumps({"total": total, "offset": offset, "n": n,
                                 "items": rows[offset:offset + n],
-                                "summary": {k: idx.get(k) for k in
-                                            ("n_plans", "n_groups", "n_corrected",
-                                             "n_conflict", "n_agree", "n_single",
-                                             "built_at")}},
+                                "summary": {"n_groups": sum(seen.values()),
+                                             "n_conflict": seen.get("conflict", 0),
+                                             "n_agree": seen.get("agree", 0),
+                                             "n_single": seen.get("single", 0),
+                                             "n_none": seen.get("none", 0),
+                                             "built_at": idx.get("built_at")}},
                                ensure_ascii=False), "application/json"
 
     if path.startswith("/api/dedup/group/"):
@@ -293,6 +303,8 @@ def handle_get(path, qs, ctx):
                                 "pending": r.get("pending", 0),
                                 "entrance": r.get("n_entrance", 0),
                                 "verts": r.get("verts", 0),
+                                "house": r.get("house"), "scope": r.get("scope"),
+                                "parsed_ent": r.get("parsed_ent", 1),
                                 "stale": r.get("stale", False),
                                 "variants": out,
                                 "uncorrected": uncorrected[:200]},
@@ -373,6 +385,18 @@ svg.thumb{width:100%;height:210px;background:#fff;border-radius:6px;display:bloc
 <header>
   <h1>🔁 중복 도면 검수</h1>
   <span id="sum" class="badge">…</span>
+  <label>주거 <select id="fhouse">
+    <option value="APT">APT(아파트)</option>
+    <option value="">전체</option>
+    <option value="DEH">DEH(단독)</option>
+    <option value="ROW">ROW(연립)</option>
+  </select></label>
+  <label>평면 <select id="fscope">
+    <option value="unit">1세대 평면도</option>
+    <option value="">전체</option>
+    <option value="floor">층 평면도</option>
+    <option value="unknown">판정보류(현관2+·미보정)</option>
+  </select></label>
   <label>상태 <select id="fstatus">
     <option value="conflict">불일치(보정이 서로 다름)</option>
     <option value="single">보정 1건(비교 불가)</option>
@@ -396,6 +420,7 @@ svg.thumb{width:100%;height:210px;background:#fff;border-radius:6px;display:bloc
 <div id="toast"></div>
 <script>
 const COL=__COL__;
+const SCOPE_KO={unit:'1세대 평면도',floor:'층 평면도',unknown:'판정보류'};
 const $=s=>document.querySelector(s);
 let GROUPS=[],SEL=null,OFF=0,TOTAL=0;
 function colorOf(r){return COL[r]||'#9aa3b2';}
@@ -405,11 +430,14 @@ function toast(m,ms){const t=$('#toast');t.textContent=m;t.style.display='block'
 async function loadList(reset){
   if(reset)OFF=0;
   const st=$('#fstatus').value,so=$('#fsort').value;
-  const r=await(await fetch(`api/dedup/groups?status=${st}&sort=${so}&offset=${OFF}&n=80`)).json();
+  const hs=$('#fhouse').value,sc=$('#fscope').value;
+  const r=await(await fetch(`api/dedup/groups?status=${st}&sort=${so}&house=${hs}&scope=${sc}`
+    +`&offset=${OFF}&n=80`)).json();
   if(r.error){$('#list').innerHTML='<p class="note warn" style="padding:10px">'+r.error+'</p>';return;}
   const s=r.summary;
-  $('#sum').innerHTML=`고유도면 ${s.n_groups.toLocaleString()} · 보정 ${s.n_corrected.toLocaleString()} · `
-    +`불일치 <b>${s.n_conflict.toLocaleString()}</b> · 일치 ${s.n_agree.toLocaleString()}`;
+  $('#sum').innerHTML=`이 조건: 고유도면 ${s.n_groups.toLocaleString()} · `
+    +`불일치 <b>${s.n_conflict.toLocaleString()}</b> · 일치 ${s.n_agree.toLocaleString()} · `
+    +`단일 ${s.n_single.toLocaleString()} · 미보정 ${s.n_none.toLocaleString()}`;
   TOTAL=r.total;
   if(reset)GROUPS=[];
   GROUPS=GROUPS.concat(r.items);
@@ -470,7 +498,8 @@ async function openGroup(sig){
       <span class="badge">사본 ${g.n}</span>
       <span class="badge">변종 <b>${g.variants.length}</b></span>
       <span class="badge">미보정 ${g.pending}</span>
-      ${g.entrance>1?`<span class="badge warn">현관 ${g.entrance} — 세대분리 실패 의심</span>`:''}
+      <span class="badge">${g.house} · ${SCOPE_KO[g.scope]||g.scope}</span>
+      ${g.scope==='unknown'?`<span class="badge warn" title="parsed 현관 ${g.parsed_ent}개 — 전실 오라벨일 수 있어 단정 못 함">평면 구분 미확정</span>`:''}
       ${g.verts&&g.verts<20?`<span class="badge warn">서명 약함(좌표 ${g.verts}개) — 다른 도면이 섞였는지 눈으로 확인</span>`:''}
       ${g.stale?'<span class="badge warn">전파됨 · 인덱스 재계산 필요</span>':''}
     </div>
@@ -524,6 +553,8 @@ async function run(sig,src,mode,card){
 }
 
 $('#fstatus').onchange=()=>loadList(true);
+$('#fhouse').onchange=()=>loadList(true);
+$('#fscope').onchange=()=>loadList(true);
 $('#fsort').onchange=()=>loadList(true);
 $('#bg').onchange=()=>{if(SEL)openGroup(SEL);};
 $('#q').onkeydown=async e=>{

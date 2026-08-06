@@ -40,6 +40,28 @@ OUT_JSON = os.path.join(STAGING, "dedup_index.json")
 OUT_MD = os.path.join(ROOT, "docs", "DEDUP_CONFLICTS.md")
 
 
+# 층평면도 확정 신호 — 세대 안에는 있을 수 없는 공용부. parsed 파서는 이 역할을 못 내고
+# 사람이 보정하며 넣는다(실측: parsed 41,409장 중 8장뿐, 보정본엔 724장).
+COMMON_ROLES = {"엘리베이터", "엘리베이터홀", "계단실"}
+
+
+def classify_scope(parsed_ent, variants):
+    """단위세대/층평면도 판정 → 'unit' | 'floor' | 'unknown'.
+
+    ⚠ parsed 의 현관 수만으로 자르면 안 된다. 전실이 전부 '현관'으로 오라벨돼 있어
+    ([[vestibule-vs-entrance-mislabel]]) parsed 현관=2 중 1,326건이 보정 후 현관=1,
+    즉 **실은 단위세대**였다(실측, 55%). 그래서:
+      · 보정본이 있으면 → 사람이 고친 결과(공용부·현관수)로 확정
+      · 없고 현관≤1 → unit (보정본 대조 정확도 95%)
+      · 없고 현관≥2 → unknown (절반은 단위세대일 것이므로 'floor'로 단정 금지)
+    """
+    if variants:
+        common = any(r in COMMON_ROLES for v in variants for r in v["roles"])
+        ent = max((v["roles"].get("현관", 0) for v in variants), default=0)
+        return "floor" if (common or ent >= 2) else "unit"
+    return "unit" if parsed_ent <= 1 else "unknown"
+
+
 def roles_str(cnt):
     return " ".join(f"{k}×{v}" if v > 1 else k
                     for k, v in sorted(cnt.items(), key=lambda kv: (-kv[1], kv[0])))
@@ -74,7 +96,7 @@ def main():
     files = sorted(f for f in os.listdir(args.parsed) if f.endswith(".json"))
     print(f"[1/3] parsed 스캔 {len(files)}건 …", flush=True)
 
-    sig_of, tf_of, verts_of = {}, {}, {}
+    sig_of, tf_of, verts_of, ent_of = {}, {}, {}, {}
     groups = collections.defaultdict(list)
     for i, f in enumerate(files, 1):
         gid = f[:-5]
@@ -92,6 +114,8 @@ def main():
         if s not in verts_of:   # 서명이 몇 개의 좌표로 만들어졌나 = 서명 신뢰도
             verts_of[s] = sum(len(r["polygon"]) for r in (g.get("rooms") or {}).values()
                               if r.get("polygon"))
+            ent_of[s] = sum(1 for r in (g.get("rooms") or {}).values()
+                            if r.get("role") == "현관")
         if i % 5000 == 0:
             print(f"      {i}/{len(files)}", flush=True)
 
@@ -106,10 +130,12 @@ def main():
         members.sort()
         corr = [m for m in members if m in done]
         rec = {"members": members, "n": len(members), "corrected": corr,
-               "verts": verts_of.get(s, 0)}
+               "verts": verts_of.get(s, 0), "parsed_ent": ent_of.get(s, 1),
+               "house": members[0].split("_")[0]}
         if not corr:
             rec["status"] = "none"
             rec["pending"] = len(members)      # 아무도 안 건드린 그룹 = 전원이 미보정
+            rec["scope"] = classify_scope(rec["parsed_ent"], [])
             out_groups[s] = rec
             continue
         # 탐욕 클러스터링: 각 보정본을 기존 변종 대표와 허용오차 비교 → 같으면 합류, 아니면 새 변종
@@ -142,6 +168,7 @@ def main():
         variants.sort(key=lambda v: -v["count"])
         rec["variants"] = variants
         rec["n_entrance"] = max((v["roles"].get("현관", 0) for v in variants), default=0)
+        rec["scope"] = classify_scope(rec["parsed_ent"], variants)
         if len(rec["variants"]) >= 2:
             rec["status"] = "conflict"
             n_conflict += 1
@@ -171,7 +198,8 @@ def main():
     print("[3/3] 표 작성 …", flush=True)
     conf = [(s, r) for s, r in out_groups.items() if r["status"] == "conflict"]
     # 영향 큰 순: 보정본 수 × 변종 수, 그다음 미보정 형제 수(전파 이득)
-    conf.sort(key=lambda sr: (-len(sr[1]["corrected"]), -len(sr[1]["variants"]),
+    conf.sort(key=lambda sr: (sr[1].get("scope") != "unit",      # 1세대 평면도 먼저
+                              -len(sr[1]["corrected"]), -len(sr[1]["variants"]),
                               -sr[1]["pending"]))
     n_conf_files = sum(len(r["corrected"]) for _s, r in conf)
     n_conf_sib = sum(r["pending"] for _s, r in conf)
@@ -196,14 +224,35 @@ def main():
     L.append(f"| └ 불일치 그룹의 미보정 형제(전파 보류분) | {n_conf_sib:,} 건 |")
     L.append(f"| 보정 1건뿐(비교 불가·바로 전파 가능) | {n_single:,} 그룹 |")
     L.append("")
+    L.append("## 주거형태 · 평면 구분")
+    L.append("")
+    L.append("> `1세대`/`층`은 **현관 수만으로 자르지 않는다**. 전실이 현관으로 오라벨돼 있어")
+    L.append("> parsed 현관=2 중 절반 이상이 실은 1세대였다(실측). 보정본이 있으면 사람이 고친")
+    L.append("> 결과(공용부·현관수)로 확정하고, 없으면서 현관≥2면 `판정보류`로 남긴다.")
+    L.append("")
+    L.append("| 구분 | 그룹 | 도면 | 보정 | 미보정 | 불일치 그룹 |")
+    L.append("|---|--:|--:|--:|--:|--:|")
+    SCOPE_KO = {"unit": "1세대 평면도", "floor": "층 평면도", "unknown": "판정보류"}
+    for h in ("APT", "ROW", "DEH"):
+        for sc in ("unit", "floor", "unknown"):
+            gs = [r for r in out_groups.values()
+                  if r.get("house") == h and r.get("scope") == sc]
+            if not gs:
+                continue
+            L.append(f"| {h} · {SCOPE_KO[sc]} | {len(gs):,} | "
+                     f"{sum(r['n'] for r in gs):,} | "
+                     f"{sum(len(r['corrected']) for r in gs):,} | "
+                     f"{sum(r.get('pending', 0) for r in gs):,} | "
+                     f"{sum(1 for r in gs if r['status'] == 'conflict'):,} |")
+    L.append("")
     L.append("## 불일치 그룹 (영향 큰 순)")
     L.append("")
     L.append("`변종` = 서로 다른 보정 결과의 가짓수. 각 변종의 대표 도면번호를 열어 비교하면 된다.")
     L.append("")
-    L.append("`현관` 열이 2 이상이면 세대분리 실패(한 장에 여러 세대)라 보정 자체가 무의미할 수 있다.")
+    L.append("`구분`이 **층 평면도**면 한 장에 여러 세대가 들어간 도면 — 1세대 작업이 목표라면 건너뛴다.")
     L.append("")
-    L.append("| # | 그룹 | 사본 | 보정 | 변종 | 미보정 | 현관 | 변종별 대표 도면번호 → 역할구성 |")
-    L.append("|--:|---|--:|--:|--:|--:|--:|---|")
+    L.append("| # | 그룹 | 구분 | 사본 | 보정 | 변종 | 미보정 | 변종별 대표 도면번호 → 역할구성 |")
+    L.append("|--:|---|---|--:|--:|--:|--:|---|")
     for i, (s, r) in enumerate(conf[:args.md_top], 1):
         cells = []
         for v in r["variants"][:6]:
@@ -212,8 +261,9 @@ def main():
             cells.append(f"`{rep}`{more} → {roles_str(collections.Counter(v['roles']))}")
         if len(r["variants"]) > 6:
             cells.append(f"…외 {len(r['variants'])-6}개 변종")
-        L.append(f"| {i} | `{s}` | {r['n']} | {len(r['corrected'])} | "
-                 f"{len(r['variants'])} | {r['pending']} | {r.get('n_entrance', 0)} | "
+        L.append(f"| {i} | `{s}` | {r.get('house')}·{SCOPE_KO.get(r.get('scope'), '?')} | "
+                 f"{r['n']} | {len(r['corrected'])} | "
+                 f"{len(r['variants'])} | {r['pending']} | "
                  + "<br>".join(cells) + " |")
     if len(conf) > args.md_top:
         L.append("")
