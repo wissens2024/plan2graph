@@ -57,6 +57,35 @@ def load_index(ctx, force=False):
     return _IDX
 
 
+_PIX = None
+_PIX_MTIME = None
+
+
+def load_pixel_verify(ctx):
+    """dedup_pixel_verify.json → {bad: set(gid), verdict: {sig: 판정}}. 없으면 빈 값.
+
+    scripts/dedup_verify_pixels.py 가 원본 PNG 픽셀로 전수 검증한 결과.
+    bad = 주석이 자기 도면이 아닌 딴 도면에 얹힌 개별 도면(원본 AI-Hub 오류 후보) —
+    전파의 원본으로도, 대상으로도 쓰면 안 된다.
+    """
+    global _PIX, _PIX_MTIME
+    p = os.path.join(os.path.dirname(ctx["INDEX"]), "dedup_pixel_verify.json")
+    try:
+        mt = os.path.getmtime(p)
+    except OSError:
+        return {"bad": set(), "verdict": {}}
+    if _PIX is None or _PIX_MTIME != mt:
+        try:
+            with open(p, encoding="utf-8") as fh:
+                d = json.load(fh)
+            _PIX = {"bad": set(d.get("bad_members") or []),
+                    "verdict": d.get("verdict") or {}}
+            _PIX_MTIME = mt
+        except Exception:  # noqa: BLE001
+            return {"bad": set(), "verdict": {}}
+    return _PIX
+
+
 def _roles_str(roles):
     return " ".join(f"{k}×{v}" if v > 1 else k
                     for k, v in sorted(roles.items(), key=lambda kv: (-kv[1], kv[0])))
@@ -162,6 +191,10 @@ def propagate(ctx, sig, source, mode="fill", limit=None):
     if not t_src:
         return {"error": "원본 도형 서명 실패"}
 
+    pix = load_pixel_verify(ctx)
+    if source in pix["bad"]:
+        return {"error": "이 도면은 주석이 자기 그림과 어긋난다(원본 오류 후보): "
+                         + source + " — 다른 사본을 원본으로 고르세요."}
     have = {m for m in grp["members"] if os.path.exists(os.path.join(EDITS, m + ".json"))}
     targets = [m for m in grp["members"] if m != source]
     if mode == "fill":
@@ -174,6 +207,9 @@ def propagate(ctx, sig, source, mode="fill", limit=None):
     backup = os.path.join(os.path.dirname(EDITS), "_dedup_backup", f"{stamp}_{sig[:8]}")
     written, skipped, overwritten, errors = [], [], [], []
     for tid in targets:
+        if tid in pix["bad"]:          # 주석-그림 불일치 도면엔 전파하지 않는다
+            skipped.append([tid, "주석이 딴 그림에 얹힘(원본 오류)"])
+            continue
         tp = os.path.join(GRAPHS, tid + ".json")
         if not os.path.exists(tp):
             skipped.append([tid, "원본 없음"])
@@ -271,6 +307,7 @@ def handle_get(path, qs, ctx):
         offset = int(qs.get("offset", ["0"])[0])
         house_f = qs.get("house", [""])[0]
         scope_f = qs.get("scope", [""])[0]
+        pixv = load_pixel_verify(ctx)["verdict"]
         rows, seen = [], {"conflict": 0, "agree": 0, "single": 0, "none": 0}
         for s, r in idx["groups"].items():
             if house_f and r.get("house") != house_f:
@@ -285,6 +322,7 @@ def handle_get(path, qs, ctx):
                          "variants": len(r.get("variants") or []),
                          "pending": r.get("pending", 0),
                          "entrance": r.get("n_entrance", 0), "verts": r.get("verts", 0),
+                         "pixel": pixv.get(s),
                          "status": r.get("status"), "stale": r.get("stale", False)})
         key = {"corrected": lambda x: (-x["corrected"], -x["variants"]),
                "variants": lambda x: (-x["variants"], -x["corrected"]),
@@ -307,6 +345,7 @@ def handle_get(path, qs, ctx):
         r = idx["groups"].get(sig)
         if not r:
             return 404, json.dumps({"error": "그룹 없음"}, ensure_ascii=False), "application/json"
+        pix = load_pixel_verify(ctx)
         variants = list(r.get("variants") or [])
         base = variants[0]["roles"] if variants else {}
         out = []
@@ -316,11 +355,14 @@ def handle_get(path, qs, ctx):
                         "members": v["members"][:200], "n_rooms": v.get("n_rooms"),
                         "roles": _roles_str(v["roles"]), "plus": plus, "minus": minus})
         uncorrected = [m for m in r["members"] if m not in set(r.get("corrected") or [])]
+        badm = [m for m in r["members"] if m in pix["bad"]]
         return 200, json.dumps({"sig": sig, "n": r["n"], "status": r.get("status"),
                                 "pending": r.get("pending", 0),
                                 "corrected": len(r.get("corrected") or []),
                                 "entrance": r.get("n_entrance", 0),
                                 "verts": r.get("verts", 0),
+                                "pixel": pix["verdict"].get(sig), "bad": badm[:50],
+                                "n_bad": len(badm),
                                 "house": r.get("house"), "scope": r.get("scope"),
                                 "parsed_ent": r.get("parsed_ent", 1),
                                 "stale": r.get("stale", False),
@@ -439,6 +481,8 @@ svg.thumb{width:100%;height:210px;background:#fff;border-radius:6px;display:bloc
 <script>
 const COL=__COL__;
 const SCOPE_KO={unit:'1세대 평면도',floor:'층 평면도',unknown:'판정보류'};
+const PIX_KO={identical:'픽셀 완전동일',noise:'렌더 잡음만',annot:'주석만 차이',
+              other:'⚠ 픽셀 불일치',nodata:'원본 없음'};
 const $=s=>document.querySelector(s);
 let GROUPS=[],SEL=null,OFF=0,TOTAL=0;
 function colorOf(r){return COL[r]||'#9aa3b2';}
@@ -466,7 +510,8 @@ function renderList(){
     <div><b>${i+1}.</b> <span class="sig">${g.sig.slice(0,10)}</span>${g.stale?' ⟳':''}</div>
     <div class="num">사본 ${g.n} · 보정 ${g.corrected} · 변종 <b>${g.variants}</b> · 미보정 ${g.pending}
       ${g.entrance>1?` · <span class="warn" title="현관 ${g.entrance}개 = 세대분리 실패 의심">현관${g.entrance}</span>`:''}
-      ${g.verts&&g.verts<20?` · <span class="warn" title="서명이 좌표 ${g.verts}개로만 만들어짐 — 다른 도면이 섞였을 수 있음">서명약함</span>`:''}</div>
+      ${g.verts&&g.verts<20?` · <span class="warn" title="서명이 좌표 ${g.verts}개로만 만들어짐 — 다른 도면이 섞였을 수 있음">서명약함</span>`:''}
+      ${g.pixel==='other'?' · <span class="warn" title="원본 PNG 픽셀이 서로 달랐음 — 눈으로 확인 필요">픽셀불일치</span>':''}</div>
   </div>`).join('');
   $('#list').innerHTML=h+(GROUPS.length<TOTAL
     ?`<div style="padding:10px"><button id="more">더 보기 (${GROUPS.length}/${TOTAL})</button></div>`:'');
@@ -519,6 +564,9 @@ async function openGroup(sig){
       <span class="badge">${g.house} · ${SCOPE_KO[g.scope]||g.scope}</span>
       ${g.scope==='unknown'?`<span class="badge warn" title="parsed 현관 ${g.parsed_ent}개 — 전실 오라벨일 수 있어 단정 못 함">평면 구분 미확정</span>`:''}
       ${g.verts&&g.verts<20?`<span class="badge warn">서명 약함(좌표 ${g.verts}개) — 다른 도면이 섞였는지 눈으로 확인</span>`:''}
+      ${g.pixel?`<span class="badge${g.pixel==='other'?' warn':''}">원본 픽셀: ${PIX_KO[g.pixel]||g.pixel}</span>`:''}
+      ${g.n_bad?`<span class="badge warn" title="${g.bad.join('
+')}">주석-그림 어긋남 ${g.n_bad}장 — 전파에서 자동 제외</span>`:''}
       ${g.stale?'<span class="badge warn">전파됨 · 인덱스 재계산 필요</span>':''}
     </div>
     <p class="note">아래 카드가 <b>같은 도면인데 서로 다르게 보정된 결과</b>입니다.

@@ -20,6 +20,7 @@
       읽기 전용 — 보정본을 고치지 않는다. 시트 PNG는 zip에서 메모리로만 읽고 캐시에 쓰지 않는다.
 """
 import argparse
+import collections
 import hashlib
 import io
 import json
@@ -127,6 +128,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--tol", type=float, default=0.02, help="주석차로 볼 격자 상대차 상한")
+    ap.add_argument("--outlier", type=float, default=0.2,
+                    help="이 값을 넘으면 '주석이 딴 도면에 얹힌' 이탈 멤버로 분리")
     a = ap.parse_args()
 
     idx = json.load(open(INDEX, encoding="utf-8"))
@@ -151,8 +154,11 @@ def main():
                       f"(남은 ~{el/done*(len(jobs)-done):.0f}s)", flush=True)
 
     print("[분류] 그룹별 판정 …", flush=True)
+    # 그룹 안에 '주석이 딴 도면에 얹힌' 소수 멤버가 섞여 있을 수 있다(원본 AI-Hub 오류).
+    # 그런 한 장 때문에 그룹 전체를 불량으로 몰면 안 되므로, **중앙값 격자**를 기준으로
+    # 이탈 멤버를 따로 골라내고 나머지로 그룹을 판정한다(중앙값은 소수 이상치에 강함).
     cls = {"identical": 0, "noise": 0, "annot": 0, "other": 0, "nodata": 0}
-    detail, others = {}, []
+    detail, others, bad_members = {}, [], []
     for s, r in groups.items():
         fs = [(m, feats.get(m)) for m in r["members"]]
         ok = [(m, f) for m, f in fs if f]
@@ -160,35 +166,43 @@ def main():
             cls["nodata"] += 1
             detail[s] = "nodata"
             continue
-        ref = ok[0][1]
-        if len({f["e"] for _m, f in ok}) == 1:
+        shp = collections.Counter(tuple(f["s"]) for _m, f in ok).most_common(1)[0][0]
+        main = [(m, f) for m, f in ok if tuple(f["s"]) == shp]
+        odd = [m for m, f in ok if tuple(f["s"]) != shp]        # 크기부터 다른 멤버
+        if len(main) < 2:
+            cls["other"] += 1
+            detail[s] = "other"
+            others.append([s, r["n"], "크기제각각"])
+            continue
+        gs = np.stack([np.asarray(f["g"], dtype=np.float32) for _m, f in main])
+        med = np.median(gs, axis=0)
+        base = max(1.0, float(med.sum()))
+        dev = np.abs(gs - med).sum(axis=1) / base
+        keep = [main[i] for i in range(len(main)) if dev[i] <= a.outlier]
+        odd += [main[i][0] for i in range(len(main)) if dev[i] > a.outlier]
+        for m in odd:
+            bad_members.append(m)
+        if len(keep) < 2:
+            cls["other"] += 1
+            detail[s] = "other"
+            others.append([s, r["n"], "합의 없음"])
+            continue
+        if len({f["e"] for _m, f in keep}) == 1:
             cls["identical"] += 1
             detail[s] = "identical"
-            continue
-        if len({f["i"] for _m, f in ok}) == 1:
+        elif len({f["i"] for _m, f in keep}) == 1:
             cls["noise"] += 1
             detail[s] = "noise"
-            continue
-        rg = np.asarray(ref["g"], dtype=np.float32)
-        base = max(1.0, float(rg.sum()))
-        worst, sizebad = 0.0, False
-        for _m, f in ok[1:]:
-            if f["s"] != ref["s"]:
-                sizebad = True
-                break
-            worst = max(worst, float(np.abs(np.asarray(f["g"], dtype=np.float32) - rg).sum()) / base)
-        if sizebad:
-            cls["other"] += 1
-            detail[s] = "other"
-            others.append([s, r["n"], "크기다름"])
-            continue
-        if worst <= a.tol:
-            cls["annot"] += 1
-            detail[s] = "annot"
         else:
-            cls["other"] += 1
-            detail[s] = "other"
-            others.append([s, r["n"], round(worst * 100, 2)])
+            kg = np.stack([np.asarray(f["g"], dtype=np.float32) for _m, f in keep])
+            worst = float(np.abs(kg - med).sum(axis=1).max()) / base
+            if worst <= a.tol:
+                cls["annot"] += 1
+                detail[s] = "annot"
+            else:
+                cls["other"] += 1
+                detail[s] = "other"
+                others.append([s, r["n"], round(worst * 100, 2)])
 
     tot = sum(cls.values()) - cls["nodata"]
     same = cls["identical"] + cls["noise"] + cls["annot"]
@@ -200,10 +214,13 @@ def main():
     print(f"  ④ 그 외(사람이 봐야 함)  : {cls['other']:,}")
     print(f"  · 원본 PNG 없어 판정불가 : {cls['nodata']:,}")
     print(f"  → 같은 도면 비율 : {100*same/max(1,tot):.2f}%")
+    print(f"  ⚠ 주석이 딴 도면에 얹힌 것으로 보이는 개별 도면 : {len(bad_members):,}장"
+          f"  (원본 AI-Hub 오류 후보 — 보정·전파에서 빼야 함)")
     others.sort(key=lambda x: -(x[1] if isinstance(x[1], int) else 0))
     json.dump({"built_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                "ink_threshold": INK_T, "grid": GRID, "tol": a.tol,
                "counts": cls, "same_ratio": round(100*same/max(1, tot), 2),
+               "outlier_tol": a.outlier, "bad_members": sorted(bad_members),
                "verdict": detail, "others": others[:500]},
               open(OUT, "w", encoding="utf-8"), ensure_ascii=False)
     print(f"  → {OUT}  ({time.time()-t0:.0f}s)")
