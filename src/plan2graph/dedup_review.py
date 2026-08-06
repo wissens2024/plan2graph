@@ -321,6 +321,8 @@ def page_html(ctx):
     return _PAGE.replace("__COL__", json.dumps(ctx.get("ROLE_COLOR") or {}, ensure_ascii=False))
 
 
+# 클라이언트 URL은 전부 **상대경로**. nginx가 /editor/ 하위로 프록시하므로(docs/nginx_editor.md)
+# 절대경로(/api/...)를 쓰면 도메인 루트로 나가 404가 된다. 로컬 터널(:8600/dedup)에서도 동일 동작.
 _PAGE = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>중복 도면 검수</title>
@@ -385,7 +387,7 @@ svg.thumb{width:100%;height:210px;background:#fff;border-radius:6px;display:bloc
   </select></label>
   <input id="q" placeholder="도면번호로 그룹 찾기" size="30">
   <label style="font-size:12px"><input type="checkbox" id="bg" checked> 원본 PNG</label>
-  <a href="/" target="_blank">에디터 →</a>
+  <a href="./" target="_blank">에디터 →</a>
 </header>
 <main>
   <div id="list"></div>
@@ -403,7 +405,7 @@ function toast(m,ms){const t=$('#toast');t.textContent=m;t.style.display='block'
 async function loadList(reset){
   if(reset)OFF=0;
   const st=$('#fstatus').value,so=$('#fsort').value;
-  const r=await(await fetch(`/api/dedup/groups?status=${st}&sort=${so}&offset=${OFF}&n=80`)).json();
+  const r=await(await fetch(`api/dedup/groups?status=${st}&sort=${so}&offset=${OFF}&n=80`)).json();
   if(r.error){$('#list').innerHTML='<p class="note warn" style="padding:10px">'+r.error+'</p>';return;}
   const s=r.summary;
   $('#sum').innerHTML=`고유도면 ${s.n_groups.toLocaleString()} · 보정 ${s.n_corrected.toLocaleString()} · `
@@ -440,7 +442,7 @@ function drawThumb(svg,g){
   if(bgOn){   // 세대 영역만 잘라 축소한 원본(장당 ~50KB). 크롭 사각형 = viewBox 와 동일.
     const img=mk('image',{x:box[0],y:box[1],width:box[2],height:box[3],
       preserveAspectRatio:'none'});
-    img.setAttribute('href','/api/dedup/thumb/'+g.plan_id);
+    img.setAttribute('href','api/dedup/thumb/'+g.plan_id);
   }
   const rooms=Object.entries(g.rooms||{}).filter(([,r])=>r.polygon&&r.polygon.length>=3)
     .sort((a,c)=>(c[1].area_px||0)-(a[1].area_px||0));
@@ -461,7 +463,7 @@ function drawThumb(svg,g){
 async function openGroup(sig){
   SEL=sig;renderList();
   const d=$('#detail');d.innerHTML='<p class="note">불러오는 중…</p>';
-  const g=await(await fetch('/api/dedup/group/'+sig)).json();
+  const g=await(await fetch('api/dedup/group/'+sig)).json();
   if(g.error){d.innerHTML='<p class="note warn">'+g.error+'</p>';return;}
   d.innerHTML=`<div class="gh">
       <b style="font-family:ui-monospace,monospace">${sig}</b>
@@ -493,8 +495,8 @@ async function openGroup(sig){
         <button class="unify danger">그룹 전체 통일 (${g.n-1}건)</button>
       </div>`;
     wrap.appendChild(c);
-    c.querySelector('.pid').onclick=()=>window.open('/?gid='+v.rep,'_blank');
-    fetch('/api/graph/'+v.rep).then(r=>r.json()).then(r=>{
+    c.querySelector('.pid').onclick=()=>window.open('./?gid='+v.rep,'_blank');
+    fetch('api/graph/'+v.rep).then(r=>r.json()).then(r=>{
       if(r.graph)drawThumb(c.querySelector('svg'),r.graph);});
     c.querySelector('.fill').onclick=()=>run(sig,v.rep,'fill',c);
     c.querySelector('.unify').onclick=()=>run(sig,v.rep,'unify',c);
@@ -510,7 +512,7 @@ async function run(sig,src,mode,card){
     :`아직 보정 안 된 형제 도면에만 「${src}」 보정을 복사합니다.\n기존 보정은 건드리지 않습니다.\n진행할까요?`;
   if(!confirm(msg))return;
   card.querySelectorAll('button').forEach(b=>b.disabled=true);
-  const r=await(await fetch('/api/dedup/propagate',{method:'POST',
+  const r=await(await fetch('api/dedup/propagate',{method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({sig,source:src,mode})})).json();
   card.querySelectorAll('button').forEach(b=>b.disabled=false);
@@ -527,7 +529,7 @@ $('#bg').onchange=()=>{if(SEL)openGroup(SEL);};
 $('#q').onkeydown=async e=>{
   if(e.key!=='Enter')return;
   const pid=$('#q').value.trim();if(!pid)return;
-  const r=await(await fetch('/api/dedup/find/'+encodeURIComponent(pid))).json();
+  const r=await(await fetch('api/dedup/find/'+encodeURIComponent(pid))).json();
   if(r.sig){openGroup(r.sig);toast('그룹 '+r.sig);}else toast('그 도면번호의 그룹을 못 찾음');
 };
 loadList(true);

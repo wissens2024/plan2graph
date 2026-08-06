@@ -687,7 +687,7 @@ a.dedup:hover{background:#2c3d58}
      <select id="fScope" title="단위세대/층평면도로 거르기"><option value="">단위/층 전체</option></select>
    </div>
    <label class="holdchk"><input type="checkbox" id="fHold"> 🔖 모호(보류)만 보기</label>
-   <a class="dedup" href="/dedup" target="_blank"
+   <a class="dedup" href="dedup" target="_blank"
       title="같은 도면 사본을 묶어 비교·전파">🔁 중복 검수</a>
    <input id="search" placeholder="ID 일부로 검색 (예: cb4a)">
    <div class="nav pager">
