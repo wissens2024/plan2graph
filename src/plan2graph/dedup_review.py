@@ -242,7 +242,9 @@ def propagate(ctx, sig, source, mode="fill", limit=None):
             meta["propagated_from"] = source
             meta["propagated_at"] = stamp
             meta["dedup_group"] = sig
-            g["corrected"] = True
+            # 보류('모호') 보정을 복사하면 사본도 보류다 — 에디터 저장과 같은 규칙.
+            # (예전엔 무조건 True 라 review_status='모호'인데 corrected=True 인 모순이 생겼다)
+            g["corrected"] = (meta.get("review_status") != "모호")
             if os.path.exists(dst):            # 사람 보정 덮어쓰기 = 반드시 백업
                 os.makedirs(backup, exist_ok=True)
                 shutil.copy2(dst, os.path.join(backup, tid + ".json"))
@@ -317,7 +319,9 @@ def handle_get(path, qs, ctx):
             seen[r.get("status")] = seen.get(r.get("status"), 0) + 1   # 필터 적용 후 요약
             if status != "all" and r.get("status") != status:
                 continue
+            mem = r.get("members") or []
             rows.append({"sig": s, "n": r["n"], "corrected": len(r.get("corrected") or []),
+                         "rep": (mem[0] if mem else None),
                          "house": r.get("house"), "scope": r.get("scope"),
                          "variants": len(r.get("variants") or []),
                          "pending": r.get("pending", 0),
@@ -371,9 +375,23 @@ def handle_get(path, qs, ctx):
                                ensure_ascii=False), "application/json"
 
     if path.startswith("/api/dedup/find/"):
+        # 전체 plan_id 정확 일치 → 없으면 부분 문자열(대소문자 무시)로 찾는다.
+        # 알바는 'APT_FP_011c8c3d_17446941_u2' 를 통째로 치지 않고 '011c8c3d' 만 친다.
         pid = path[len("/api/dedup/find/"):]
-        sig = (idx.get("sig_of") or {}).get(pid)
-        return 200, json.dumps({"sig": sig}, ensure_ascii=False), "application/json"
+        so = idx.get("sig_of") or {}
+        sig = so.get(pid)
+        hit, n = pid, 1
+        if not sig and pid:
+            q = pid.lower()
+            cands = [g for g in so if q in g.lower()]
+            n = len(cands)
+            if cands:
+                cands.sort()
+                hit = cands[0]
+                sig = so[hit]
+        return 200, json.dumps({"sig": sig, "matched": hit if sig else None,
+                                "count": n if sig else 0},
+                               ensure_ascii=False), "application/json"
     return 404, json.dumps({"error": "404"}), "application/json"
 
 
@@ -421,7 +439,8 @@ main{display:grid;grid-template-columns:270px 1fr;height:calc(100vh - 49px)}
 #list .row{padding:7px 10px;border-bottom:1px solid #1c2430;cursor:pointer;font-size:12px}
 #list .row:hover{background:#1a212c}
 #list .row.sel{background:#1e3a5f}
-#list .row .sig{color:var(--dim);font-family:ui-monospace,monospace;font-size:11px}
+#list .row .sig{color:var(--dim);font-family:ui-monospace,monospace;font-size:10px}
+#list .row .pid{color:var(--acc);font-family:ui-monospace,monospace;font-size:11px}
 #list .row .num b{color:var(--warn)}
 #detail{overflow:auto;padding:14px}
 .gh{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
@@ -469,7 +488,7 @@ svg.thumb{width:100%;height:210px;background:#fff;border-radius:6px;display:bloc
     <option value="pending">미보정 많은 순</option>
     <option value="members">사본 많은 순</option>
   </select></label>
-  <input id="q" placeholder="도면번호로 그룹 찾기" size="30">
+  <input id="q" placeholder="도면번호 일부로 그룹 찾기 (예: 011c8c3d)" size="34">
   <label style="font-size:12px"><input type="checkbox" id="bg" checked> 원본 PNG</label>
   <a href="./" target="_blank">에디터 →</a>
 </header>
@@ -507,7 +526,8 @@ async function loadList(reset){
 }
 function renderList(){
   const h=GROUPS.map((g,i)=>`<div class="row${SEL===g.sig?' sel':''}" data-sig="${g.sig}">
-    <div><b>${i+1}.</b> <span class="sig">${g.sig.slice(0,10)}</span>${g.stale?' ⟳':''}</div>
+    <div><b>${i+1}.</b> <span class="pid">${(g.rep||g.sig).replace(/^(APT|DEH|ROW)_FP_/,'')}</span>${g.stale?' ⟳':''}</div>
+    <div class="sig" title="그룹 서명">${g.sig.slice(0,10)}</div>
     <div class="num">사본 ${g.n} · 보정 ${g.corrected} · 변종 <b>${g.variants}</b> · 미보정 ${g.pending}
       ${g.entrance>1?` · <span class="warn" title="현관 ${g.entrance}개 = 세대분리 실패 의심">현관${g.entrance}</span>`:''}
       ${g.verts&&g.verts<20?` · <span class="warn" title="서명이 좌표 ${g.verts}개로만 만들어짐 — 다른 도면이 섞였을 수 있음">서명약함</span>`:''}
@@ -627,7 +647,9 @@ $('#q').onkeydown=async e=>{
   if(e.key!=='Enter')return;
   const pid=$('#q').value.trim();if(!pid)return;
   const r=await(await fetch('api/dedup/find/'+encodeURIComponent(pid))).json();
-  if(r.sig){openGroup(r.sig);toast('그룹 '+r.sig);}else toast('그 도면번호의 그룹을 못 찾음');
+  if(r.sig){openGroup(r.sig);
+    toast('찾음: '+(r.matched||'')+(r.count>1?(' (일치 '+r.count+'건 중 첫 번째)'):''));}
+  else toast('그 도면번호를 가진 그룹이 없습니다 — 번호 일부만 넣어도 됩니다');
 };
 loadList(true);
 </script></body></html>"""

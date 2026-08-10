@@ -906,6 +906,7 @@ async function loadGraph(id){
   const r=await(await fetch('api/graph/'+id)).json();
   if(r.error){toast('로드 실패: '+r.error);return;}
   G=r.graph;GID=id;sel=null;adjA=null;mergeSel=[];rulerPts=[];undoStack=[];
+  EDITED=!!r.edited;
   showSiblings(id);
   document.getElementById('undo').disabled=true;setDirty(false);
   document.getElementById('pid').textContent=id;
@@ -960,7 +961,7 @@ function showStatus(st){
 
 // ── 형제 도면(같은 도면 사본) 전파 ──────────────────────────────────────────
 //    보정 1건 → 나머지 사본에 좌표 변환으로 복사. 기존 보정은 안 건드림(fill 모드).
-let SIB=null;
+let SIB=null,EDITED=false;
 async function showSiblings(id){
   const box=document.getElementById('sibbox');if(!box)return;
   SIB=null;box.style.display='none';box.innerHTML='';
@@ -973,11 +974,15 @@ async function showSiblings(id){
   if(!g||g.error||!g.n||g.n<2)return;
   SIB={sig,pending:g.pending};
   box.style.display='block';
-  box.innerHTML='🔁 같은 도면 <b>'+g.n+'장</b> · 미보정 <b>'+g.pending+'</b>건'
-    +'<button id="sibgo"'+(g.pending?'':' disabled')+'>'
-    +(g.pending?('이 보정을 형제 '+g.pending+'건에 복사'):'미보정 형제 없음')+'</button>';
+  // 전파는 '저장된 보정'을 복사하는 것 — 이 도면이 아직 미보정이면 원본이 없다.
+  const ready=EDITED, n=g.pending;
+  box.innerHTML='🔁 같은 도면 <b>'+g.n+'장</b> · 미보정 <b>'+n+'</b>건'
+    +(ready?'':'<div style="color:#ffb454;margin-top:3px">이 도면을 먼저 보정·저장하세요</div>')
+    +'<button id="sibgo"'+(ready&&n?'':' disabled')+'>'
+    +(!ready?'저장 후 복사 가능':(n?('이 보정을 형제 '+n+'건에 복사'):'미보정 형제 없음'))
+    +'</button>';
   const b=document.getElementById('sibgo');
-  if(b)b.onclick=()=>propagateSiblings();
+  if(b&&ready&&n)b.onclick=()=>propagateSiblings();
 }
 async function propagateSiblings(){
   if(!SIB||!GID)return;
@@ -1189,6 +1194,7 @@ async function applyScaleVal(mmpp,src,note){if(!G||!mmpp||mmpp<=0)return;
   const r=await(await fetch('api/graph/'+GID,{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(G)})).json();          // B: 적용 즉시 저장(edits/)
   setDirty(false);if(r.status)showStatus(r.status);renderCtx();
+  EDITED=true;showSiblings(GID);   // 저장됐으니 전파 가능 — 미보정 건수도 다시 센다
   toast('스케일 '+G.scale_mm_per_px+' mm/px 저장됨'+(note?(' · '+note):'')+(a?(' · 전용 ≈'+a.toFixed(1)+'㎡'):''));}
 function applyRuler(){const mm=parseFloat(document.getElementById('rmm').value);
   const px=rulerPx();
@@ -1606,7 +1612,9 @@ class H(BaseHTTPRequestHandler):
             g = json.load(open(gp, encoding="utf-8"))
             g = _enrich_doors(g)
             _derive_unit_meta(g)   # 평면도 구분·세대수 기본값(현관 수) 채워 표시
-            return self._send(200, json.dumps({"graph": g, "status": _status(g)}, ensure_ascii=False))
+            edited = os.path.exists(os.path.join(EDITS, gid + ".json"))
+            return self._send(200, json.dumps({"graph": g, "status": _status(g),
+                                               "edited": edited}, ensure_ascii=False))
         if p.startswith("/api/png/"):
             gid = p[len("/api/png/"):]
             data = _png_bytes(gid)
