@@ -305,25 +305,77 @@ def _status(g):
         return {"clean": None, "reasons": [f"판정불가: {e}"]}
 
 
-_REVIEW_CACHE = {}   # gid -> (mtime, review_status) : 목록 조회 시 보류('모호') 판정 캐시
+# ── 보정본 meta 캐시 ─────────────────────────────────────────────────────────
+#   목록 조회는 edits 전체의 meta(보류 여부·주거형태)를 봐야 한다. 그런데 파일이
+#   7,700건·408MB라 매 요청 전량 파싱하면 6.6초가 걸리고(재시작 직후 첫 요청은 수 분)
+#   화면이 죽은 것처럼 보인다. 그래서 **meta만** mtime 캐시에 담고 바뀐 파일만 다시 읽는다.
+#   (전량 stat 는 남지만 1만 건이라도 수십 ms 수준)
+_REVIEW_CACHE = {}          # gid -> (mtime, meta)  ※ 값이 meta 전체로 바뀜
+_META_LOCK = threading.Lock()
+_EDIT_META_STATE = "idle"   # idle | warming | ready
+
+
+def _edit_meta_overlay():
+    """{gid: meta} — edits 의 meta 캐시. 바뀐 파일만 재파싱한다."""
+    global _EDIT_META_STATE
+    try:
+        names = [f for f in os.listdir(EDITS) if f.endswith(".json")]
+    except OSError:
+        return {}
+    with _META_LOCK:
+        cur = set()
+        for f in names:
+            gid = f[:-5]
+            cur.add(gid)
+            p = os.path.join(EDITS, f)
+            try:
+                mt = os.path.getmtime(p)
+            except OSError:
+                continue
+            c = _REVIEW_CACHE.get(gid)
+            if c and c[0] == mt:
+                continue
+            try:
+                with open(p, encoding="utf-8") as fh:
+                    meta = json.load(fh).get("meta") or {}
+            except Exception:  # noqa: BLE001
+                meta = {}
+            _REVIEW_CACHE[gid] = (mt, meta)
+        stale = [g for g in _REVIEW_CACHE if g not in cur]
+        for g in stale:                                          # 삭제된 보정본 정리
+            del _REVIEW_CACHE[g]
+        _EDIT_META_STATE = "ready"
+        return {g: v[1] for g, v in _REVIEW_CACHE.items()}
+
+
+def _warm_edit_meta():
+    global _EDIT_META_STATE
+    _EDIT_META_STATE = "warming"
+    try:
+        n = len(_edit_meta_overlay())
+        print(f"[edit-meta] ready ({n} gids)")
+    except Exception as e:  # noqa: BLE001
+        print(f"[edit-meta] 실패: {e}")
 
 
 def _review_status(gid):
-    """edits/<gid>.json 의 meta.review_status('모호' 등). mtime 캐시로 반복 조회 저렴."""
+    """edits/<gid>.json 의 meta.review_status('모호' 등). meta 캐시 위에서 조회."""
     p = os.path.join(EDITS, gid + ".json")
     try:
         mt = os.path.getmtime(p)
     except OSError:
         return None
     c = _REVIEW_CACHE.get(gid)
-    if c and c[0] == mt:
-        return c[1]
-    try:
-        rs = (json.load(open(p, encoding="utf-8")).get("meta") or {}).get("review_status")
-    except Exception:  # noqa: BLE001
-        rs = None
-    _REVIEW_CACHE[gid] = (mt, rs)
-    return rs
+    if not (c and c[0] == mt):
+        try:
+            with open(p, encoding="utf-8") as fh:
+                meta = json.load(fh).get("meta") or {}
+        except Exception:  # noqa: BLE001
+            meta = {}
+        with _META_LOCK:
+            _REVIEW_CACHE[gid] = (mt, meta)
+        c = (mt, meta)
+    return (c[1] or {}).get("review_status")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1467,7 +1519,9 @@ class H(BaseHTTPRequestHandler):
             done = set()
             if os.path.isdir(EDITS):
                 done = {f[:-5] for f in os.listdir(EDITS) if f.endswith(".json")}
-            held = {i for i in done if _review_status(i) == "모호"}
+            meta_all = _edit_meta_overlay()          # 캐시(바뀐 파일만 재파싱)
+            held = {i for i, m in meta_all.items()
+                    if (m or {}).get("review_status") == "모호"}
             ids = []
             try:
                 with os.scandir(GRAPHS) as it:
@@ -1483,14 +1537,8 @@ class H(BaseHTTPRequestHandler):
             indexing = False
             filtered = None
             if house_f or scope_f:
-                # 사람보정(edits) 메타를 인덱스 위에 오버레이해 필터링
-                overlay = {}
-                for gid in done:
-                    try:
-                        overlay[gid] = (json.load(open(os.path.join(EDITS, gid + ".json"),
-                                                        encoding="utf-8")).get("meta") or {})
-                    except Exception:  # noqa: BLE001
-                        pass
+                # 사람보정(edits) 메타를 인덱스 위에 오버레이해 필터링 (캐시 재사용)
+                overlay = meta_all
                 idx = _META_IDX or {}
                 indexing = _META_IDX_STATE != "ready"
 
@@ -1645,7 +1693,8 @@ class H(BaseHTTPRequestHandler):
             _derive_unit_meta(g)   # 평면도 구분·세대수 기본값 확정 저장(필터 일관)
             with open(os.path.join(EDITS, gid + ".json"), "w", encoding="utf-8") as f:
                 json.dump(g, f, ensure_ascii=False)
-            _REVIEW_CACHE.pop(gid, None)
+            with _META_LOCK:
+                _REVIEW_CACHE.pop(gid, None)     # 다음 조회에서 새 meta 로 갱신
             return self._send(200, json.dumps({"ok": True, "held": _held, "status": _status(g)}, ensure_ascii=False))
         return self._send(404, json.dumps({"error": "404"}))
 
@@ -1669,6 +1718,7 @@ def main():
         return
     threading.Thread(target=_build_png_index, daemon=True).start()   # 백그라운드 인덱스
     threading.Thread(target=_build_meta_index, daemon=True).start()  # 필터 인덱스(주거형태·단위/층)
+    threading.Thread(target=_warm_edit_meta, daemon=True).start()    # 보정본 meta 예열(첫 조회 지연 제거)
     print(f"정보 보정 에디터 → http://localhost:{a.port}")
     print(f"  원본={GRAPHS}\n  작업={EDITS}\n  PNG캐시={PNG_CACHE}")
     ThreadingHTTPServer(("127.0.0.1", a.port), H).serve_forever()
