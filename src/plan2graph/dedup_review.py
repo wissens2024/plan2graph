@@ -249,8 +249,10 @@ def propagate(ctx, sig, source, mode="fill", limit=None):
                 os.makedirs(backup, exist_ok=True)
                 shutil.copy2(dst, os.path.join(backup, tid + ".json"))
                 overwritten.append(tid)
-            with open(dst, "w", encoding="utf-8") as fh:
+            tmp = "%s.%d.tmp" % (dst, threading.get_ident())   # 원자적 저장 — 에디터 저장과 겹쳐도 안 깨지게
+            with open(tmp, "w", encoding="utf-8") as fh:
                 json.dump(g, fh, ensure_ascii=False)
+            os.replace(tmp, dst)
             written.append(tid)
         except Exception as e:  # noqa: BLE001
             errors.append([tid, str(e)])

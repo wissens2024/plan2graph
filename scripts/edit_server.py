@@ -48,6 +48,15 @@ PNG_INDEX = os.path.join(_BASE, "_png_index.json")
 for d in (EDITS, PNG_CACHE):
     os.makedirs(d, exist_ok=True)
 
+
+def _write_json(path, obj):
+    """원자적 저장(tmp→os.replace). 스레드 서버라 같은 파일에 두 요청이 겹칠 수 있다 —
+    open('w') 두 개가 겹치면 짧은 쪽이 긴 쪽 꼬리를 남겨 JSON이 깨진다(2026-08·10 edits 36건)."""
+    tmp = "%s.%d.%d.tmp" % (path, os.getpid(), threading.get_ident())
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False)
+    os.replace(tmp, path)
+
 # ── 역할 팔레트(키보드 단축키 1..0,a..) — 자주 쓰는 순. ──
 #    앞부분=자주 쓰는 순 고정, 그 뒤에 ROLES의 누락분을 자동 append(canonical 어휘
 #    확장 시 에디터 팔레트가 자동 동기화 — 대피공간/테라스 등 신규 역할 드리프트 방지,
@@ -1681,8 +1690,7 @@ class H(BaseHTTPRequestHandler):
                             g2 = json.load(open(_graph_path(g2id), encoding="utf-8"))
                             _apply_scale(g2, sc, "measured")
                             g2["corrected"] = True
-                            json.dump(g2, open(os.path.join(EDITS, g2id + ".json"), "w", encoding="utf-8"),
-                                      ensure_ascii=False)
+                            _write_json(os.path.join(EDITS, g2id + ".json"), g2)
                             count += 1
                         except Exception:  # noqa: BLE001
                             pass
@@ -1699,8 +1707,7 @@ class H(BaseHTTPRequestHandler):
             if _hc in HOUSING_NORM:
                 _apply_house(g, _hc)
             _derive_unit_meta(g)   # 평면도 구분·세대수 기본값 확정 저장(필터 일관)
-            with open(os.path.join(EDITS, gid + ".json"), "w", encoding="utf-8") as f:
-                json.dump(g, f, ensure_ascii=False)
+            _write_json(os.path.join(EDITS, gid + ".json"), g)
             with _META_LOCK:
                 _REVIEW_CACHE.pop(gid, None)     # 다음 조회에서 새 meta 로 갱신
             return self._send(200, json.dumps({"ok": True, "held": _held, "status": _status(g)}, ensure_ascii=False))
