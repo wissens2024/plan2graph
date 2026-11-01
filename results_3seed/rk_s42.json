@@ -1,0 +1,37 @@
+{
+ "ckpt": "ckpts/korplan_ar_rk_gated_seed42_roomperm_ep180.pt",
+ "epoch": 180,
+ "n": 1000,
+ "eval_seed": 42,
+ "country": 0,
+ "thresholds": {
+  "aspect_max": 10.0,
+  "fp_fill": 0.6,
+  "fp_convex": 0.7,
+  "overlap": 0.25
+ },
+ "tally": {
+  "decoded": 999,
+  "single_strict": 788,
+  "single_2pct": 857,
+  "selfint0": 544,
+  "overlap_ok": 792,
+  "span_ok": 984,
+  "geo_clean": 541,
+  "drawable": 490
+ },
+ "sensitivity_shapeok": {
+  "ov0.1_asp6": 399,
+  "ov0.1_asp8": 463,
+  "ov0.1_asp10": 473,
+  "ov0.1_asp12": 473,
+  "ov0.25_asp6": 412,
+  "ov0.25_asp8": 479,
+  "ov0.25_asp10": 490,
+  "ov0.25_asp12": 490,
+  "ov0.5_asp6": 413,
+  "ov0.5_asp8": 480,
+  "ov0.5_asp10": 492,
+  "ov0.5_asp12": 492
+ }
+}

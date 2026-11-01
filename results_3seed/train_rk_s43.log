@@ -1,0 +1,33 @@
+[seed] 고정 seed=43 (torch/cuda/numpy/random) — 재현 가능 학습
+[room-perm] 방-permutation 증강 ON (p=0.5)
+/home/ju/plan2graph/scripts/train_wall_cycle.py:156: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  ckpt = torch.load(ckpt_path, map_location=dev)
+/home/ju/plan2graph/scripts/train_wall_cycle.py:189: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler(enabled=args.amp)
+[data] 9397 seqs, vocab=520, device=cuda
+[CKPT-DEBUG] dim_ff=1408 from mlp_w1_shape=torch.Size([1408, 512])
+[ckpt] ckpts/korplan_ar_r_roomperm_seed42_ep80.pt → d=512 L=24 H=32 dim_ff=1408, ep81부터
+[model] 77.6M params, d=512 L=24 | grad_ckpt=True amp=True dim_ff=1408
+[init] 옵티마이저 상태 복원
+[constrained] decoding 마스크 ON (ADR-0012 §3)
+[DEBUG] ep81~180 학습 루프 시작
+ep  90 loss 0.3595 | valid 0.266 uniq 1.0 rooms~14.4(max18)
+  [ckpt] ep90 → ckpts/korplan_ar_rk_gated_roomperm_s43_ep90.pt
+ep 100 loss 0.1539 | valid 0.469 uniq 1.0 rooms~14.3(max20)
+  [ckpt] ep100 → ckpts/korplan_ar_rk_gated_roomperm_s43_ep100.pt
+ep 110 loss 0.1112 | valid 0.453 uniq 1.0 rooms~14.2(max18)
+  [ckpt] ep110 → ckpts/korplan_ar_rk_gated_roomperm_s43_ep110.pt
+ep 120 loss 0.0944 | valid 0.594 uniq 1.0 rooms~14.7(max19)
+  [ckpt] ep120 → ckpts/korplan_ar_rk_gated_roomperm_s43_ep120.pt
+ep 130 loss 0.0871 | valid 0.609 uniq 1.0 rooms~14.5(max21)
+  [ckpt] ep130 → ckpts/korplan_ar_rk_gated_roomperm_s43_ep130.pt
+ep 140 loss 0.0823 | valid 0.688 uniq 1.0 rooms~13.7(max18)
+  [ckpt] ep140 → ckpts/korplan_ar_rk_gated_roomperm_s43_ep140.pt
+ep 150 loss 0.0765 | valid 0.609 uniq 1.0 rooms~14.3(max19)
+  [ckpt] ep150 → ckpts/korplan_ar_rk_gated_roomperm_s43_ep150.pt
+ep 160 loss 0.0727 | valid 0.75 uniq 0.984 rooms~13.9(max19)
+  [ckpt] ep160 → ckpts/korplan_ar_rk_gated_roomperm_s43_ep160.pt
+ep 170 loss 0.0727 | valid 0.812 uniq 1.0 rooms~14.5(max20)
+  [ckpt] ep170 → ckpts/korplan_ar_rk_gated_roomperm_s43_ep170.pt
+ep 180 loss 0.0712 | valid 0.719 uniq 1.0 rooms~14.5(max18)
+  [ckpt] ep180 → ckpts/korplan_ar_rk_gated_roomperm_s43_ep180.pt

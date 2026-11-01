@@ -1,0 +1,4132 @@
+{
+ "ckpt": "ckpts/korplan_ar_rk_gated_seed42_roomperm_ep180.pt",
+ "epoch": 180,
+ "seed": 42,
+ "trials": 200,
+ "max_attempts": 10,
+ "thresholds": {
+  "aspect_max": 10.0,
+  "fp_fill": 0.6,
+  "fp_convex": 0.7,
+  "overlap": 0.25
+ },
+ "acceptance_criterion": "drawable-clean",
+ "independent": {
+  "trials": 200,
+  "accepted": 200,
+  "censored": 0,
+  "mean_tokens_to_accept": 683.7,
+  "mean_attempts_to_accept": 2.0,
+  "median_tokens_to_accept": 599.0,
+  "total_tokens_all_trials": 136738,
+  "rollback_used_total": 0,
+  "restarts_total": 0,
+  "fail_mode_tally": {
+   "selfint": 175,
+   "footprint_split": 22,
+   "overlap": 4
+  },
+  "per_trial": [
+   {
+    "accepted": true,
+    "tokens": 768,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 750,
+    "attempts": 2,
+    "fail_modes": [
+     "footprint_split"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 462,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 743,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 627,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1716,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 353,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1491,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 658,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 266,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 585,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 739,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 393,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 300,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1071,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 731,
+    "attempts": 2,
+    "fail_modes": [
+     "overlap"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 598,
+    "attempts": 2,
+    "fail_modes": [
+     "footprint_split"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 356,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1080,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 325,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 356,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 373,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 696,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 292,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 330,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 356,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 356,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 390,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1826,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 207,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1684,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 343,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1126,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 316,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 341,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 706,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 311,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 373,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 213,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 376,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 638,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 308,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 351,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 726,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 337,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1170,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 650,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 318,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 334,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 727,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 779,
+    "attempts": 2,
+    "fail_modes": [
+     "footprint_split"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1352,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "footprint_split",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 614,
+    "attempts": 2,
+    "fail_modes": [
+     "footprint_split"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 353,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 426,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 308,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 336,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 398,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 373,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 667,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 333,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 356,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 308,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1733,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 688,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1283,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 930,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 432,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 651,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1480,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1041,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 362,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 747,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 744,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 318,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 895,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 563,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1292,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 390,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 632,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 354,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 373,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 736,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1007,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 283,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1389,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "overlap"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 425,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 340,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1375,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 664,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 199,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 356,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 300,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1641,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "footprint_split"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1461,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 335,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 351,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 685,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 381,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 620,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1052,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 727,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1408,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 318,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 321,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 343,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 360,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 669,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 312,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 610,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 341,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1898,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "overlap"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 212,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 350,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2193,
+    "attempts": 7,
+    "fail_modes": [
+     "footprint_split",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 604,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 350,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 212,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 356,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 713,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 362,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 996,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "footprint_split"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1114,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 538,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 356,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 356,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 198,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1239,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1085,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 701,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 664,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 759,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 743,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 321,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 973,
+    "attempts": 3,
+    "fail_modes": [
+     "footprint_split",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 412,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 705,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2086,
+    "attempts": 6,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 208,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 284,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1413,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 442,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1009,
+    "attempts": 3,
+    "fail_modes": [
+     "footprint_split",
+     "footprint_split"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 540,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 631,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1070,
+    "attempts": 3,
+    "fail_modes": [
+     "footprint_split",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 360,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1078,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 744,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 675,
+    "attempts": 2,
+    "fail_modes": [
+     "footprint_split"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 337,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 212,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1110,
+    "attempts": 3,
+    "fail_modes": [
+     "footprint_split",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 953,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 361,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 263,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 294,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 237,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 622,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 341,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1013,
+    "attempts": 3,
+    "fail_modes": [
+     "footprint_split",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 318,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 657,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 352,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1061,
+    "attempts": 3,
+    "fail_modes": [
+     "footprint_split",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2825,
+    "attempts": 8,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "overlap",
+     "selfint",
+     "footprint_split",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1513,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 255,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 716,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 365,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 692,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 600,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 734,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1444,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "footprint_split",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 674,
+    "attempts": 2,
+    "fail_modes": [
+     "footprint_split"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 216,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 684,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1035,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1754,
+    "attempts": 5,
+    "fail_modes": [
+     "footprint_split",
+     "footprint_split",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 673,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 699,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1226,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1001,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 352,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 300,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 330,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 608,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 339,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1808,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 300,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 277,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2279,
+    "attempts": 6,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "footprint_split"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 318,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 642,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 247,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 400,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 352,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1062,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1509,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 366,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   }
+  ]
+ },
+ "rollback": {
+  "trials": 200,
+  "accepted": 192,
+  "censored": 8,
+  "mean_tokens_to_accept": 845.0,
+  "mean_attempts_to_accept": 2.96,
+  "median_tokens_to_accept": 512.0,
+  "total_tokens_all_trials": 184129,
+  "rollback_used_total": 361,
+  "restarts_total": 0,
+  "fail_mode_tally": {
+   "selfint": 399,
+   "footprint_split": 50,
+   "overlap": 5,
+   "fill": 2
+  },
+  "per_trial": [
+   {
+    "accepted": true,
+    "tokens": 926,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 2,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1398,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2362,
+    "attempts": 9,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 6,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1268,
+    "attempts": 5,
+    "fail_modes": [
+     "footprint_split",
+     "footprint_split",
+     "selfint",
+     "footprint_split"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1528,
+    "attempts": 6,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 4,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 352,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2380,
+    "attempts": 9,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 6,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 967,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1489,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 352,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1131,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 731,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 2,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 577,
+    "attempts": 2,
+    "fail_modes": [
+     "fill"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 602,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 514,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 3029,
+    "attempts": 9,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 6,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1112,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "overlap",
+     "footprint_split"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2708,
+    "attempts": 10,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "footprint_split",
+     "footprint_split",
+     "selfint"
+    ],
+    "rollback_used": 7,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 348,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 814,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 2,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 337,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 338,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 372,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 337,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1469,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 321,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 310,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 495,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 363,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 466,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1521,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 271,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 622,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 614,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 339,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 561,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 317,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1805,
+    "attempts": 8,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 6,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 286,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 318,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1236,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 478,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 791,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1386,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 308,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 397,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 311,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 353,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1593,
+    "attempts": 6,
+    "fail_modes": [
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "selfint"
+    ],
+    "rollback_used": 4,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 616,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1445,
+    "attempts": 6,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 4,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 495,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 283,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 303,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": false,
+    "tokens": 2003,
+    "attempts": 10,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 7,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2036,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 301,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 611,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 449,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 362,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 229,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 348,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1891,
+    "attempts": 7,
+    "fail_modes": [
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 5,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1679,
+    "attempts": 6,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 4,
+    "restarts": 0
+   },
+   {
+    "accepted": false,
+    "tokens": 2809,
+    "attempts": 10,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 7,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 311,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 515,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 348,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 494,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2152,
+    "attempts": 8,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 6,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 352,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 337,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 308,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 331,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 353,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 373,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 339,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 320,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 431,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1692,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 429,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 277,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1324,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 405,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 403,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1417,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 318,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2594,
+    "attempts": 9,
+    "fail_modes": [
+     "selfint",
+     "overlap",
+     "overlap",
+     "overlap",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 6,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 346,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1904,
+    "attempts": 9,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 6,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1392,
+    "attempts": 5,
+    "fail_modes": [
+     "overlap",
+     "footprint_split",
+     "footprint_split",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 321,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 530,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 361,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 651,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 378,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 356,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 347,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 311,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 569,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 235,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 348,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1553,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1517,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1483,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": false,
+    "tokens": 2896,
+    "attempts": 10,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 7,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 319,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 336,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 556,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 449,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 269,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2192,
+    "attempts": 9,
+    "fail_modes": [
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 6,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1496,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 356,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1234,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1695,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1295,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "footprint_split",
+     "footprint_split",
+     "footprint_split"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 700,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2549,
+    "attempts": 9,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 6,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 596,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2403,
+    "attempts": 9,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 6,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 576,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": false,
+    "tokens": 2520,
+    "attempts": 10,
+    "fail_modes": [
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 7,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 347,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 779,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1040,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 2,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1003,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 2,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1870,
+    "attempts": 7,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 5,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 473,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 336,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 311,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": false,
+    "tokens": 3081,
+    "attempts": 10,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 7,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 322,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1581,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 322,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2391,
+    "attempts": 9,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 6,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 315,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 561,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1816,
+    "attempts": 6,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 4,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 330,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": false,
+    "tokens": 2725,
+    "attempts": 10,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "footprint_split"
+    ],
+    "rollback_used": 7,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 352,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1745,
+    "attempts": 6,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 4,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1199,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 289,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 574,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 2,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1348,
+    "attempts": 5,
+    "fail_modes": [
+     "footprint_split",
+     "footprint_split",
+     "selfint",
+     "footprint_split"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 396,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 262,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 354,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 305,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 500,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 527,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 859,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 510,
+    "attempts": 2,
+    "fail_modes": [
+     "fill"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": false,
+    "tokens": 2604,
+    "attempts": 10,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 7,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 340,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 353,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 358,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 371,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 331,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 303,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1477,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 609,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1828,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2532,
+    "attempts": 9,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 6,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 356,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1274,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "footprint_split",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 337,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2597,
+    "attempts": 9,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 6,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 352,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 515,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 304,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 337,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2447,
+    "attempts": 10,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 7,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 353,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1220,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 2066,
+    "attempts": 9,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "footprint_split",
+     "selfint"
+    ],
+    "rollback_used": 6,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1442,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 373,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 803,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 2,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1571,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1814,
+    "attempts": 6,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 4,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 351,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1462,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 727,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 2,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 292,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 821,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "footprint_split"
+    ],
+    "rollback_used": 2,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 365,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 878,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 2,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 376,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1628,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 563,
+    "attempts": 2,
+    "fail_modes": [
+     "selfint"
+    ],
+    "rollback_used": 1,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 959,
+    "attempts": 3,
+    "fail_modes": [
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 2,
+    "restarts": 0
+   },
+   {
+    "accepted": false,
+    "tokens": 3248,
+    "attempts": 10,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 7,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 337,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 987,
+    "attempts": 4,
+    "fail_modes": [
+     "selfint",
+     "footprint_split",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 308,
+    "attempts": 1,
+    "fail_modes": [],
+    "rollback_used": 0,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1640,
+    "attempts": 6,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 4,
+    "restarts": 0
+   },
+   {
+    "accepted": true,
+    "tokens": 1472,
+    "attempts": 5,
+    "fail_modes": [
+     "selfint",
+     "selfint",
+     "selfint",
+     "selfint"
+    ],
+    "rollback_used": 3,
+    "restarts": 0
+   }
+  ]
+ },
+ "verdict": {
+  "token_saving_pct": -23.6,
+  "attempt_saving_pct": -48.0,
+  "rollback_wins": false
+ }
+}

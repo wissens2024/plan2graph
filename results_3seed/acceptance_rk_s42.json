@@ -1,0 +1,60 @@
+{
+ "ckpt": "ckpts/korplan_ar_rk_gated_seed42_roomperm_ep180.pt",
+ "n": 1000,
+ "eval_seed": 42,
+ "thresholds": {
+  "aspect_max": 10.0,
+  "fp_fill": 0.6,
+  "fp_convex": 0.7,
+  "overlap": 0.25
+ },
+ "decoded": 999,
+ "drawable": 490,
+ "legal_ok_before": 0,
+ "legal_ok_after": 370,
+ "rules": {
+  "L1_daylight_window": {
+   "applicable": 999,
+   "before": 436,
+   "after": 793
+  },
+  "L2_ventilation_window": {
+   "applicable": 999,
+   "before": 436,
+   "after": 793
+  },
+  "L3_egress_reachable": {
+   "applicable": 999,
+   "before": 0,
+   "after": 940
+  },
+  "L1_daylight_ratio": {
+   "applicable": 999,
+   "before": 999,
+   "after": 999
+  },
+  "L4_bedroom_min_area": {
+   "applicable": 999,
+   "before": 433,
+   "after": 433
+  },
+  "L5_dwelling_min_area": {
+   "applicable": 999,
+   "before": 999,
+   "after": 999
+  },
+  "L6_refuge_area": {
+   "applicable": 999,
+   "before": 988,
+   "after": 988
+  }
+ },
+ "accepted": 250,
+ "accept_rate": 25.0,
+ "wilson95": [
+  22.4,
+  27.8
+ ],
+ "expected_draws": 4.0,
+ "B95": 11
+}

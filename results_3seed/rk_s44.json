@@ -1,0 +1,37 @@
+{
+ "ckpt": "ckpts/korplan_ar_rk_gated_roomperm_s44_ep180.pt",
+ "epoch": 180,
+ "n": 1000,
+ "eval_seed": 42,
+ "country": 0,
+ "thresholds": {
+  "aspect_max": 10.0,
+  "fp_fill": 0.6,
+  "fp_convex": 0.7,
+  "overlap": 0.25
+ },
+ "tally": {
+  "decoded": 1000,
+  "single_strict": 769,
+  "single_2pct": 842,
+  "selfint0": 605,
+  "overlap_ok": 823,
+  "span_ok": 982,
+  "geo_clean": 600,
+  "drawable": 525
+ },
+ "sensitivity_shapeok": {
+  "ov0.1_asp6": 440,
+  "ov0.1_asp8": 494,
+  "ov0.1_asp10": 509,
+  "ov0.1_asp12": 510,
+  "ov0.25_asp6": 450,
+  "ov0.25_asp8": 510,
+  "ov0.25_asp10": 525,
+  "ov0.25_asp12": 526,
+  "ov0.5_asp6": 453,
+  "ov0.5_asp8": 513,
+  "ov0.5_asp10": 528,
+  "ov0.5_asp12": 529
+ }
+}

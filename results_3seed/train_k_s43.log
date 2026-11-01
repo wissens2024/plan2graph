@@ -1,0 +1,28 @@
+[seed] 고정 seed=43 (torch/cuda/numpy/random) — 재현 가능 학습
+[room-perm] 방-permutation 증강 ON (p=0.5)
+/home/ju/plan2graph/scripts/train_wall_cycle.py:189: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler(enabled=args.amp)
+[data] 9397 seqs, vocab=520, device=cuda
+[model] 77.6M params, d=512 L=24 | grad_ckpt=True amp=True dim_ff=1408
+[constrained] decoding 마스크 ON (ADR-0012 §3)
+[DEBUG] ep1~100 학습 루프 시작
+ep  10 loss 0.8777 | valid 0.188 uniq 1.0 rooms~13.2(max17)
+  [ckpt] ep10 → ckpts/korplan_ar_k_gated_targetonly_s43_ep10.pt
+ep  20 loss 0.4358 | valid 0.203 uniq 1.0 rooms~13.2(max18)
+  [ckpt] ep20 → ckpts/korplan_ar_k_gated_targetonly_s43_ep20.pt
+ep  30 loss 0.2728 | valid 0.422 uniq 1.0 rooms~13.7(max18)
+  [ckpt] ep30 → ckpts/korplan_ar_k_gated_targetonly_s43_ep30.pt
+ep  40 loss 0.2169 | valid 0.406 uniq 1.0 rooms~13.9(max20)
+  [ckpt] ep40 → ckpts/korplan_ar_k_gated_targetonly_s43_ep40.pt
+ep  50 loss 0.1840 | valid 0.562 uniq 1.0 rooms~14.3(max20)
+  [ckpt] ep50 → ckpts/korplan_ar_k_gated_targetonly_s43_ep50.pt
+ep  60 loss 0.1577 | valid 0.469 uniq 1.0 rooms~14.5(max18)
+  [ckpt] ep60 → ckpts/korplan_ar_k_gated_targetonly_s43_ep60.pt
+ep  70 loss 0.1394 | valid 0.453 uniq 1.0 rooms~14.2(max18)
+  [ckpt] ep70 → ckpts/korplan_ar_k_gated_targetonly_s43_ep70.pt
+ep  80 loss 0.1256 | valid 0.594 uniq 1.0 rooms~14.0(max18)
+  [ckpt] ep80 → ckpts/korplan_ar_k_gated_targetonly_s43_ep80.pt
+ep  90 loss 0.1193 | valid 0.516 uniq 1.0 rooms~14.3(max19)
+  [ckpt] ep90 → ckpts/korplan_ar_k_gated_targetonly_s43_ep90.pt
+ep 100 loss 0.1106 | valid 0.406 uniq 1.0 rooms~13.6(max19)
+  [ckpt] ep100 → ckpts/korplan_ar_k_gated_targetonly_s43_ep100.pt

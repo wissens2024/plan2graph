@@ -1,0 +1,28 @@
+{
+ "engine": "GSDiff public ckpt (structure-1/2), unconditional",
+ "n": 1000,
+ "thresholds": {
+  "aspect_max": 8.0,
+  "fp_fill": 0.6,
+  "fp_convex": 0.75,
+  "overlap": 0.25
+ },
+ "tally": {
+  "decoded": 998,
+  "single_strict": 957,
+  "selfint0": 944,
+  "overlap_ok": 993,
+  "span_ok": 991,
+  "geo_clean": 934,
+  "drawable": 916
+ },
+ "rates_pct": {
+  "decoded": 99.8,
+  "single_strict": 95.7,
+  "selfint0": 94.4,
+  "overlap_ok": 99.3,
+  "span_ok": 99.1,
+  "geo_clean": 93.4,
+  "drawable": 91.6
+ }
+}

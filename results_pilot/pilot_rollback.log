@@ -1,0 +1,48 @@
+/home/ju/plan2graph/scripts/pilot_partial_regen.py:252: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  ck = torch.load(args.ckpt, map_location=dev); a = ck["args"]
+[ckpt] ckpts/korplan_ar_rk_gated_seed42_roomperm_ep180.pt (epoch 180) on cuda
+  [independent] 10/200 accepted=10 mean_tok=783.4 (61s)
+  [independent] 20/200 accepted=20 mean_tok=700.6 (108s)
+  [independent] 30/200 accepted=30 mean_tok=639.8 (148s)
+  [independent] 40/200 accepted=40 mean_tok=624.6 (192s)
+  [independent] 50/200 accepted=50 mean_tok=610.8 (235s)
+  [independent] 60/200 accepted=60 mean_tok=602.5 (278s)
+  [independent] 70/200 accepted=70 mean_tok=633.5 (340s)
+  [independent] 80/200 accepted=80 mean_tok=641.6 (393s)
+  [independent] 90/200 accepted=90 mean_tok=647.5 (446s)
+  [independent] 100/200 accepted=100 mean_tok=646.0 (494s)
+  [independent] 110/200 accepted=110 mean_tok=642.9 (541s)
+  [independent] 120/200 accepted=120 mean_tok=649.6 (596s)
+  [independent] 130/200 accepted=130 mean_tok=653.0 (649s)
+  [independent] 140/200 accepted=140 mean_tok=657.5 (704s)
+  [independent] 150/200 accepted=150 mean_tok=666.7 (765s)
+  [independent] 160/200 accepted=160 mean_tok=654.6 (800s)
+  [independent] 170/200 accepted=170 mean_tok=669.5 (870s)
+  [independent] 180/200 accepted=180 mean_tok=679.6 (935s)
+  [independent] 190/200 accepted=190 mean_tok=680.5 (987s)
+  [independent] 200/200 accepted=200 mean_tok=683.7 (1045s)
+  [rollback] 10/200 accepted=10 mean_tok=1302.2 (107s)
+  [rollback] 20/200 accepted=20 mean_tok=1229.4 (201s)
+  [rollback] 30/200 accepted=30 mean_tok=979.9 (238s)
+  [rollback] 40/200 accepted=40 mean_tok=901.2 (290s)
+  [rollback] 50/200 accepted=50 mean_tok=870.4 (349s)
+  [rollback] 60/200 accepted=59 mean_tok=844.1 (417s)
+  [rollback] 70/200 accepted=68 mean_tok=849.6 (502s)
+  [rollback] 80/200 accepted=78 mean_tok=802.7 (539s)
+  [rollback] 90/200 accepted=88 mean_tok=818.5 (612s)
+  [rollback] 100/200 accepted=98 mean_tok=788.2 (653s)
+  [rollback] 110/200 accepted=107 mean_tok=785.4 (730s)
+  [rollback] 120/200 accepted=117 mean_tok=824.1 (828s)
+  [rollback] 130/200 accepted=126 mean_tok=835.3 (920s)
+  [rollback] 140/200 accepted=135 mean_tok=838.5 (1008s)
+  [rollback] 150/200 accepted=144 mean_tok=831.3 (1081s)
+  [rollback] 160/200 accepted=153 mean_tok=809.4 (1134s)
+  [rollback] 170/200 accepted=163 mean_tok=831.2 (1229s)
+  [rollback] 180/200 accepted=173 mean_tok=837.5 (1302s)
+  [rollback] 190/200 accepted=183 mean_tok=841.4 (1375s)
+  [rollback] 200/200 accepted=192 mean_tok=845.0 (1469s)
+============================================================
+  independent  accepted=200/200 mean_tokens=683.7 mean_attempts=2.0
+  rollback     accepted=192/200 mean_tokens=845.0 mean_attempts=2.96
+  verdict: {'token_saving_pct': -23.6, 'attempt_saving_pct': -48.0, 'rollback_wins': False}
+[json] results_pilot/pilot_rollback_rk_s42.json

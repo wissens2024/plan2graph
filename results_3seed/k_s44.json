@@ -1,0 +1,37 @@
+{
+ "ckpt": "ckpts/korplan_ar_k_gated_targetonly_s44_ep80.pt",
+ "epoch": 80,
+ "n": 1000,
+ "eval_seed": 42,
+ "country": 0,
+ "thresholds": {
+  "aspect_max": 10.0,
+  "fp_fill": 0.6,
+  "fp_convex": 0.7,
+  "overlap": 0.25
+ },
+ "tally": {
+  "decoded": 1000,
+  "single_strict": 695,
+  "single_2pct": 756,
+  "selfint0": 365,
+  "overlap_ok": 591,
+  "span_ok": 976,
+  "geo_clean": 356,
+  "drawable": 329
+ },
+ "sensitivity_shapeok": {
+  "ov0.1_asp6": 271,
+  "ov0.1_asp8": 307,
+  "ov0.1_asp10": 309,
+  "ov0.1_asp12": 309,
+  "ov0.25_asp6": 287,
+  "ov0.25_asp8": 327,
+  "ov0.25_asp10": 329,
+  "ov0.25_asp12": 329,
+  "ov0.5_asp6": 293,
+  "ov0.5_asp8": 335,
+  "ov0.5_asp10": 337,
+  "ov0.5_asp12": 337
+ }
+}

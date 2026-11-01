@@ -1,0 +1,23 @@
+/home/ju/plan2graph/scripts/eval_3seed.py:66: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  ck = torch.load(args.ckpt, map_location=dev); a = ck["args"]
+[ckpt] ckpts/korplan_ar_r_roomperm_seed42_ep80.pt (epoch 80) on cuda
+  ...100/1000 drawable=49
+  ...200/1000 drawable=88
+  ...300/1000 drawable=138
+  ...400/1000 drawable=189
+  ...500/1000 drawable=229
+  ...600/1000 drawable=283
+  ...700/1000 drawable=333
+  ...800/1000 drawable=373
+  ...900/1000 drawable=415
+  ...1000/1000 drawable=458
+========================================================
+  decoded       : 1000/1000 (100.0%)
+  single_strict : 781/1000 (78.1%)
+  single_2pct   : 820/1000 (82.0%)
+  selfint0      : 486/1000 (48.6%)
+  overlap_ok    : 744/1000 (74.4%)
+  span_ok       : 988/1000 (98.8%)
+  geo_clean     : 475/1000 (47.5%)
+  drawable      : 458/1000 (45.8%)
+[json] results_3seed/r_s42.json

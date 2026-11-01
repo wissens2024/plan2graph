@@ -705,3 +705,36 @@ gated 데이터셋(GT 100% clean, 10,430) RPLAN→FT(room-perm seed42, ep별) �
 - **피크 65%@ep130(한국80ep)**, 천장 ~64-65%. 옛 ungated RPLAN→FT snap **20%의 3.25배**.
 - **RPLAN 천장 46%마저 초과** — 한국 방 2배(노드~14 vs 7)로 더 어려운데도. **깨끗한 GT(43→100%)가 난이도를 압도.**
 - 결론: 이번 세션 처방(selfint코덱수정+tol3.5+기하게이트로 GT clean화)이 생성 품질로 직결됨을 확정. 도면생성 최종 선정 = 이 구성.
+
+## GT 임계값 캘리브레이션(표현별) + 3-seed 재실험 착수 [2026-08-10]
+- 검증셋 GT 실측(survey_outline 방식·동일 분위수): RPLAN(n=4,104) fill p10 0.688·convex p10 0.822·plan최대종횡비 p99 7.38(≥8=0.83%) / 한국 gated(n=492) fill p10 0.671·convex p10 0.781·p99 9.14(≥8=8.74%, ≥10=0.81%).
+- → 표현별 drawable 임계 확정: RPLAN 종횡비8·fill0.60·convex0.75(불변) / 한국 종횡비10·fill0.60·convex0.70(신규). 근거=GT 무기각(각각 0.8% 기각, 대칭).
+- 논문 K 33% = korplan_ar_k_gated_targetonly_ep80 · RK 47% = korplan_ar_rk_gated_seed42_roomperm_ep180 (results_*_strict.md n200 기록과 일치 확정).
+- 분할 실측: tokens_rplan 72,555/4,104/4,070(총 80,729) · tokens_korean_gated 9,397/492/541(총 10,430). 논문 v5의 58,045/7,255/7,255·8,344/1,043/1,043은 80/10/10 산술치였음 → 원고 빨간 정정 완료.
+- **3-seed 재실험 가동**(scripts/run_3seed.sh, GPU2 nohup, 2026-08-10 22:09~): PHASE1 기존모델(K42·RK42·R) n=1000 재평가 → PHASE2 seed43·44 K(100ep)/RK(base ep80→ep180) 학습 → PHASE3 신규 4모델 평가. 산출=results_3seed/*.json(신임계+overlap×종횡비 민감도), 로그=results_3seed_driver.log.
+
+## ★3-seed 재실험 완료 — 사전학습 효과 확정 [2026-08-11 13:45]
+n=1000/모델·eval seed42·신임계(한국 종횡비10·fill0.60·convex0.70 / RPLAN 8·0.60·0.75). 고정 epoch(K@80·RK@180).
+| drawable | s42 | s43 | s44 | mean±SD |
+|---|---|---|---|---|
+| K (target-only) | 30.2 | 31.4 | 32.9 | **31.5±1.4** |
+| RK (RPLAN→FT) | 49.0 | 52.4 | 52.5 | **51.3±2.0** |
+- 격차 +18.8/+21.0/+19.6pp — **전 시드 RK>K, 평균 +19.8pp** (구 단일시드 +14pp보다 크고 견고). z=8.60(p<0.001, s42 n=1000).
+- R(RPLAN, n=1000) drawable 45.8%·geo 47.5%·selfint 48.6%·overlap 74.4%·zero-gap 78.1%.
+- 민감도: overlap{.1,.25,.5}×종횡비{6,8,10,12} 전 그리드에서 격차 +13.4~+19.0pp 유지(s42).
+- 산출: results_3seed/*.json (+ 학습로그). 신규 ckpt: korplan_ar_{k_gated_targetonly,rk_gated_roomperm}_s{43,44}_*.pt
+- 논문 v5 기입 완료: §5.4.1·§5.4.3·§6.1·결론·Table 6(표=seed42, 본문=시드 평균). ⚠Table 7·8(법규·수용)은 구 프로토콜(n=200) — 재실행 필요. GSDiff 미착수.
+
+## 잔여 2건 완료 — Table7/8 신프로토콜 + GSDiff 외부 베이스라인 [2026-08-11 18:35]
+**① 수용 효율(RK s42, n=1000, 신임계, eval_acceptance.py)**: decoded 999 · drawable 490(49.0%).
+| 규칙 | before | after |
+|---|---|---|
+| L1/L2 채광·환기(보유) | 44% | 79% |
+| L3 동선 | 미평가 | 94% |
+| L4 침실면적 | 43% | 43% |
+| L5 세대면적 | 100%(구성상 자동) | 100% |
+| L6 대피면적 | 99% | 99% |
+| 전체 규칙 통과 | 0(L3 미평가) | **37%** |
+- **결합 수용(drawable ∧ 전체규칙) 250/1000 = 25.0%** (Wilson 22.4–27.8) → 기대 4.0회·B95=11. 구 n=200(36.5%·2.7회·B7) 대비 하락 — 신임계+대표본 정밀화 결과, 논문 갱신 완료.
+**② GSDiff 공개 ckpt(structure-1/2, 무조건 생성) drawable(RPLAN 프로토콜 8/0.60/0.75, n=1000, eval_gsdiff.py)**: **91.6%** (geo_clean 93.4·selfint0 94.4·overlap_ok 99.3·single 95.7). 우리 R 45.8% 대비 크게 높음 = 정렬 특화 모델의 예상된 우위. 논문 프레이밍=외부 참조(문·창·의미론 없어 타깃 표현 확장 불가, GPL-3 평가 전용).
+- 논문 v5 반영 완료: §5.3(n=1000)·§5.4.1(GSDiff)·§5.4.4·§6.3·결론·Table 7·8. **논문 실험 빈칸 0.**

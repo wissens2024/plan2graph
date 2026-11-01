@@ -1,0 +1,73 @@
+/home/ju/plan2graph/scripts/eval_acceptance.py:40: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  ck = torch.load(args.ckpt, map_location=dev); a = ck["args"]
+[ckpt] ckpts/korplan_ar_rk_gated_seed42_roomperm_ep180.pt (epoch 180)
+  ...100/1000 drawable=51 accept=23
+  ...200/1000 drawable=105 accept=49
+  ...300/1000 drawable=148 accept=68
+  ...400/1000 drawable=201 accept=98
+  ...500/1000 drawable=249 accept=121
+  ...600/1000 drawable=303 accept=146
+  ...700/1000 drawable=348 accept=168
+  ...800/1000 drawable=400 accept=197
+  ...900/1000 drawable=442 accept=222
+  ...1000/1000 drawable=490 accept=250
+{
+ "ckpt": "ckpts/korplan_ar_rk_gated_seed42_roomperm_ep180.pt",
+ "n": 1000,
+ "eval_seed": 42,
+ "thresholds": {
+  "aspect_max": 10.0,
+  "fp_fill": 0.6,
+  "fp_convex": 0.7,
+  "overlap": 0.25
+ },
+ "decoded": 999,
+ "drawable": 490,
+ "legal_ok_before": 0,
+ "legal_ok_after": 370,
+ "rules": {
+  "L1_daylight_window": {
+   "applicable": 999,
+   "before": 436,
+   "after": 793
+  },
+  "L2_ventilation_window": {
+   "applicable": 999,
+   "before": 436,
+   "after": 793
+  },
+  "L3_egress_reachable": {
+   "applicable": 999,
+   "before": 0,
+   "after": 940
+  },
+  "L1_daylight_ratio": {
+   "applicable": 999,
+   "before": 999,
+   "after": 999
+  },
+  "L4_bedroom_min_area": {
+   "applicable": 999,
+   "before": 433,
+   "after": 433
+  },
+  "L5_dwelling_min_area": {
+   "applicable": 999,
+   "before": 999,
+   "after": 999
+  },
+  "L6_refuge_area": {
+   "applicable": 999,
+   "before": 988,
+   "after": 988
+  }
+ },
+ "accepted": 250,
+ "accept_rate": 25.0,
+ "wilson95": [
+  22.4,
+  27.8
+ ],
+ "expected_draws": 4.0,
+ "B95": 11
+}
