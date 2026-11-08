@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, "src")
 from PIL import Image, ImageDraw  # noqa: E402
 
-from plan2graph.wallcycle_codec import ROLES  # noqa: E402
+from plan2graph.wallcycle_codec import ROLES, role_id  # noqa: E402
 
 
 def _palette(n):
@@ -27,14 +27,11 @@ def _palette(n):
 
 
 _PAL = _palette(len(ROLES))
-_ROLE2I = {r: i for i, r in enumerate(ROLES)}
 
 
 def role_color(room):
-    """방 dict({role|base}) → RGB. 미상 role = '기타' 색."""
-    role = (room.get("role") or room.get("base") or "").strip()
-    idx = _ROLE2I.get(role, _ROLE2I.get("기타", len(ROLES) - 1))
-    return _PAL[idx]
+    """방 dict({role|base}) → RGB. 표기 차이는 alias 흡수, 진짜 미상만 '기타' 색."""
+    return _PAL[role_id(room.get("role") or room.get("base"))]
 
 
 def _area(poly):

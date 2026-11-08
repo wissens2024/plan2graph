@@ -30,11 +30,28 @@ ROLES = [
     "전실", "복도", "실외기실", "다목적공간", "현관", "전용욕실", "전용화장실",
     "파우더룸", "알파룸", "엘리베이터홀", "계단실", "구조물", "기타",
     # ── 신규(2026-06-16, OCR 실측 어휘) — 끝에만 append(위치=토큰id, 재정렬 금지) ──
-    #   대피공간=법규 의무 피난공간 / 테라스 / 팬트리=주방수납 / 세탁실. 기존 ckpt는 vocab.json(구) 사용.
-    "대피공간", "테라스", "팬트리", "세탁실",
+    #   대피공간=법규 의무 피난공간 / 테라스 / 펜트리=주방수납 / 세탁실. 기존 ckpt는 vocab.json(구) 사용.
+    "대피공간", "테라스", "펜트리", "세탁실",
 ]
 ROLE2ID = {r: i for i, r in enumerate(ROLES)}
 ROLE_OTHER = ROLE2ID["기타"]
+
+# 같은 공간의 **다른 표기** → canonical. 정책(어느 역할이 이긴다)이 아니라 표기 통일이다.
+#   왜 필요한가: 에디터/topoedit이 쓰는 어휘와 이 어휘가 완전히 같지 않다. 빠진 이름은
+#   ROLE2ID.get(...) 기본값으로 조용히 '기타'가 되어 **보정 결과가 토큰화에서 증발한다**
+#   (펜트리 8,652장이 그 경로로 사라지고 있었다 — EXPERIMENTS §3-③).
+#   토큰 id는 위치라서 재정렬·삽입 금지 → 새 표기는 여기에 alias로 붙인다.
+ROLE_ALIAS = {
+    "팬트리": "펜트리",            # 철자 두 갈래(코덱은 옛 '팬트리'로 굳어 있었다)
+    "엘리베이터": "엘리베이터홀",   # topoedit 어휘, 코덱엔 홀만 있다
+    "실외": "기타",                # 건물 밖 여백 — 대응 역할 없음
+}
+
+
+def role_id(role):
+    """역할 문자열 → 토큰 id. 표기 차이는 alias로 흡수하고, 진짜 미상만 '기타'."""
+    r = (role or "").strip()
+    return ROLE2ID.get(ROLE_ALIAS.get(r, r), ROLE_OTHER)
 
 COUNTRIES = ["KR", "CN", "EU"]
 HOUSING = ["apartment", "detached", "rowhouse"]
@@ -309,7 +326,7 @@ def canonicalize(g: dict, grid: int = 128, simplify_frac: float = 0.01,
         cyc = _dedup_cycle([_final(t) for t in ids])
         if len(cyc) < 3:
             continue
-        canon.rooms.append({"id": rid, "role_id": ROLE2ID.get(role, ROLE_OTHER), "cycle": cyc})
+        canon.rooms.append({"id": rid, "role_id": role_id(role), "cycle": cyc})
         room_cycle[rid] = cyc
 
     # 5. 각 방 cycle의 엣지 집합(공유 판정용)
