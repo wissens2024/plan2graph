@@ -126,6 +126,8 @@ def main():
     ap.add_argument("--report", action="store_true", help="정책 후보 전수(읽기전용)")
     ap.add_argument("--consolidate", action="store_true",
                     help="그룹마다 대표 1개만 남기는 경우의 규모(읽기전용)")
+    ap.add_argument("--why", action="store_true",
+                    help="불일치 그룹이 왜 남았나 — 통일을 시도했는지로 분류(읽기전용)")
     ap.add_argument("--apply", action="store_true", help="edits에 실제 적용(백업 후)")
     ap.add_argument("--house", default="APT")
     ap.add_argument("--scope", default="unit", help="unit|floor|all")
@@ -194,6 +196,63 @@ def main():
         print("분쟁에 끼어든 역할(= 기준을 정해야 하는 이름) 빈도")
         for r, n in lever.most_common(args.top):
             print("  %-12s %5d그룹  학습 %5d장" % (r, n, lever_g[r]))
+        return
+
+    if args.why:
+        # '아직 안 했다'와 '했는데 도구가 못 덮었다'는 다른 얘기다. 전파 흔적
+        # (meta.propagated)과 저장 시각으로 가른다.
+        #   미시도   = 그룹에 전파본이 하나도 없다 → 통일을 누른 적이 없다
+        #   못덮음   = 전파본이 있는데 직접 보정본이 전파보다 **먼저** 저장됐다
+        #              → 전파가 그 형제를 건너뛰었다(정렬오차 2px 초과 등)
+        #   재분기   = 직접 보정본이 전파 **뒤에** 저장됐다 → 통일 후 누가 또 고쳤다
+        buckets = collections.Counter()
+        bkt_g = collections.Counter()
+        rows = []
+        for gid, g in groups.items():
+            prop_t, dir_t, npr, ndr = [], [], 0, 0
+            for pid in g.get("corrected") or []:
+                p = os.path.join(args.edits, "%s.json" % pid)
+                if not os.path.exists(p):
+                    continue
+                try:
+                    meta = (json.load(open(p, encoding="utf-8")).get("meta") or {})
+                except Exception:
+                    continue
+                t = os.path.getmtime(p)
+                if meta.get("propagated"):
+                    npr += 1
+                    prop_t.append(t)
+                else:
+                    ndr += 1
+                    dir_t.append(t)
+            if npr == 0:
+                b = "미시도"
+            elif not dir_t:
+                b = "전파끼리"      # 전파본만인데 갈렸다 = 서로 다른 원본에서 전파
+            elif max(dir_t) > max(prop_t):
+                b = "재분기"
+            else:
+                b = "못덮음"
+            buckets[b] += 1
+            bkt_g[b] += sum(1 for mb in g["members"] if mb in gated)
+            rows.append((b, gid, g["n"], npr, ndr))
+        print("-" * 78)
+        print("불일치가 남은 이유 (전파 흔적 + 저장 시각)")
+        order = ["미시도", "못덮음", "재분기", "전파끼리"]
+        why = {"미시도": "통일을 누른 적이 없다 — 각자 보정한 채 남았다",
+               "못덮음": "통일했는데 그 형제를 건너뛰었다(정렬오차 등)",
+               "재분기": "통일 뒤에 누가 또 고쳤다",
+               "전파끼리": "서로 다른 원본에서 각각 전파됐다"}
+        for b in order:
+            if not buckets[b]:
+                continue
+            print("  %-6s %4d그룹 (학습 %4d장)  %s" % (b, buckets[b], bkt_g[b], why[b]))
+        print("  합계     %4d그룹" % sum(buckets.values()))
+        for b in order:
+            ex = [r for r in rows if r[0] == b][:3]
+            if ex:
+                print("   [%s] 예: %s" % (b, ", ".join(
+                    "%s(사본%d 전파%d 직접%d)" % (r[1][:12], r[2], r[3], r[4]) for r in ex)))
         return
 
     if args.consolidate:
