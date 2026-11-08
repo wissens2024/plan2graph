@@ -64,8 +64,13 @@ K = ("plans", "rooms_p", "rooms_c", "matched", "role_ok", "role_chg",
      "geom_ident", "geom_chg", "absorbed", "created", "role_chg_on_ident")
 ALL = {k: 0 for k in K}
 GAT = {k: 0 for k in K}
+# ⚠ edits 30,542건 중 18,018건은 dedup 전파 복사본(meta.propagated)이다. 사본끼리 같은
+# 보정이 반복되므로 ALL/GAT는 사본 가중 평균이 된다. 전파본을 뺀 '사람 직접' 축을 따로 센다.
+DIR = {k: 0 for k in K}
+GDR = {k: 0 for k in K}
 pairs = {}
 plan_kind = {}
+plan_kind_direct = {}
 
 for n, pid in enumerate(paired, 1):
     try:
@@ -126,6 +131,13 @@ for n, pid in enumerate(paired, 1):
     if pid in gated:
         for k in K:
             GAT[k] += rec[k]
+    is_direct = not bool((ge.get("meta") or {}).get("propagated"))
+    if is_direct:
+        for k in K:
+            DIR[k] += rec[k]
+        if pid in gated:
+            for k in K:
+                GDR[k] += rec[k]
 
     if rec["absorbed"] or rec["created"]:
         kind = "구조변경"
@@ -136,6 +148,8 @@ for n, pid in enumerate(paired, 1):
     else:
         kind = "전면확인"
     plan_kind[kind] = plan_kind.get(kind, 0) + 1
+    if is_direct:
+        plan_kind_direct[kind] = plan_kind_direct.get(kind, 0) + 1
 
     if n % 2000 == 0:
         print("  ...%d/%d  확인%d 수정%d 흡수%d 신설%d"
@@ -143,7 +157,8 @@ for n, pid in enumerate(paired, 1):
                  ALL["absorbed"], ALL["created"]), flush=True)
 
 top = sorted(pairs.items(), key=lambda kv: -kv[1])[:30]
-out = {"all": ALL, "gated": GAT, "plan_kind": plan_kind,
+out = {"all": ALL, "gated": GAT, "direct": DIR, "gated_direct": GDR,
+       "plan_kind": plan_kind, "plan_kind_direct": plan_kind_direct,
        "iou_same": IOU_SAME, "iou_identical": IOU_IDENT,
        "top_role_changes": [{"from": a, "to": b, "n": c} for (a, b), c in top]}
 json.dump(out, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
@@ -168,9 +183,12 @@ def show(tag, A):
 
 
 print("=" * 74, flush=True)
-show("전체", ALL)
+show("전체(전파본 포함·사본 가중)", ALL)
+show("사람 직접 보정만(전파본 제외)", DIR)
 show("학습코퍼스(gated)", GAT)
+show("학습코퍼스 ∩ 사람 직접", GDR)
 print("-" * 74, flush=True)
-print("도면 분류:", json.dumps(plan_kind, ensure_ascii=False), flush=True)
+print("도면 분류(전체):", json.dumps(plan_kind, ensure_ascii=False), flush=True)
+print("도면 분류(사람 직접):", json.dumps(plan_kind_direct, ensure_ascii=False), flush=True)
 print("상위 역할 교정:", json.dumps(out["top_role_changes"][:12], ensure_ascii=False), flush=True)
 print("[json]", OUT, flush=True)
