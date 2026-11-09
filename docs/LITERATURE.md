@@ -247,3 +247,56 @@ legality 38%의 낮은 절대값, 면적 규칙 가정 축척.
 세 번째 자료 `등재-IR2081-오주철_박재완`은 Video-LLM 휴리스틱 평가(UX) 논문 — 겹침 0.
 `sapcesyntax.com`은 전 경로 401(로그인 전용)·공개 흔적 없음 → **β의 데모 사이트로 추정**
 (자체 호스팅 Caddy·`connect-src 'self'`·캔버스 렌더링). 선행 문헌 효력 없음, 제품 선점 사안.
+
+## 7. 공개 도면 데이터셋 재조사 (2026-11-09) — 라이선스·형식·벽두께 실측 확인
+
+내 §3 목록이 낡았다(RPLAN/CubiCasa 시절). 2024~2026에 **벡터 데이터셋 3종**이 새로 나왔고,
+한국 쪽에도 LH 경로가 있다. 전부 arXiv 전문·GitHub API·Zenodo API·4TU 레코드·data.go.kr을
+직접 받아 확인했다(추측 아님).
+
+### 7.1 즉시 받을 수 있는 것
+| 데이터 | 규모 | 라이선스 | 형식·용량 | 벽두께 | 출처 |
+|---|---|---|---|---|---|
+| **Swiss Dwellings v3.0.0** | 아파트 모델 대량 | **CC BY 4.0** | zip **932 MB**, 벡터 | **실제·가변** | Zenodo 7788422 |
+| **MSD** (Swiss 파생, ECCV'24) | 5,372 평면 / **18.9K 세대** | **CC BY 4.0** | `struct_in`/`full_out`=**.npy 래스터**, `graph_in`/`graph_out`=pickle. train 5.5GB·test 4.8GB | 원본은 가변(내력벽=두께 60% 분위 초과로 판정) | 4TU DOI 10.4121/e1d89cb5… |
+| **ResPlan** | **17,000** | 데이터 CC BY 4.0 · 코드 MIT | `ResPlan.zip` **100 MB**, JSON/pickle 벡터, **픽셀+미터 좌표**, 17클래스, 4종 엣지(via_door/adjacency/direct/via_window), 공식 split | **균일(인위적)** — "enforced a uniform wall thickness", 메타 필드 `wall_depth` | github.com/m-agour/ResPlan |
+| **ModRes** (ResPlan 정제, 2026-10) | **8,431** | **MIT** | CSV/JSON + 3D BREP, repo ~1 GB | ResPlan 상속 | github.com/emmashelley/ModRes |
+| **LH 주택 평면도 현황** | 미확인(받아봐야) | **이용허락범위 제한 없음** | JSON(**base64 이미지**) | 래스터 | data.go.kr/15037046 (2021 등록·2025-11-10 수정·다운 19,727) |
+| **LH 주력평면 BIM** | **8타입**(26·31·36·41·46·55·65·84형) | 미확인 | **Revit .rvt** + 창호일람표 + 웹뷰어 | ✅ 실물 wall 객체 | LH 홈페이지(2025-12-13 공개) |
+| LH 전국 아파트 단지정보 | 전국 | 제한 없음 | CSV·OpenAPI | — | data.go.kr/15080989 (주소·준공일·세대수·동수) |
+
+### 7.2 우리 자리 — 외부 자료로 확증됨
+| | 벽두께 | **문 스윙** | 단위 | 방/평면 | 지역 |
+|---|---|---|---|---|---|
+| RPLAN | 없음(코너 공유) | 없음 | 세대 | 6.7 | 중국 |
+| ResPlan 17K | **균일(인위적)** | 없음 | 세대 | 8.1 | **남아시아 매물** |
+| MSD/Swiss 5.4K | 실제·가변 + 내력벽 | 없음 | **층(복합체)** | — | 스위스 |
+| **우리 10,430** | **실제·가변** | **33% 보유** | 세대 | **14.4** | 한국 |
+
+→ **문 스윙을 가진 공개 벡터 데이터셋은 없다**(3편 전문 grep: swing·hinge 0건).
+[[final-paper-is-drawing-realization]]의 도면화 축이 고유하다는 외부 확증.
+방 수 14.4로 가장 복잡하고, 벽두께가 **실제 가변**인 세대 단위는 우리뿐이다.
+⚠ 단 "벽두께 있는 벡터"는 더 이상 우리만의 것이 아니다 — **ResPlan/MSD가 외부 베이스라인**이
+되므로 논문 α의 리젝 사유("타깃 도메인 베이스라인 부재")가 해소된다.
+⚠ MSD의 배포 형태는 **래스터 .npy**다. 벡터 벽 기하가 필요하면 **원본 Swiss Dwellings**를 받아야 한다.
+
+### 7.3 ⭐ 공개 전략의 선례 — ResPlan 라이선스를 그대로 쓸 수 있다
+ResPlan은 **부동산 매물 렌더링에서 CV로 복원한** 기하를 배포한다. 그 법적 틀:
+> "The underlying spatial arrangement of a building is **a matter of fact rather than creative
+> expression**, and facts are not subject to copyright. No licence is therefore asserted,
+> required, or granted over the spatial arrangements themselves."
+
+구조: ①원본 이미지·URL·주소·가격·매물 텍스트는 **재배포하지 않는다** ②저자가 권리를 갖는
+것(주석·분류체계·그래프 구성·미터 변환·큐레이션·공식 split)에만 CC BY 4.0 ③**takedown 정책**
+(7일 내 확인·30일 내 차기 릴리스에서 제거·제거 ID를 `REMOVED.md`에 추적).
+
+→ **우리도 같은 구조가 가능하다**: AI-Hub 원본 이미지는 배포하지 않고, 우리가 만든 그래프·
+역할 주석·split·IAA만 공개 + takedown. [[goal-is-paper-with-commercial-grade-quality]]의
+"라이선스를 블로커로 올리지 말 것"에 **실행 가능한 경로**가 생겼다.
+
+### 7.4 ⚠ ModRes가 중복 제거를 먼저 했다
+ModRes(2026-10)는 ResPlan에서 "invalid and **duplicate** floor plans"를 전용 정제 워크플로로
+제거해 17,000 → 8,431로 줄였다. **논문 A(데이터셋)의 중복 기여와 부분 겹침**이다.
+차별점: 그들은 **작업자 간 일치도·사람 주석·전파/통일 운영을 다루지 않는다**
+([[iaa-from-duplicates]], [[dedup-review-and-scope-rule]]). 인용하고 차별화할 것.
+ModRes가 명시한 한계: 단일 층·3D 가정·주택 유형 다양성·**가구 없음**·그래프 종류.
