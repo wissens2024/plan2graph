@@ -300,3 +300,53 @@ ModRes(2026-10)는 ResPlan에서 "invalid and **duplicate** floor plans"를 전�
 차별점: 그들은 **작업자 간 일치도·사람 주석·전파/통일 운영을 다루지 않는다**
 ([[iaa-from-duplicates]], [[dedup-review-and-scope-rule]]). 인용하고 차별화할 것.
 ModRes가 명시한 한계: 단일 층·3D 가정·주택 유형 다양성·**가구 없음**·그래프 종류.
+
+### 7.5 ResPlan 스키마 실측 (qmlab에서 직접 로드, 2026-11-09)
+`ResPlan.zip` 100.6MB → `ResPlan.pkl` 297MB. 로드 안전장치: 허용 모듈을
+shapely/numpy/networkx로 제한한 Unpickler(`scratchpad/load_resplan.py`) — 사용된 전역은
+`shapely.io.from_wkb`·`numpy.dtype`·`numpy.core.multiarray.scalar`·`networkx…Graph/NodeView`
+뿐이었다(임의 코드 없음).
+
+**평면 17,107개.** 평면 1개 = dict(24키):
+- 공간 카테고리별 **MultiPolygon**: living·bedroom·bathroom·kitchen·balcony·storage·inner·
+  veranda·garden·parking·pool·stair·land (남아시아 주택이라 parking/pool/garden 존재, 대개 EMPTY)
+- 구조: `wall`·`door`·`window`(MultiPolygon)·`front_door`(Polygon)
+- 속성: `unitType`('Apartment')·`id`·`area` 116.59·`net_area` 73.13·`neighbor`·**`wall_depth`**
+- **`graph`**: networkx Graph. 노드 `living_0`/`bedroom_0`… 에 `{geometry, type, area}`,
+  엣지 `{'type': 'direct'|'adjacency'|'via_door'|'via_window'}` → **개별 방 인스턴스는 그래프에 있다**
+
+**`wall_depth` 분포(n=4,000)**: 최소 2.654 · 중앙 4.146 · 90% 5.163 · 최대 15.0.
+→ 평면마다 값은 다르지만 **한 평면 안에서는 벽 전체가 단일 스칼라**. 벽마다의 두께 차이가 없다.
+좌표 단위는 `area`/폴리곤 면적으로 역산 가능(≈5cm 격자 → 벽두께 중앙 ≈20cm 상당).
+
+**없는 것**: 문 스윙·문 종류·창 높이·축척 필드(면적으로 역산은 가능).
+
+### 7.6 우리 데이터 vs ResPlan — 축별 우열
+| 축 | ResPlan 17,107 | **우리** 10,430 gated (파싱 41,409) |
+|---|---|---|
+| 방 노드/평면 | 9.2 | **14.4** |
+| 방 폴리곤 | 그래프 노드에 개별 | 개별 100% |
+| 벽 | MultiPolygon + **스칼라 두께 1개** | 평면당 벽 141개, **개별 기하** |
+| 문 | 폴리곤만 | 폴리곤 + `subtype`(여닫이/미닫이/기타) + **`hinge` 33%** |
+| 창 | 폴리곤만 | 폭 100%, 높이 없음(양쪽 다 없음) |
+| 축척 | 면적으로 역산 | 사람 입력 **97.9%**(edits) |
+| 역할 어휘 | 17클래스 | 25역할 — **전실·실외기실·대피공간·펜트리 등 한국 고유** |
+| 엣지 타입 | direct/adjacency/via_door/via_window | wall/open/door |
+| 지역·유형 | 남아시아 매물 | 한국 APT/ROW/DEH |
+| 중복 정제 | **ModRes가 완료**(17,107→8,431) | 우리가 측정만(고유 2,743) |
+| 공식 split | **있음**(split.json) | **없음** ← A편 과제 |
+
+우리 우위: **방 복잡도·개별 벽 기하·문 종류와 스윙·한국 고유 공간**.
+ResPlan 우위: **평면 수·내장 축척·중복 정제·공식 split**.
+
+### 7.7 ⭐ 전략 변경 — RPLAN 대신 ResPlan을 사전학습 코퍼스로
+논문 α는 **RPLAN 사전학습 → 한국 FT**(strict 33→47%)였다. 그런데 RPLAN은 코너 공유·벽두께
+없음이라, [[korean-codec-rplan-optimized-wallthickness]]의 "코덱이 내부 벽 0~2개만 유도"
+문제를 사전학습 단계에서 **심어 넣는다**.
+
+ResPlan은 **벽이 폴리곤이고 두께가 있고 문/창이 폴리곤이며 엣지 타입이 우리와 거의 동형**이다.
+→ **ResPlan 사전학습 → 한국 FT** 가 가능하고, 이것이 "표현이 병목"이라는 가설의 **직접 실험**이다:
+  - RPLAN(두께 없음) 사전학습 vs ResPlan(두께 있음) 사전학습 vs 한국 단독
+  - 두께 있는 쪽이 더 잘 전이되면 = 병목이 모델이 아니라 표현이라는 증거
+논문 ②(MDPI)의 헤드라인 실험은 이 3-way가 되어야 한다. 외부 베이스라인 부재(α 리젝 사유)도
+같이 해소된다.
