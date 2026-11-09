@@ -350,3 +350,67 @@ ResPlan은 **벽이 폴리곤이고 두께가 있고 문/창이 폴리곤이며 
   - 두께 있는 쪽이 더 잘 전이되면 = 병목이 모델이 아니라 표현이라는 증거
 논문 ②(MDPI)의 헤드라인 실험은 이 3-way가 되어야 한다. 외부 베이스라인 부재(α 리젝 사유)도
 같이 해소된다.
+
+### 7.8 ⚠⚠ Swiss Dwellings 전수 집계 — 우리 "벽두께 벡터" 우위는 사라졌다
+`swiss-dwellings-v3.0.0.zip` 932MB = CSV 4개(`geometries.csv` 1.09GB·`simulations.csv` 369열·
+`locations.csv` 503열·`location_ratings.csv`). geometries 전수 스캔 **3,255,905행**
+(`scratchpad/swiss_count.py`).
+
+**규모** — 우리(10,430 gated)의 4배가 넘는다
+| 고유 키 | 수 |
+|---|---|
+| site_id | 1,466 |
+| building_id | 3,184 |
+| plan_id | 8,941 |
+| **floor_id** | **13,905** |
+| unit_id | 47,284 |
+| **apartment_id** | **45,175** |
+
+**스키마**: `apartment_id·site_id·building_id·plan_id·floor_id·unit_id·area_id·unit_usage·
+entity_type·entity_subtype·geometry(WKT, **미터**)·elevation·height` (13열)
+
+**entity**: separator 1,700,813 / opening 714,936 / area 522,183 / feature 317,973
+**subtype 상위**: **WALL 1,519,546** · DOOR 346,079 · WINDOW 260,081 · RAILING 158,398 ·
+KITCHEN 116,503 · ENTRANCE_DOOR 108,776 · SHAFT 100,389 · ROOM 83,715 · BATHROOM 70,317 ·
+SINK 67,680 · **CORRIDOR 63,514** · TOILET 63,389 · STAIRS 44,274 · BALCONY 43,720 ·
+BATHTUB 41,338 · LIVING_DINING 24,435 · BEDROOM 23,180 · ELEVATOR 23,098 · COLUMN 22,869 ·
+STOREROOM 19,072 · STAIRCASE 12,903 · SHOWER 12,252 · LOGGIA 4,670
+**unit_usage**: RESIDENTIAL 2,650,784 / PUBLIC 588,501 / COMMERCIAL 16,500
+
+**🔴 우리가 없다고 측정한 것(`docs/DATA.md §8.10`)을 Swiss는 거의 다 갖고 있다**
+| 우리 결손 | 우리 | Swiss |
+|---|---|---|
+| 개별 벽 기하 | 평면당 141개(있음) | **WALL 150만 폴리곤** — 두께가 기하에 내재(가변) |
+| **창 높이** | **없음(키 자체 없음)** | **height 1.9m + elevation(sill) 0.5/3.4/6.3/9.2/12.1** |
+| **층 정보** | **없음(3경로 전부 막힘)** | **`floor_id` 13,905 + elevation 0.0/2.9/5.8/8.7/11.6(층고 2.9m 간격)** |
+| 축척 | 사람 입력 97.9% | **WKT 미터 좌표(불필요)** |
+| 위생기구 | 도면 37.8% | SINK·TOILET·BATHTUB·SHOWER·KITCHEN |
+| 복도·계단·승강기 | 복도 77.2% | CORRIDOR·STAIRS·STAIRCASE·ELEVATOR·SHAFT |
+| **문 스윙** | **33% 보유** | **없음**(DOOR는 개구부 폴리곤) |
+
+**정정**: §7.2에서 "벽두께가 실제 가변인 세대 단위는 우리뿐"이라고 썼다 — **틀렸다.**
+Swiss가 더 크고 더 완전하다. 남는 고유 축은 **문 스윙**과 **한국 고유 공간·법규**뿐이다.
+
+**그러나 논문 ②에는 유리하다 — Swiss를 "표현 상한선"으로 쓴다**
+- Swiss = 표현이 거의 완전한 코퍼스 → 거기서 **도면화 가능률의 상한**을 측정
+- 우리 한국 데이터 = 창 높이·층 결손 → 같은 지표가 얼마나 깎이는지 측정
+- 결손을 하나씩 복원(③층)하며 지표 회복을 보인다
+→ "병목은 표현이다"가 **단일 데이터셋 주장에서 통제 실험**으로 승격된다.
+사전학습 후보도 RPLAN → **Swiss/ResPlan**으로 바뀐다([[7.7]] 참조).
+⚠ 단 Swiss는 스위스 법규·관습이다. 한국 법규 적용 대상이 아니다(표현 연구 전용).
+
+### 7.9 LH(한국토지주택공사) — Swiss 등가물은 없다
+`LH 공동주택 주력평면 BIM (모델+도면) 라이브러리 활용 안내` PDF를 직접 받아 확인:
+- **임대 8개 평면만**: 26·31·36·41·46·55·65·84형. 구조·건축 마감 모델 + 도면 일체
+- 포함 도면: 단위세대평면도·3D 조감도·**면적산출근거**·재료마감표·MC도·**창호일람표**·
+  마감/걸레받이·반자 시공한계도·단열·방수·결로 상세도·경량철골 천장틀도
+- **웹뷰어 8개 링크(autode.sk/…)는 별도 등록 없이 열람 가능**
+- 원본 BIM은 "LH홈페이지 게시(사업소개>주택사업>주택기술품질자료)"라 적혀 있으나,
+  해당 게시판(bid=0027) 목록 9건에 **없다**(최신 2025-06-05). 안내문 게시글(list_no=729956)의
+  첨부도 seq=1 하나뿐 → **원본 .rvt 경로는 사람이 LH에 확인해야 한다.**
+- `LH 주택 평면도 현황`(data.go.kr/15037046)은 **이용허락범위 제한 없음**이나 JSON 안의
+  **base64 래스터 이미지**다(벡터 아님).
+
+→ **한국에는 Swiss Dwellings 등가의 대량 벡터 코퍼스가 없다.** 이것이 우리 AI-Hub 보정
+데이터의 존재 이유이고(논문 ①의 정당화), 동시에 LH BIM 8타입은 **정답 레퍼런스**로만 쓸 수
+있다(양 0, 질 최상 — 창호일람표가 우리 창 높이 결손의 유일한 국내 정답).
