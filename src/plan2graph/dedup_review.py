@@ -654,4 +654,11 @@ $('#q').onkeydown=async e=>{
   else toast('그 도면번호를 가진 그룹이 없습니다 — 번호 일부만 넣어도 됩니다');
 };
 loadList(true);
+// URL 딥링크 — ?group=<서명> 또는 ?gid=<도면번호> 로 바로 그 그룹을 연다(작업표용).
+(async()=>{const q=new URLSearchParams(location.search);
+  const s=q.get('group'); if(s){openGroup(s);return;}
+  const p=q.get('gid'); if(!p)return;
+  $('#q').value=p;
+  const r=await(await fetch('api/dedup/find/'+encodeURIComponent(p))).json();
+  if(r.sig)openGroup(r.sig); else toast('그 도면번호를 가진 그룹이 없습니다');})();
 </script></body></html>"""
