@@ -153,4 +153,6 @@ Python 3.11 · `shapely`(기하) · `networkx`(그래프) · COCO · `owlready2`
 
 ## 출처·라이선스
 
-AI-Hub 건축도면 데이터(dataSetSn=71465) · CubiCasa5k · RPLAN. 상업적 활용/기술이전 가능 여부는 [docs/ROADMAP.md §8 열린 질문](docs/ROADMAP.md#8-열린-질문-도메인사람-확인-필요) 참조.
+AI-Hub 건축도면 데이터(dataSetSn=71465) · CubiCasa5k · RPLAN · ResPlan(CC BY 4.0+MIT) · ModRes(MIT) · Swiss Dwellings(CC BY 4.0).
+
+**연구 목적 사용이며 상업화 계획이 없다.** 어느 값이 제공받은 것이고 어느 값이 우리가 만든 것인지(출처 회계)는 [docs/DATA.md §8.12](docs/DATA.md) 참조 — 공개 시 이 구분을 함께 싣는다.

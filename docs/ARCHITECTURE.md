@@ -66,7 +66,7 @@ AI-Hub(한국) 원본 PNG+COCO 라벨  +  RPLAN·CubiCasa(글로벌)
 - **union not replace** — 신·구 모델 모두 추론, 하나라도 게이트 통과 시 채택 → 회귀 0. 실라벨 우선.
 - **objocr 이미지직접 2패스**: 라벨 없는 다세대 시트 → 전체시트 SPA로 세대 군집분할 → 세대별 크롭 재검출. `v2v_infer.run_objocr`.
 - 검출 약점: SPA 강(0.90+)·STR 약(문/창) → 위상 게이트 병목=현관문. wall은 검출 아닌 **방 폴리곤 경계서 기하 유도**.
-- 사업계획서 "Mask R-CNN"은 옛 명칭 — 실제는 **YOLOv8-seg**.
+- 초기 문서의 "Mask R-CNN"은 옛 명칭 — 실제는 **YOLOv8-seg**.
 
 ---
 

@@ -89,7 +89,7 @@
 | treemap (규칙기반 배치) | wall-cycle 생성 AI | ADR-0006/0012 |
 | bbox 회귀 / 박스 | (폐기) | ADR-0006 |
 | "GSDiff로 엔진 교체" | ONE 엔진 유지 + 생성 타깃이 wall-cycle | ADR-0012 |
-| "Mask R-CNN" (사업계획서 옛 명칭) | YOLOv8-seg | ARCHITECTURE §3 |
+| "Mask R-CNN" (초기 문서의 옛 명칭) | YOLOv8-seg | ARCHITECTURE §3 |
 
 ---
 
