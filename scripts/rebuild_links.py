@@ -805,6 +805,58 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
                     e["window_id"] = remap[e["window_id"]]
             rep["win_merged"] = rep.get("win_merged", 0) + drop
 
+    # (n) **문·창 중복 정리** — 같은 개구부가 두 번 기록된 것을 문 쪽으로 모은다.
+    # 미닫이 유리문은 파서가 창으로도 잡는다(실측: 1.5X2.4 PD · 2.7X2.3 PD).
+    _sc = g.get("scale_mm_per_px")
+    OPEN_DUP = (350.0 / float(_sc)) if _sc else 35.0
+    dpos = [(d, d.get("position"), {str(x) for x in (d.get("connects") or [])})
+            for d in new_doors if d.get("position")]
+    wins2 = g.get("windows") or []
+    if wins2 and dpos:
+        keep2, drop2 = [], []
+        for w in wins2:
+            p = w.get("position")
+            hit = None
+            if p:
+                for d, q, cn in dpos:
+                    if (abs(p[0] - q[0]) <= OPEN_DUP and abs(p[1] - q[1]) <= OPEN_DUP
+                            and str(w.get("belongs_to")) in cn):
+                        hit = d
+                        break
+            if hit is None:
+                keep2.append(w)
+            else:
+                drop2.append((w.get("id"), hit.get("id")))
+        if drop2:
+            gone = {a for a, _ in drop2}
+            g["windows"] = keep2
+            g["n_windows"] = len(keep2)
+            for k2 in [k for k, e2 in edges.items()
+                       if e2.get("via") == "window" and e2.get("window_id") in gone]:
+                del edges[k2]
+            rep["win_is_door"] = rep.get("win_is_door", 0) + len(drop2)
+
+    # 같은 방에 붙은 외부문이 여럿이면 하나로 — 사람이 짚은 것을 남긴다
+    byroom = collections.defaultdict(list)
+    for d in new_doors:
+        if d.get("to_outside") and d.get("position"):
+            cn = [str(x) for x in (d.get("connects") or [])]
+            if len(cn) == 1:
+                byroom[cn[0]].append(d)
+    kill = set()
+    for rid, ds in byroom.items():
+        ds.sort(key=lambda d: (d.get("position_source") != "user_override",
+                               str(d.get("id"))))
+        for d in ds[1:]:
+            q = ds[0]["position"]
+            p = d["position"]
+            if abs(p[0] - q[0]) <= OPEN_DUP * 2 and abs(p[1] - q[1]) <= OPEN_DUP * 2:
+                kill.add(id(d))
+    if kill:
+        n0 = len(new_doors)
+        new_doors[:] = [d for d in new_doors if id(d) not in kill]
+        rep["ext_door_dedup"] = rep.get("ext_door_dedup", 0) + (n0 - len(new_doors))
+
     # (m) 사용자가 짚어준 **창** — 문과 같은 모양으로 받는다.
     # 맨 뒤에서 돈다: (i) 창 belongs_to 재산출이 이걸 덮으면 안 된다.
     for ow in (o.get("windows") or []):
@@ -887,6 +939,8 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
     rep.setdefault("ovr_door_pos", 0)
     rep.setdefault("ovr_win_add", 0)
     rep.setdefault("win_merged", 0)
+    rep.setdefault("ext_door_dedup", 0)
+    rep.setdefault("win_is_door", 0)
     rep.setdefault("comp_merge", 0)
     rep.setdefault("win_fixed", 0)
     rep.setdefault("win_orphan", 0)
@@ -982,6 +1036,8 @@ def main():
         T["ovr_door_pos"] += rep.get("ovr_door_pos", 0)
         T["ovr_win_add"] = T.get("ovr_win_add", 0) + rep.get("ovr_win_add", 0)
         T["win_merged"] = T.get("win_merged", 0) + rep.get("win_merged", 0)
+        T["ext_door_dedup"] = T.get("ext_door_dedup", 0) + rep.get("ext_door_dedup", 0)
+        T["win_is_door"] = T.get("win_is_door", 0) + rep.get("win_is_door", 0)
         T["comp_merge"] += rep.get("comp_merge", 0)
         T["win_fixed"] += rep.get("win_fixed", 0)
         T["win_orphan"] += rep.get("win_orphan", 0)
@@ -1062,6 +1118,10 @@ def main():
           % (T["via_fixed"], T["forbidden_door"]))
     if T.get("win_merged"):
         print("   겹친 창 합침 %d개" % T["win_merged"])
+    if T.get("win_is_door"):
+        print("   문과 같은 자리 창 버림 %d개" % T["win_is_door"])
+    if T.get("ext_door_dedup"):
+        print("   중복 외부문 합침 %d개" % T["ext_door_dedup"])
     if T["edges"]:
         print("   엣지 %d개 중 추론 %d개 (%.1f%%) — 나머지는 문·창·벽 증거"
               % (T["edges"], T["inferred"], 100.0 * T["inferred"] / T["edges"]))
