@@ -98,7 +98,8 @@ def run(pid, apply_=False):
 
     est = 0
     for i, d in enumerate(doors):
-        if i not in used and d.get("source") == "link_rebuild":
+        if (i not in used and d.get("source") == "link_rebuild"
+                and d.get("position_source") != "user_override"):
             d["position_source"] = "estimated"
             est += 1
     print("   → 옮김 %d · 보류 %d · 추정으로 남은 문 %d · 문 %d개"

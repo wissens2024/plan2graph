@@ -748,6 +748,19 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
         if c is not None and not c.is_empty:
             e["pos"] = [round(c.x, 1), round(c.y, 1)]
 
+    # (l) 사용자가 짚어준 **문 위치** — [방a, 방b, x, y]
+    # ⚠ 반드시 **문 레코드가 다 만들어진 뒤**에 돌아야 한다. (g) 자리에서 돌렸더니
+    # 그때는 아직 dx* 가 없어서 아무것도 못 고쳤다.
+    for dp in (o.get("door_pos") or []):
+        kk = {str(dp[0]), str(dp[1])}
+        for d in new_doors:
+            if {str(x) for x in (d.get("connects") or [])} == kk:
+                if d.get("position") and "position_parsed" not in d:
+                    d["position_parsed"] = d["position"]
+                d["position"] = [float(dp[2]), float(dp[3])]
+                d["position_source"] = "user_override"
+                rep["ovr_door_pos"] = rep.get("ovr_door_pos", 0) + 1
+
     # 위계 전이 · 현관 거리
     for e in edges.values():
         pa = PRIVACY.get((rooms.get(e["from"]) or {}).get("role"), "other")
@@ -803,6 +816,7 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
     rep.setdefault("ovr_force", 0)
     rep.setdefault("ovr_door_drop", 0)
     rep.setdefault("ovr_door_add", 0)
+    rep.setdefault("ovr_door_pos", 0)
     rep.setdefault("comp_merge", 0)
     rep.setdefault("win_fixed", 0)
     rep.setdefault("win_orphan", 0)
@@ -880,6 +894,7 @@ def main():
         T["ovr_force"] += rep.get("ovr_force", 0)
         T["ovr_door_drop"] += rep.get("ovr_door_drop", 0)
         T["ovr_door_add"] += rep.get("ovr_door_add", 0)
+        T["ovr_door_pos"] += rep.get("ovr_door_pos", 0)
         T["comp_merge"] += rep.get("comp_merge", 0)
         T["win_fixed"] += rep.get("win_fixed", 0)
         T["win_orphan"] += rep.get("win_orphan", 0)
@@ -952,6 +967,8 @@ def main():
               % (T["ovr_forbid"], T["ovr_force"]))
         print("   확정 문 — 지움 %d · 넣음 %d"
               % (T["ovr_door_drop"], T["ovr_door_add"]))
+        if T["ovr_door_pos"]:
+            print("   확정 문 위치 %d건" % T["ovr_door_pos"])
     print("   역할쌍 규칙으로 종류 교정 %d건 · 금지 쌍의 문 표시 %d건"
           % (T["via_fixed"], T["forbidden_door"]))
     if T["edges"]:
