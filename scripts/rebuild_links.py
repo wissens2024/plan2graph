@@ -55,12 +55,19 @@ from shapely.ops import unary_union
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EDITS = os.path.join(ROOT, "data", "staging", "corrected", "edits")
 BK = os.path.join(ROOT, "data", "staging", "corrected", "_manual_backup")
+OVR = os.path.join(ROOT, "data", "staging", "corrected", "_link_overrides.json")
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
 try:
     from plan2graph.geomgraph import PRIVACY
 except Exception:                                    # 단독 실행 대비
     PRIVACY = {}
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    import role_rules
+except Exception:
+    role_rules = None
 
 FRACS = (0.2, 0.35, 0.5, 0.65, 0.8)
 MARGIN = 4.0          # 벽면에서 더 들어가는 여유(px)
@@ -201,7 +208,15 @@ def open_runs(polys, walls, scale, open_min):
     return out
 
 
-def rebuild(g, thin_px=THIN_DOOR_PX):
+def load_overrides():
+    try:
+        with open(OVR, encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
+def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
     rooms = {str(k): v for k, v in (g.get("rooms") or {}).items()}
     polys = polys_of(g)
     scale = float(g.get("scale_mm_per_px") or 0) or None
@@ -427,6 +442,142 @@ def rebuild(g, thin_px=THIN_DOOR_PX):
                         "open_from": "entrance_rule", "open_len_px": round(bl, 1)}
             rep["entrance_open"] = rep.get("entrance_open", 0) + 1
 
+    # (e) 연결 증거가 **하나도 없는 방** — 추론으로 잇고 추론분을 따로 센다.
+    # 조용히 메우지 않는다: open_from="fallback_rule" 로 표시해 전수로 셀 수 있게 한다.
+    # 원인은 대개 작은 수납공간(펜트리·드레스룸·욕실)의 문 검출 누락이다.
+    linked = set()
+    for k in edges:
+        linked |= set(k)
+    for rid in list(polys):
+        if rid in linked:
+            continue
+        best, bl = None, 0.0
+        for oid, q in polys.items():
+            if oid == rid or polys[rid].distance(q) > 2.0:
+                continue
+            try:
+                L = polys[rid].exterior.intersection(q.buffer(1.5)).length
+            except Exception:
+                continue
+            if L > bl:
+                best, bl = oid, L
+        if best and bl >= OPEN_MIN:
+            k = frozenset((rid, best))
+            if k in edges:
+                continue
+            x, y = sorted(k)
+            edges[k] = {"from": x, "to": y, "via": "open", "boundary": "open",
+                        "door_id": None, "door_swing_deg": None, "door_pos": None,
+                        "open_from": "fallback_rule", "open_len_px": round(bl, 1)}
+            linked |= k
+            rep["fallback_open"] = rep.get("fallback_open", 0) + 1
+        else:
+            rep["no_evidence"] = rep.get("no_evidence", 0) + 1
+
+    # (f) 역할 쌍 규칙 — 기하는 '어느 두 방'까지, '무엇으로'는 표가 정한다.
+    # role_rules.py 에 사용자가 확인해 준 사실만 적혀 있다(과잉 일반화 금지).
+    if role_rules is not None:
+        for k, e in list(edges.items()):
+            ra = (rooms.get(str(e["from"])) or {}).get("role")
+            rb = (rooms.get(str(e["to"])) or {}).get("role")
+            want = role_rules.via_for(ra, rb)
+            if want and want != e.get("via"):
+                # 문 레코드가 실제로 있으면 그 증거를 규칙보다 앞세운다
+                if e.get("via") == "door" and e.get("door_id"):
+                    continue
+                e["via"] = want
+                e["boundary"] = want
+                e["via_from"] = "role_rule"
+                rep["via_fixed"] = rep.get("via_fixed", 0) + 1
+            if e.get("via") == "door" and role_rules.door_forbidden(ra, rb):
+                e["suspect"] = True
+                e["suspect_reason"] = "%s↔%s 는 문으로 이어질 수 없다" % (ra, rb)
+                rep["forbidden_door"] = rep.get("forbidden_door", 0) + 1
+                did = e.get("door_id")
+                for d in new_doors:
+                    if d.get("id") == did:
+                        d["suspect"] = True
+                        d["suspect_reason"] = e["suspect_reason"]
+
+    # (g) 사용자 확정값 — 사람이 도면을 직접 보고 알려준 사실이 마지막에 이긴다.
+    o = (ovr or {}).get(str(g.get("plan_id")) or "") or {}
+    for pair in (o.get("forbid") or []):
+        k = frozenset(str(x) for x in pair[:2])
+        if k in edges:
+            del edges[k]
+            rep["ovr_forbid"] = rep.get("ovr_forbid", 0) + 1
+    for item in (o.get("force") or []):
+        a, b = str(item[0]), str(item[1])
+        via = item[2] if len(item) > 2 else "door"
+        k = frozenset((a, b))
+        x, y = sorted(k)
+        edges[k] = {"from": x, "to": y, "via": via, "boundary": via,
+                    "door_id": None, "door_swing_deg": None, "door_pos": None,
+                    "via_from": "user_override"}
+        rep["ovr_force"] = rep.get("ovr_force", 0) + 1
+
+    # (h) 끊긴 조각을 본체에 붙인다 — 붙인 건수를 따로 센다.
+    def _comps():
+        adj2 = collections.defaultdict(set)
+        for kk in edges:
+            a2, b2 = tuple(kk)
+            adj2[a2].add(b2)
+            adj2[b2].add(a2)
+        seen, out2 = set(), []
+        for rid in polys:
+            if rid in seen:
+                continue
+            st, c = [rid], set()
+            while st:
+                x = st.pop()
+                if x in c:
+                    continue
+                c.add(x)
+                st.extend(adj2[x] - c)
+            seen |= c
+            out2.append(c)
+        return out2
+
+    ent_ids = {rid for rid, r in rooms.items() if r.get("role") == "현관"}
+    guard = 0
+    while guard < 40:
+        guard += 1
+        cs = _comps()
+        if len(cs) < 2:
+            break
+        main = None
+        for c in cs:
+            if c & ent_ids:
+                main = c
+                break
+        if main is None:
+            main = max(cs, key=len)
+        others = [c for c in cs if c is not main]
+        best = None                       # (길이, 조각방, 본체방)
+        for c in others:
+            for rid in c:
+                for oid in main:
+                    if rid not in polys or oid not in polys:
+                        continue
+                    if polys[rid].distance(polys[oid]) > 25.0:
+                        continue
+                    try:
+                        L = polys[rid].exterior.intersection(
+                            polys[oid].buffer(max(2.0, polys[rid].distance(polys[oid]) + 1.5))).length
+                    except Exception:
+                        continue
+                    if best is None or L > best[0]:
+                        best = (L, rid, oid)
+        if best is None or best[0] < OPEN_MIN:
+            break
+        L, rid, oid = best
+        k = frozenset((rid, oid))
+        x, y = sorted(k)
+        edges[k] = {"from": x, "to": y, "via": "open", "boundary": "open",
+                    "door_id": None, "door_swing_deg": None, "door_pos": None,
+                    "open_from": "component_merge", "open_len_px": round(L, 1)}
+        rep["comp_merge"] = rep.get("comp_merge", 0) + 1
+
     # 위계 전이 · 현관 거리
     for e in edges.values():
         pa = PRIVACY.get((rooms.get(e["from"]) or {}).get("role"), "other")
@@ -474,6 +625,16 @@ def rebuild(g, thin_px=THIN_DOOR_PX):
         reach[str(e["to"])].add(str(e["from"]))
     rep["isolated"] = [rid for rid in rooms if rid not in reach]
     rep.setdefault("entrance_open", 0)
+    rep.setdefault("fallback_open", 0)
+    rep.setdefault("no_evidence", 0)
+    rep.setdefault("via_fixed", 0)
+    rep.setdefault("forbidden_door", 0)
+    rep.setdefault("ovr_forbid", 0)
+    rep.setdefault("ovr_force", 0)
+    rep.setdefault("comp_merge", 0)
+    rep["inferred"] = sum(1 for e in out
+                          if e.get("open_from") in ("entrance_rule", "fallback_rule")
+                          and e.get("via_from") != "user_override")
     rep["unreachable"] = [rid for rid in rooms
                           if rid not in dist and rid not in start]
     rep["edge_after"] = len(out)
@@ -496,6 +657,9 @@ def main():
         random.Random(args.seed).shuffle(fs)
         pool += fs[: args.sample]
 
+    ovr = load_overrides()
+    if ovr:
+        print("사용자 확정값 %d장 불러옴" % len(ovr))
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     bk = os.path.join(BK, stamp + "_links")
     T = collections.Counter()
@@ -505,11 +669,20 @@ def main():
             continue
         g = json.load(open(p, encoding="utf-8"))
         rooms = {str(k): v for k, v in (g.get("rooms") or {}).items()}
-        rep = rebuild(g, args.thin_px)
+        rep = rebuild(g, args.thin_px, ovr)
         for k in ("wall_rooms", "door_pairs", "dropped", "merged", "unresolved", "thin"):
             T[k] += rep[k]
         T["isolated"] += len(rep["isolated"])
         T["entrance_open"] += rep.get("entrance_open", 0)
+        T["fallback_open"] += rep.get("fallback_open", 0)
+        T["no_evidence"] += rep.get("no_evidence", 0)
+        T["via_fixed"] += rep.get("via_fixed", 0)
+        T["forbidden_door"] += rep.get("forbidden_door", 0)
+        T["ovr_forbid"] += rep.get("ovr_forbid", 0)
+        T["ovr_force"] += rep.get("ovr_force", 0)
+        T["comp_merge"] += rep.get("comp_merge", 0)
+        T["edges"] += rep["edge_after"]
+        T["inferred"] += rep["inferred"]
         T["unreachable"] += len(rep["unreachable"])
         if rep["isolated"]:
             T["plans_isolated"] += 1
@@ -554,7 +727,17 @@ def main():
           "빈 문 버림 %d · 못 푼 문 %d · 좁은 문 표시 %d"
           % (T["wall_rooms"], T["door_pairs"], T["merged"],
              T["dropped"], T["unresolved"], T["thin"]))
-    print("   현관 개방 규칙 적용 %d건" % T["entrance_open"])
+    print("   끊긴 조각 붙임 %d건" % T["comp_merge"])
+    print("   현관 개방 규칙 %d건 · 증거없음 보완 %d건 · 끝내 못 이은 방 %d개"
+          % (T["entrance_open"], T["fallback_open"], T["no_evidence"]))
+    if T["ovr_forbid"] or T["ovr_force"]:
+        print("   사용자 확정값 적용 — 지움 %d · 넣음 %d"
+              % (T["ovr_forbid"], T["ovr_force"]))
+    print("   역할쌍 규칙으로 종류 교정 %d건 · 금지 쌍의 문 표시 %d건"
+          % (T["via_fixed"], T["forbidden_door"]))
+    if T["edges"]:
+        print("   엣지 %d개 중 추론 %d개 (%.1f%%) — 나머지는 문·창·벽 증거"
+              % (T["edges"], T["inferred"], 100.0 * T["inferred"] / T["edges"]))
     print("   고립된 방 %d개(도면 %d) · 현관에서 못 닿는 방 %d개(도면 %d)"
           % (T["isolated"], T["plans_isolated"], T["unreachable"], T["plans_unreachable"]))
     print("백업 → " + bk if args.apply else "[드라이런] --apply 로 적용")
