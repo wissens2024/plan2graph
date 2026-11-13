@@ -413,5 +413,30 @@
   "written": 7,
   "overwritten": 7,
   "backup": "/home/ju/plan2graph/data/staging/corrected/_dedup_backup/20261114_003349_cross"
+ },
+ {
+  "sig": "c2ea883ef61eaf61",
+  "source": "APT_FP_c6f3a6f8_17447720_u1",
+  "targets": [
+   "APT_FP_d1193438_17447720_u0",
+   "APT_FP_deaf84c4_17447720_u0",
+   "APT_FP_e8f9d19d_17447720_u0",
+   "APT_FP_f23c4423_17447720_u1"
+  ],
+  "written": 4,
+  "overwritten": 0,
+  "backup": null
+ },
+ {
+  "sig": "cross",
+  "source": "APT_FP_c6f3a6f8_17447720_u1",
+  "targets": [
+   "APT_FP_0db61f15_17447720_u0",
+   "APT_FP_3260a99a_17447720_u0",
+   "APT_FP_4c979392_17447720_u0"
+  ],
+  "written": 3,
+  "overwritten": 3,
+  "backup": "/home/ju/plan2graph/data/staging/corrected/_dedup_backup/20261114_010351_cross"
  }
 ]
