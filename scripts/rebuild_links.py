@@ -805,6 +805,14 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
                     e["window_id"] = remap[e["window_id"]]
             rep["win_merged"] = rep.get("win_merged", 0) + drop
 
+    # (n0) 방이 하나도 없는 문은 버린다 — 사용자가 세대 밖 공용부를 지우면
+    # 그쪽으로 나가던 문이 connects=[] 인 채 to_outside 로 남아 유령이 된다.
+    n_before = len(new_doors)
+    new_doors[:] = [d for d in new_doors
+                    if [x for x in (d.get("connects") or []) if str(x) in rooms]]
+    if len(new_doors) != n_before:
+        rep["orphan_door"] = rep.get("orphan_door", 0) + (n_before - len(new_doors))
+
     # (n) **문·창 중복 정리** — 같은 개구부가 두 번 기록된 것을 문 쪽으로 모은다.
     # 미닫이 유리문은 파서가 창으로도 잡는다(실측: 1.5X2.4 PD · 2.7X2.3 PD).
     _sc = g.get("scale_mm_per_px")
@@ -939,6 +947,7 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
     rep.setdefault("ovr_door_pos", 0)
     rep.setdefault("ovr_win_add", 0)
     rep.setdefault("win_merged", 0)
+    rep.setdefault("orphan_door", 0)
     rep.setdefault("ext_door_dedup", 0)
     rep.setdefault("win_is_door", 0)
     rep.setdefault("comp_merge", 0)
@@ -1036,6 +1045,7 @@ def main():
         T["ovr_door_pos"] += rep.get("ovr_door_pos", 0)
         T["ovr_win_add"] = T.get("ovr_win_add", 0) + rep.get("ovr_win_add", 0)
         T["win_merged"] = T.get("win_merged", 0) + rep.get("win_merged", 0)
+        T["orphan_door"] = T.get("orphan_door", 0) + rep.get("orphan_door", 0)
         T["ext_door_dedup"] = T.get("ext_door_dedup", 0) + rep.get("ext_door_dedup", 0)
         T["win_is_door"] = T.get("win_is_door", 0) + rep.get("win_is_door", 0)
         T["comp_merge"] += rep.get("comp_merge", 0)
@@ -1116,6 +1126,8 @@ def main():
             print("   확정 창 %d건" % T["ovr_win_add"])
     print("   역할쌍 규칙으로 종류 교정 %d건 · 금지 쌍의 문 표시 %d건"
           % (T["via_fixed"], T["forbidden_door"]))
+    if T.get("orphan_door"):
+        print("   방 없는 유령 문 버림 %d개" % T["orphan_door"])
     if T.get("win_merged"):
         print("   겹친 창 합침 %d개" % T["win_merged"])
     if T.get("win_is_door"):
