@@ -1013,6 +1013,14 @@ annotation   id · image_id · category_id · segmentation · area · bbox · is
 5. **파우더룸·복도 보완** — 방 개수를 바꾸므로 기하가 정리된 뒤에.
 6. **벽 두께 복구** — 원천 재파싱이 필요해 가장 뒤.
 
+7. **전파 재생** `reprop_all` — ⚠ **빼먹으면 사용자 확정값이 사본에서 사라진다.**
+   `link_overrides.json` 은 **plan_id 로** 걸린다. 전수 재산출을 돌리면 원본만 확정값을
+   받고, 같은 그림의 사본은 기하에서 다시 뽑은 값으로 돌아간다. 실측(2026-11-14):
+   전수 적용 직후 전파본 **62장이 전부** 갈렸다(c6f3a6f8 u1 문 11·외부문 1 ↔
+   사본 문 7·외부문 0). `reprop_all --apply` 로 재생하면 62장 전부 복구되고
+   `verify_prop` 어긋남 0 이 된다. 근본 해법은 override 를 **그림 단위**로 거는
+   것이지만 전파 변환(평행이동·미러)을 좌표에 다시 먹여야 해서 미뤘다.
+
 기록: 모든 적용은 `_edit_log.jsonl`(§8.15)에 `actor=claude` · `kind=correct` 로 남긴다.
 `rebuild_links` 는 `provenance.links="geometry_rebuild"`,
 `fix_openings` 는 각 개구부에 `size_source="geometry_rebuild"` 를 박는다.
