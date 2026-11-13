@@ -695,6 +695,9 @@ a.dedup:hover{background:#2c3d58}
  .gcon line{pointer-events:none}
  .gcon .door{stroke:#16a34a;stroke-width:3}
  .gcon .open{stroke:#2563eb;stroke-width:2.5;stroke-dasharray:9 7}
+ .gcon .tagln{stroke:#f59e0b;stroke-width:2.2;opacity:.95}
+ .gcon .tagref{stroke:#fcd34d;stroke-width:1.2;stroke-dasharray:2 3}
+ .gcon polygon.tagpt{fill:#f59e0b;stroke:#78350f;stroke-width:1.4}
  .gcon .outstub{stroke:#64748b;stroke-width:2;stroke-dasharray:4 3}
  .gcon rect.nopos{fill:none;stroke:#94a3b8;stroke-width:2;stroke-dasharray:3 2}
  .gcon text.olab{font-size:11px;font-weight:700;fill:#475569;stroke-width:3px}
@@ -1118,7 +1121,7 @@ function drawGeomLinks(){
     // 창 엣지가 있으면 상대 방도 함께
     for(const e of (G.edges||[])){
       if(e.via!=='window')continue;
-      if(e.window_id&&e.window_id!==w.id)continue;
+      if(e.window_id!==w.id)continue;   // window_id 없는 엣지는 아무 창에나 붙이지 않는다
       const a=String(e.from),b=String(e.to);
       if(a===bt&&R[b]&&rooms.indexOf(b)<0)rooms.push(b);
       else if(b===bt&&R[a]&&rooms.indexOf(a)<0)rooms.push(a);
@@ -1130,8 +1133,28 @@ function drawGeomLinks(){
     drawOpening(p,rooms,'window',rooms.length<2,lab,bad);
   }
 
+  // ④ 태그 개구부 — 도면에 인쇄된 원형 부호(9x22 WD 등)에서 복원한 **진짜 위치**.
+  // 검출된 문(초록)과 나란히 보여 어디가 틀렸는지 눈으로 대조할 수 있게 한다.
+  let nTag=0;
+  for(const t of (G.tag_openings||[])){
+    const p=t.pos; if(!p)continue; nTag++;
+    const rooms=(t.rooms||[]).map(String).filter(x=>R[x]);
+    for(const rid of rooms){const c=ctrOf(rid);
+      if(c)el('line',{x1:p[0],y1:p[1],x2:c[0],y2:c[1],class:'tagln'},g);}
+    if(rooms.length<2){
+      let dx=0,dy=0;
+      for(const rid of rooms){const c=ctrOf(rid);if(c){dx+=p[0]-c[0];dy+=p[1]-c[1];}}
+      const L=Math.hypot(dx,dy)||1;
+      el('line',{x1:p[0],y1:p[1],x2:p[0]+dx/L*28,y2:p[1]+dy/L*28,class:'outstub'},g);
+      const o=el('text',{x:p[0]+dx/L*34,y:p[1]+dy/L*34-4,class:'olab'},g);o.textContent='외부';
+    }
+    const d=8;
+    const pg=el('polygon',{points:[[p[0],p[1]-d],[p[0]+d,p[1]],[p[0],p[1]+d],[p[0]-d,p[1]]]
+      .map(v=>v.join(',')).join(' '),class:'tagpt'},g);
+    if(t.tag)el('line',{x1:p[0],y1:p[1],x2:t.tag[0],y2:t.tag[1],class:'tagref'},g);
+  }
   const tag=document.getElementById('gctog');
-  if(tag)tag.textContent=(nBad?('🔗 기하연결 ⚠'+nBad):'🔗 기하연결')
+  if(tag)tag.textContent=(nBad?('🔗 기하연결 ⚠'+nBad):'🔗 기하연결')+(nTag?(' · 태그 '+nTag):'')
     +(nOut?(' · 외부 '+nOut):'')+(nNoPos?(' · 위치미상 '+nNoPos):'');
 }
 

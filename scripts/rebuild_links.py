@@ -48,6 +48,7 @@ import os
 import random
 import shutil
 import sys
+import time as _time
 
 from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import unary_union
@@ -528,9 +529,26 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
         via = item[2] if len(item) > 2 else "door"
         k = frozenset((a, b))
         x, y = sorted(k)
-        edges[k] = {"from": x, "to": y, "via": via, "boundary": via,
-                    "door_id": None, "door_swing_deg": None, "door_pos": None,
-                    "via_from": "user_override"}
+        rec = {"from": x, "to": y, "via": via, "boundary": via,
+               "door_id": None, "door_swing_deg": None, "door_pos": None,
+               "via_from": "user_override"}
+        if via == "window":
+            # 창 엣지에는 **어느 창인지** 반드시 박는다. 비워 두면 그 두 방에 속한
+            # 창이 전부 이 엣지에 붙어 화면에 선이 여러 개 생긴다(실측: 거실에 3개).
+            best, bd = None, 1e18
+            for w in (g.get("windows") or []):
+                wp = w.get("position")
+                if not wp or str(w.get("belongs_to")) not in (a, b):
+                    continue
+                d2 = 0.0
+                for rid in (a, b):
+                    c = polys.get(rid)
+                    if c is not None:
+                        d2 += c.distance(Point(wp[0], wp[1]))
+                if d2 < bd:
+                    best, bd = w.get("id"), d2
+            rec["window_id"] = best
+        edges[k] = rec
         rep["ovr_force"] = rep.get("ovr_force", 0) + 1
 
     # (h) 끊긴 조각을 본체에 붙인다 — 붙인 건수를 따로 센다.
@@ -618,12 +636,17 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
                 rep["win_orphan"] = rep.get("win_orphan", 0) + 1
             continue
         # 두 방에 걸친 창(방↔발코니)은 **실내 쪽**을 적는다 — 발코니는 창이 나는 쪽이 아니다.
+        # ⚠ 둘 다 실외 계열이면(발코니↔실외기실) 규칙이 못 가른다. 그때는 **원래 값을
+        # 그대로 둔다** — 넓은 쪽을 집으면 실외기실 창이 발코니 창이 돼버린다
+        # (실측 win5: 실외기실(11) → 발코니(36) 로 잘못 옮겨졌다).
         pick = hits[0][1]
-        if len(hits) >= 2:
-            ra = (rooms.get(hits[0][1]) or {}).get("role")
-            rb = (rooms.get(hits[1][1]) or {}).get("role")
-            if ra in OUTDOOR_ROLES and rb not in OUTDOOR_ROLES:
-                pick = hits[1][1]
+        ra = (rooms.get(hits[0][1]) or {}).get("role")
+        rb = (rooms.get(hits[1][1]) or {}).get("role") if len(hits) >= 2 else None
+        if len(hits) >= 2 and ra in OUTDOOR_ROLES and rb not in OUTDOOR_ROLES:
+            pick = hits[1][1]
+        elif len(hits) >= 2 and ra in OUTDOOR_ROLES and rb in OUTDOOR_ROLES:
+            if old in polys:
+                pick = old          # 둘 다 실외 — 건드리지 않는다
         if pick != old:
             w["belongs_to_parsed"] = w.get("belongs_to")
             w["belongs_to"] = int(pick) if pick.isdigit() else pick
@@ -751,13 +774,22 @@ def main():
     ap.add_argument("--thin-px", type=float, default=THIN_DOOR_PX)
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--shard", default=None,
+                    help="I/N - 대상을 N 등분해 I 번째만 돈다(병렬 실행용)")
+    ap.add_argument("--progress", type=int, default=0,
+                    help=">0 이면 그 수만큼 처리할 때마다 진행을 한 줄 찍는다")
+    ap.add_argument("--stats-json", default=None, help="집계를 JSON 으로 쓴다")
     args = ap.parse_args()
 
     pool = list(args.plans)
     if args.sample:
         fs = [f[:-5] for f in os.listdir(EDITS) if f.endswith(".json")]
         random.Random(args.seed).shuffle(fs)
-        pool += fs[: args.sample]
+        pool += fs if args.sample < 0 else fs[: args.sample]
+
+    if args.shard:                       # I/N - 같은 일을 나눠 동시에 돈다
+        si, sn = (int(x) for x in args.shard.split("/"))
+        pool = [q for k, q in enumerate(sorted(set(pool))) if k % sn == si]
 
     ovr = load_overrides()
     if ovr:
@@ -765,13 +797,26 @@ def main():
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     bk = os.path.join(BK, stamp + "_links")
     T = collections.Counter()
-    for pid in pool:
+    FAILED = []                          # (plan_id, 예외종류, 메시지)
+    _t0 = _time.time()
+    for _i, pid in enumerate(pool, 1):
+        if args.progress and _i % args.progress == 0:
+            el = _time.time() - _t0
+            print("[진행] %d/%d  %.1f장/초  경과 %.1f분  실패 %d"
+                  % (_i, len(pool), _i / max(el, 1e-9), el / 60.0, len(FAILED)),
+                  flush=True)
         p = os.path.join(EDITS, pid + ".json")
         if not os.path.exists(p):
+            FAILED.append((pid, "FileNotFound", ""))
             continue
-        g = json.load(open(p, encoding="utf-8"))
-        rooms = {str(k): v for k, v in (g.get("rooms") or {}).items()}
-        rep = rebuild(g, args.thin_px, ovr)
+        try:                             # 한 장이 깨져도 나머지는 돈다
+            g = json.load(open(p, encoding="utf-8"))
+            rooms = {str(k): v for k, v in (g.get("rooms") or {}).items()}
+            rep = rebuild(g, args.thin_px, ovr)
+        except Exception as exc:
+            FAILED.append((pid, type(exc).__name__, str(exc)[:200]))
+            T["failed"] += 1
+            continue
         for k in ("wall_rooms", "door_pairs", "dropped", "merged", "unresolved", "thin"):
             T[k] += rep[k]
         T["isolated"] += len(rep["isolated"])
@@ -821,12 +866,22 @@ def main():
                           " + ".join(nm(x) for x in old) or "-",
                           " + ".join(nm(x) for x in new)))
         if args.apply:
-            os.makedirs(bk, exist_ok=True)
-            shutil.copy(p, os.path.join(bk, pid + ".json"))
-            tmp = p + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(g, f, ensure_ascii=False)
-            os.replace(tmp, p)
+            tmp = None
+            try:
+                os.makedirs(bk, exist_ok=True)
+                shutil.copy(p, os.path.join(bk, pid + ".json"))
+                tmp = p + ".%d.tmp" % os.getpid()
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(g, f, ensure_ascii=False)
+                os.replace(tmp, p)
+            except Exception as exc:     # 쓰다 실패하면 원본은 그대로 둔다
+                FAILED.append((pid, "write:" + type(exc).__name__, str(exc)[:200]))
+                T["failed"] += 1
+                try:
+                    if tmp:
+                        os.remove(tmp)
+                except Exception:
+                    pass
 
     print("\n도면 %d · 바뀐 도면 %d" % (T["plans"], T["plans_changed"]))
     print("   벽 양쪽 방 재산출 %d · 문 배선 변경 %d · 중복 문 합침 %d · "
@@ -849,6 +904,19 @@ def main():
               % (T["edges"], T["inferred"], 100.0 * T["inferred"] / T["edges"]))
     print("   고립된 방 %d개(도면 %d) · 현관에서 못 닿는 방 %d개(도면 %d)"
           % (T["isolated"], T["plans_isolated"], T["unreachable"], T["plans_unreachable"]))
+    if FAILED:
+        kinds = collections.Counter(k for _, k, _ in FAILED)
+        print("   ! 실패 %d장 - %s"
+              % (len(FAILED), " · ".join("%s %d" % kv for kv in kinds.most_common())))
+        for pid, k, m in FAILED[:20]:
+            print("      %s  %s  %s" % (pid, k, m))
+    else:
+        print("   실패 0장")
+    if args.stats_json:
+        with open(args.stats_json, "w", encoding="utf-8") as f:
+            json.dump({"counts": dict(T), "n_pool": len(pool),
+                       "failed": FAILED, "backup": bk if args.apply else None},
+                      f, ensure_ascii=False)
     print("백업 → " + bk if args.apply else "[드라이런] --apply 로 적용")
 
 
