@@ -1,0 +1,445 @@
+#!/usr/bin/env python3
+"""rebuild_links — **연결층을 보정된 기하에서 처음부터 다시 만든다.**
+
+사용자 결정(2026-11-13): *"이미 AI-Hub가 제공하는 것도 있고 우리가 만든 것도 있을 텐데…
+사실 무시하고 우리가 새로 만들어도 되는 것 아닌가. 그들이 주는 값은 이것만 활용하고
+우리가 새롭게 만들었다, 이런 식이 나을 것 같다."*
+
+확인한 사실: AI-Hub 라벨은 **순수 COCO**(`segmentation`/`bbox`/`category_id`/`attributes`)다.
+`관계` 필드가 하나도 없다. 즉 **AI-Hub가 준 것**은
+  · 방 폴리곤 + 역할(`공간_*`)
+  · 벽체·창호·출입문 폴리곤 + 종류(`여닫이문`/`미닫이문`/`미닫이창`…)
+  · 기구 bbox + rotation · OCR 라벨
+**우리가 만든 것**은 그 위의 연결층 전부 — `walls[].rooms`, `walls[].openings`,
+`doors[].connects`, `edges`, `privacy_transition`, `dist_from_entrance`.
+
+왜 다시 만들어야 하나: 연결층은 **파싱 때 한 번, 보정 전 폴리곤으로** 계산되고 그 뒤
+갱신되지 않는다. 실측(APT_FP_396cb308_17447720_u3): 문0이 올라탄 벽 w14 는 길이 21px 짜리
+조각인데 `rooms:[70,72]`(침실+침실)이고, `doors[0].connects`가 그걸 그대로 베꼈다.
+에디터는 이 필드를 화면에 띄우지 않으니 **사람이 검수해도 잡히지 않았다.**
+방-방 직결을 고치려고 만든 프로그램인데 정작 그 원인을 손댈 수 없었던 셈이다.
+
+방법(기하가 유일한 근거):
+  1) **벽 양쪽을 찔러본다** — 벽 선분을 여러 지점에서 법선 방향으로 `두께/2 + 여유`만큼
+     벗어난 점이 어느 방 안에 들어가는지 다수결. → `walls[].rooms` 재산출
+  2) **문은 올라탄 벽의 양쪽**을 잇는다. 벽에서 못 풀면 문 상자를 키워 넓이순 두 방.
+  3) **중복 문 제거** — 같은 상자가 벽 조각마다 한 레코드씩 생겼다(문1=w19·문2=w20).
+     상자 기준으로 묶어 **한 문만** 남긴다. 상자 없는 빈 레코드는 버린다.
+  4) **엣지 재생성** — 문 엣지는 문에서, 오픈 엣지는 `type=open` 벽에서. 같은 방 쌍이면
+     문이 이긴다. `privacy_transition`·`dist_from_entrance`는 새 그래프로 다시 계산.
+
+폭이 좁은 문(기본 25px 미만 = 약 420mm)은 **지우지 않고 `suspect: true`로 표시**한다.
+사람이 보고 판단할 몫이다.
+
+읽기 전용(기본). --apply 를 줘야 쓴다.
+usage:
+  python scripts/rebuild_links.py --plans APT_FP_396cb308_17447720_u3
+  python scripts/rebuild_links.py --sample 2000
+  python scripts/rebuild_links.py --plans A B --apply
+"""
+from __future__ import annotations
+
+import argparse
+import collections
+import datetime
+import json
+import math
+import os
+import random
+import shutil
+import sys
+
+from shapely.geometry import LineString, Point, Polygon, box
+from shapely.ops import unary_union
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+EDITS = os.path.join(ROOT, "data", "staging", "corrected", "edits")
+BK = os.path.join(ROOT, "data", "staging", "corrected", "_manual_backup")
+sys.path.insert(0, os.path.join(ROOT, "src"))
+
+try:
+    from plan2graph.geomgraph import PRIVACY
+except Exception:                                    # 단독 실행 대비
+    PRIVACY = {}
+
+FRACS = (0.2, 0.35, 0.5, 0.65, 0.8)
+MARGIN = 4.0          # 벽면에서 더 들어가는 여유(px)
+PAD = 10.0            # 벽으로 못 풀 때 문 상자를 키우는 폭(px)
+THIN_DOOR_PX = 25.0   # 이보다 좁은 문은 의심 표시
+OPEN_MIN = 20.0       # 벽이 덮지 않은 구간이 이보다 길면 개방으로 본다
+
+
+def polys_of(g):
+    out = {}
+    for rid, r in (g.get("rooms") or {}).items():
+        pts = r.get("polygon") or []
+        if len(pts) < 3:
+            continue
+        q = Polygon([(x, y) for x, y in pts])
+        if not q.is_valid:
+            q = q.buffer(0)
+        if not q.is_empty and q.geom_type == "Polygon":
+            out[str(rid)] = q
+    return out
+
+
+def hit(polys, x, y, slack=2.0):
+    p = Point(x, y)
+    for rid, q in polys.items():
+        if q.contains(p):
+            return rid
+    best, bd = None, slack
+    for rid, q in polys.items():
+        d = q.distance(p)
+        if d < bd:
+            best, bd = rid, d
+    return best
+
+
+def probe_at(seg, t_px, polys, frac=None, pt=None, reach=14.0):
+    """벽의 한 지점에서 법선 양쪽을 찔러 (왼쪽 방, 오른쪽 방). 벽면에서 바깥으로
+    조금씩 물러나며 처음 들어간 방을 고른다 — 두꺼운 벽도 작은 틈도 건넌다."""
+    (x0, y0), (x1, y1) = seg[0], seg[1]
+    dx, dy = x1 - x0, y1 - y0
+    L = math.hypot(dx, dy)
+    if L < 1e-6:
+        return None, None
+    nx, ny = -dy / L, dx / L
+    if pt is not None:                               # 주어진 점을 벽에 투영
+        t = ((pt[0] - x0) * dx + (pt[1] - y0) * dy) / (L * L)
+        t = max(0.0, min(1.0, t))
+    else:
+        t = 0.5 if frac is None else frac
+    px, py = x0 + dx * t, y0 + dy * t
+    out = []
+    base = t_px / 2.0 + 1.0
+    for sign in (1.0, -1.0):
+        got = None
+        off = base
+        while off <= base + reach:
+            got = hit(polys, px + nx * off * sign, py + ny * off * sign, slack=1.0)
+            if got:
+                break
+            off += 1.5
+        out.append(got)
+    return out[0], out[1]
+
+
+def wall_pairs(seg, t_px, polys):
+    """벽을 따라 나오는 방 쌍들 — 지점마다 다를 수 있다. {frozenset: 지지 지점 수}"""
+    cnt = collections.Counter()
+    seen = collections.Counter()
+    for f in (0.12, 0.3, 0.5, 0.7, 0.88):
+        a, b = probe_at(seg, t_px, polys, frac=f)
+        for r in (a, b):
+            if r:
+                seen[r] += 1
+        if a and b and a != b:
+            cnt[frozenset((a, b))] += 1
+    return cnt, seen
+
+
+def open_runs(polys, walls, scale, open_min):
+    """맞닿았지만 막히지 않은 구간이 open_min 이상인 방 쌍. {frozenset: 남은 길이}
+
+    막힌 구간 = (두께 있는 벽) − (개방 기록). 축선이 개방 위를 지나가도 가리지 못한다.
+    """
+    solid, opened = [], []
+    for w in walls:
+        s = w.get("segment") or []
+        if len(s) < 2:
+            continue
+        t_mm = w.get("thickness_mm")
+        try:
+            ln = LineString([tuple(s[0]), tuple(s[1])])
+        except Exception:
+            continue
+        if (w.get("type") or "") == "open" or not t_mm:
+            # 개방 폭은 가장 두꺼운 벽보다 넓게 — 안 그러면 벽 버퍼를 다 못 걷어낸다.
+            # cap_style=2(평평)로 선 끝을 넘어 번지지 않게 한다.
+            opened.append(ln.buffer(12.0, cap_style=2))
+        else:
+            t_px = (float(t_mm) / scale) if scale else 7.0
+            solid.append(ln.buffer(t_px / 2.0 + 2.0))
+    blocked = None
+    if solid:
+        blocked = unary_union(solid)
+        if opened:
+            blocked = blocked.difference(unary_union(opened))
+    out = {}
+    ids = list(polys)
+    for i, a in enumerate(ids):
+        for b in ids[i + 1:]:
+            pa, pb = polys[a], polys[b]
+            if pa.distance(pb) > 1.5:
+                continue
+            try:
+                shared = pa.exterior.intersection(pb.buffer(1.5))
+            except Exception:
+                continue
+            if shared.is_empty or shared.length < open_min:
+                continue
+            rest = shared
+            if blocked is not None and not blocked.is_empty:
+                try:
+                    rest = shared.difference(blocked)
+                except Exception:
+                    pass
+            if (not rest.is_empty) and rest.length >= open_min:
+                out[frozenset((a, b))] = rest.length
+    return out
+
+
+def rebuild(g, thin_px=THIN_DOOR_PX):
+    rooms = {str(k): v for k, v in (g.get("rooms") or {}).items()}
+    polys = polys_of(g)
+    scale = float(g.get("scale_mm_per_px") or 0) or None
+    rep = {"wall_rooms": 0, "door_pairs": 0, "dropped": 0, "merged": 0,
+           "unresolved": 0, "thin": 0, "door_log": [], "edge_before": len(g.get("edges") or [])}
+
+    # ── 1) 벽마다 양쪽 방을 다시 정한다 ───────────────────────────────
+    wall_rooms = {}
+    for w in (g.get("walls") or []):
+        seg = w.get("segment") or []
+        if len(seg) < 2:
+            continue
+        t_mm = w.get("thickness_mm")
+        t_px = (float(t_mm) / scale) if (scale and t_mm) else 7.0
+        pairs, seen = wall_pairs(seg, t_px, polys)
+        new = [r for r, _ in seen.most_common()]
+        old = [str(x) for x in (w.get("rooms") or [])]
+        wall_rooms[str(w.get("id"))] = (new, pairs, seg, t_px)
+        if sorted(old) != sorted(new):
+            rep["wall_rooms"] += 1
+        w["rooms"] = [int(x) if x.isdigit() else x for x in new]
+
+    # ── 2) 문을 상자로 묶어 중복을 없애고, 벽 양쪽으로 잇는다 ─────────
+    groups = collections.OrderedDict()
+    for d in (g.get("doors") or []):
+        b = d.get("bbox_px")
+        if not b:
+            rep["dropped"] += 1
+            rep["door_log"].append((d.get("id"), "상자 없음 → 버림", None, None))
+            continue
+        key = tuple(round(float(v) / 2.0) for v in b)
+        groups.setdefault(key, []).append(d)
+
+    new_doors = []
+    for key, grp in groups.items():
+        if len(grp) > 1:
+            rep["merged"] += len(grp) - 1
+        pair, how = None, ""
+        b0 = grp[0]["bbox_px"]
+        ctr = (b0[0] + b0[2] / 2.0, b0[1] + b0[3] / 2.0)
+        for d in grp:                                  # 올라탄 벽에서, 문 위치로 푼다
+            ent = wall_rooms.get(str(d.get("on_wall")) or "")
+            if not ent:
+                continue
+            _, _, seg, t_px = ent
+            a, bb = probe_at(seg, t_px, polys, pt=ctr, reach=20.0)
+            if a and bb and a != bb:
+                pair, how = [a, bb], "벽 " + str(d.get("on_wall"))
+                break
+        if pair is None:                               # 벽으로 못 풀면 상자를 키운다
+            b = grp[0]["bbox_px"]
+            for pad in (PAD, PAD * 2, PAD * 3):
+                z = box(b[0] - pad, b[1] - pad, b[0] + b[2] + pad, b[1] + b[3] + pad)
+                hits = sorted(((z.intersection(q).area, rid) for rid, q in polys.items()
+                               if z.intersection(q).area > 1.0), reverse=True)
+                if len(hits) >= 2:
+                    pair, how = [hits[0][1], hits[1][1]], "상자+%d" % int(pad)
+                    break
+        keep = dict(grp[0])
+        keep["on_wall"] = [str(d.get("on_wall")) for d in grp if d.get("on_wall")] or None
+        if keep["on_wall"] and len(keep["on_wall"]) == 1:
+            keep["on_wall"] = keep["on_wall"][0]
+        old = sorted(str(x) for x in (grp[0].get("connects") or []))
+        if pair:
+            keep["connects"] = [int(x) if x.isdigit() else x for x in pair]
+            if old != sorted(pair):
+                rep["door_pairs"] += 1
+            rep["door_log"].append((keep.get("id"), how, old, list(pair)))
+        else:
+            keep["connects"] = []
+            keep["suspect"] = True
+            keep["suspect_reason"] = "어느 두 방을 잇는지 기하로 풀리지 않는다"
+            rep["unresolved"] += 1
+            rep["door_log"].append((keep.get("id"), "못 품", old, None))
+        wpx = keep.get("width_px")
+        if wpx is not None and float(wpx) < thin_px:
+            keep["suspect"] = True
+            keep["suspect_reason"] = "폭 %.0fpx (약 %dmm) — 문으로 보기 좁다" % (
+                float(wpx), int(float(wpx) * (scale or 0)))
+            rep["thin"] += 1
+        else:
+            keep.pop("suspect", None)
+            keep.pop("suspect_reason", None)
+        keep["link_source"] = "geometry_rebuild"
+        new_doors.append(keep)
+    g["doors"] = new_doors
+
+    # ── 3) 엣지를 다시 만든다 (문 엣지가 오픈 엣지를 이긴다) ──────────
+    edges = {}
+    for d in new_doors:
+        c = [str(x) for x in (d.get("connects") or [])]
+        if len(c) != 2 or c[0] == c[1]:
+            continue
+        edges[frozenset(c)] = {"from": c[0], "to": c[1], "via": "door",
+                               "boundary": "door", "door_id": d.get("id"),
+                               "door_swing_deg": d.get("orientation_deg"),
+                               "door_pos": d.get("position")}
+    # (a) 개방으로 검출된 벽 레코드 — 두꺼운 경계를 끼고 떨어진 쌍(방↔발코니)을 잡는다
+    for w in (g.get("walls") or []):
+        if (w.get("type") or "") != "open" and float(w.get("thickness_mm") or 1) != 0:
+            continue
+        ent = wall_rooms.get(str(w.get("id")))
+        if not ent:
+            continue
+        for k in ent[1]:
+            if k in edges:
+                continue
+            x, y = sorted(k)
+            edges[k] = {"from": x, "to": y, "via": "open", "boundary": "open",
+                        "door_id": None, "door_swing_deg": None, "door_pos": None,
+                        "open_from": "wall:" + str(w.get("id"))}
+    # (b) 벽 레코드가 없는 경계 — 맞닿은 길이에서 막힌 구간을 뺀 나머지
+    for k, L in open_runs(polys, g.get("walls") or [], scale, OPEN_MIN).items():
+        if k in edges:
+            continue
+        x, y = sorted(k)
+        edges[k] = {"from": x, "to": y, "via": "open", "boundary": "open",
+                    "door_id": None, "door_swing_deg": None, "door_pos": None,
+                    "open_from": "geometry", "open_len_px": round(L, 1)}
+
+    # 위계 전이 · 현관 거리
+    for e in edges.values():
+        pa = PRIVACY.get((rooms.get(e["from"]) or {}).get("role"), "other")
+        pb = PRIVACY.get((rooms.get(e["to"]) or {}).get("role"), "other")
+        e["privacy_transition"] = "%s_to_%s" % (pa, pb)
+    adj = collections.defaultdict(set)
+    for e in edges.values():
+        adj[e["from"]].add(e["to"])
+        adj[e["to"]].add(e["from"])
+    start = [rid for rid, r in rooms.items() if r.get("role") == "현관"]
+    dist = {}
+    dq = collections.deque((s, 0) for s in start)
+    for s in start:
+        dist[s] = 0
+    while dq:
+        cur, dd = dq.popleft()
+        for nb in adj[cur]:
+            if nb not in dist:
+                dist[nb] = dd + 1
+                dq.append((nb, dd + 1))
+    for rid, r in rooms.items():
+        # 키가 없던 방(복도복원·사람이 나눈 방)도 반드시 채운다 — 빼먹으면 None 으로 남는다
+        r["dist_from_entrance"] = dist.get(rid)
+    for e in edges.values():
+        e["dist_from_entrance"] = dist.get(e["from"])
+
+    out = []
+    for e in edges.values():
+        e["from"] = int(e["from"]) if str(e["from"]).isdigit() else e["from"]
+        e["to"] = int(e["to"]) if str(e["to"]).isdigit() else e["to"]
+        out.append(e)
+    g["edges"] = out
+
+    # 방마다 door_ids 가 있으면 맞춰준다
+    for rid, r in rooms.items():
+        if "door_ids" in r:
+            r["door_ids"] = [d.get("id") for d in new_doors
+                             if rid in [str(x) for x in (d.get("connects") or [])]]
+    g["n_doors"] = len(new_doors)
+    g["n_edges"] = len(out)
+    g.setdefault("provenance", {})["links"] = "geometry_rebuild"
+    reach = collections.defaultdict(set)
+    for e in out:
+        reach[str(e["from"])].add(str(e["to"]))
+        reach[str(e["to"])].add(str(e["from"]))
+    rep["isolated"] = [rid for rid in rooms if rid not in reach]
+    rep["unreachable"] = [rid for rid in rooms
+                          if rid not in dist and rid not in start]
+    rep["edge_after"] = len(out)
+    rep["doors_after"] = len(new_doors)
+    return rep
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--plans", nargs="*", default=[])
+    ap.add_argument("--sample", type=int, default=0)
+    ap.add_argument("--thin-px", type=float, default=THIN_DOOR_PX)
+    ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--apply", action="store_true")
+    args = ap.parse_args()
+
+    pool = list(args.plans)
+    if args.sample:
+        fs = [f[:-5] for f in os.listdir(EDITS) if f.endswith(".json")]
+        random.Random(args.seed).shuffle(fs)
+        pool += fs[: args.sample]
+
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    bk = os.path.join(BK, stamp + "_links")
+    T = collections.Counter()
+    for pid in pool:
+        p = os.path.join(EDITS, pid + ".json")
+        if not os.path.exists(p):
+            continue
+        g = json.load(open(p, encoding="utf-8"))
+        rooms = {str(k): v for k, v in (g.get("rooms") or {}).items()}
+        rep = rebuild(g, args.thin_px)
+        for k in ("wall_rooms", "door_pairs", "dropped", "merged", "unresolved", "thin"):
+            T[k] += rep[k]
+        T["isolated"] += len(rep["isolated"])
+        T["unreachable"] += len(rep["unreachable"])
+        if rep["isolated"]:
+            T["plans_isolated"] += 1
+        if rep["unreachable"]:
+            T["plans_unreachable"] += 1
+        T["plans"] += 1
+        if rep["door_pairs"] or rep["merged"] or rep["dropped"]:
+            T["plans_changed"] += 1
+        if args.plans:
+            nm = lambda r: "%s(%s)" % ((rooms.get(str(r)) or {}).get("role"), r)
+            print("== %s" % pid)
+            print("   벽 %d개 양쪽 방 재산출 · 문 %d→%d(중복 %d 합침, 빈 %d 버림) · "
+                  "배선 %d개 변경 · 못 품 %d · 좁은 문 %d"
+                  % (rep["wall_rooms"], rep["doors_after"] + rep["merged"] + rep["dropped"],
+                     rep["doors_after"], rep["merged"], rep["dropped"],
+                     rep["door_pairs"], rep["unresolved"], rep["thin"]))
+            print("   엣지 %d → %d" % (rep["edge_before"], rep["edge_after"]))
+            if rep["isolated"]:
+                print("   ⚠ 고립된 방: " + " · ".join(nm(r) for r in rep["isolated"]))
+            if rep["unreachable"]:
+                print("   ⚠ 현관에서 못 닿는 방: "
+                      + " · ".join(nm(r) for r in rep["unreachable"]))
+            for did, how, old, new in rep["door_log"]:
+                if new is None:
+                    print("   %-5s %-14s %s" % (did, how,
+                          " + ".join(nm(x) for x in (old or [])) or "-"))
+                else:
+                    mark = "   " if sorted(old) == sorted(new) else "  ▶"
+                    print("%s %-5s %-14s %-26s → %s" % (mark, did, how,
+                          " + ".join(nm(x) for x in old) or "-",
+                          " + ".join(nm(x) for x in new)))
+        if args.apply:
+            os.makedirs(bk, exist_ok=True)
+            shutil.copy(p, os.path.join(bk, pid + ".json"))
+            tmp = p + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(g, f, ensure_ascii=False)
+            os.replace(tmp, p)
+
+    print("\n도면 %d · 바뀐 도면 %d" % (T["plans"], T["plans_changed"]))
+    print("   벽 양쪽 방 재산출 %d · 문 배선 변경 %d · 중복 문 합침 %d · "
+          "빈 문 버림 %d · 못 푼 문 %d · 좁은 문 표시 %d"
+          % (T["wall_rooms"], T["door_pairs"], T["merged"],
+             T["dropped"], T["unresolved"], T["thin"]))
+    print("   고립된 방 %d개(도면 %d) · 현관에서 못 닿는 방 %d개(도면 %d)"
+          % (T["isolated"], T["plans_isolated"], T["unreachable"], T["plans_unreachable"]))
+    print("백업 → " + bk if args.apply else "[드라이런] --apply 로 적용")
+
+
+if __name__ == "__main__":
+    main()
