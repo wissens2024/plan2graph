@@ -695,6 +695,10 @@ a.dedup:hover{background:#2c3d58}
  .gcon line{pointer-events:none}
  .gcon .door{stroke:#16a34a;stroke-width:3}
  .gcon .open{stroke:#2563eb;stroke-width:2.5;stroke-dasharray:9 7}
+ .gcon .outstub{stroke:#64748b;stroke-width:2;stroke-dasharray:4 3}
+ .gcon rect.nopos{fill:none;stroke:#94a3b8;stroke-width:2;stroke-dasharray:3 2}
+ .gcon text.olab{font-size:11px;font-weight:700;fill:#475569;stroke-width:3px}
+ .gcon text.dlab{font-size:11px;font-weight:700;fill:#166534;stroke-width:3px}
  .gcon .win{stroke:#9333ea;stroke-width:2.5;stroke-dasharray:2 5;stroke-linecap:round}
  .gcon .winout{stroke:#9333ea;stroke-width:2;stroke-dasharray:2 4;opacity:.9}
  .gcon rect.winout{fill:#9333ea;stroke:#fff;stroke-width:1.2}
@@ -1032,59 +1036,103 @@ function ctrOf(id){const r=(G.rooms||{})[id];if(!r)return null;
   if(r.centroid)return r.centroid;
   if(r.polygon&&r.polygon.length)return r.polygon[0];return null;}
 
-// 기하 연결 — edges(via=door|open) 기준. 끊어지거나 같은 역할 직결이면 빨강.
+// 기하 연결 — **개구부를 노드로 세운다.**
+// 사용자(2026-11-13): "기하연결이 단순히 역할만 연결하지 말고, 문/창도 연결하고
+// 외부에 붙어 있는 창과 문도 표시하고 연결하자. 문과 창은 벽에 붙이면 되고."
+//   · 문·창은 **자기 위치(벽 위)** 에 네모로 서고, 거기서 닿는 방으로 선이 간다.
+//   · 한쪽이 외부면(현관 출입문·외벽 창) 방 반대쪽으로 짧게 뻗고 '외부' 라고 적는다.
+//   · 개방 경계만 방↔방 선으로 남는다(개구부 실체가 없으므로).
 function drawGeomLinks(){
   const g=el('g',{class:'gcon'},svg);
-  const doorById={};for(const d of (G.doors||[]))if(d.id)doorById[d.id]=d;
-  let nBad=0;
+  const R=G.rooms||{};
+  let nBad=0,nOut=0,nNoPos=0;
+  const key=(a,b)=>[String(a),String(b)].sort().join('|');
+
+  // 엣지 종류를 방쌍으로 찾아보기 위한 색인
+  const viaOf={};
+  for(const e of (G.edges||[]))viaOf[key(e.from,e.to)]=e.via;
+
+  // ① 개방 경계 — 개구부 실체가 없으니 방↔방 선으로 둔다
   for(const e of (G.edges||[])){
+    if(e.via!=='open')continue;
     const a=ctrOf(e.from),b=ctrOf(e.to);
-    const ra=(G.rooms||{})[e.from],rb=(G.rooms||{})[e.to];
-    if(!a||!b){nBad++;const p=a||b;if(!p)continue;
-      const tx=el('text',{x:p[0],y:p[1]-26},g);tx.textContent='끊어진 연결';continue;}
-    const same=ra&&rb&&ra.role===rb.role&&ra.role!=='발코니';
-    const bad=(e.via==='door')&&same;
-    if(bad)nBad++;
-    const cls=bad?'bad':(e.via==='window'?'win':(e.via==='open'?'open':'door'));
-    el('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],class:cls},g);
-    if(e.via==='window'){const p=[(a[0]+b[0])/2,(a[1]+b[1])/2];
-      const tx=el('text',{x:p[0],y:p[1]-6,class:'wlab'},g);tx.textContent='창';}
-    if(e.via==='door'){
-      const d=e.door_id?doorById[e.door_id]:null;
-      const p=(d&&d.position)?d.position:[(a[0]+b[0])/2,(a[1]+b[1])/2];
-      el('rect',{x:p[0]-7,y:p[1]-7,width:14,height:14,class:bad?'bad':''},g);}
+    if(!a||!b){nBad++;continue;}
+    el('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],class:'open'},g);
   }
-  // 외벽 창 — 엣지가 없어 지금까지 화면에 안 나왔다. belongs_to 가 어느 방을 가리키는지
-  // 사람이 눈으로 확인할 수 있어야 한다(코덱은 이 값으로 창을 그 방 벽에 붙인다).
-  let nWinOut=0;
+
+  // 개구부 하나를 그린다: 벽 위 네모 + 닿는 방으로 가는 선 (+ 외부 스텁)
+  function drawOpening(p,rooms,kind,toOutside,label,bad){
+    const cls=bad?'bad':(kind==='window'?'win':'door');
+    const pts=[];
+    for(const rid of rooms){
+      const c=ctrOf(rid);
+      if(c){el('line',{x1:p[0],y1:p[1],x2:c[0],y2:c[1],class:cls},g);pts.push(c);}
+    }
+    if(toOutside||rooms.length===0){
+      // 방 쪽 평균의 반대 방향으로 짧게 뻗는다 = 외부
+      let dx=0,dy=0;
+      for(const c of pts){dx+=p[0]-c[0];dy+=p[1]-c[1];}
+      const L=Math.hypot(dx,dy)||1;
+      const k=30;
+      const ex=p[0]+dx/L*k, ey=p[1]+dy/L*k;
+      el('line',{x1:p[0],y1:p[1],x2:ex,y2:ey,class:'outstub'},g);
+      const t=el('text',{x:ex,y:ey-5,class:'olab'},g);t.textContent='외부';
+      nOut++;
+    }
+    const s=kind==='window'?5:7;
+    el('rect',{x:p[0]-s,y:p[1]-s,width:s*2,height:s*2,
+               class:(bad?'bad':(kind==='window'?'winout':''))},g);
+    if(label){const t=el('text',{x:p[0],y:p[1]-s-4,class:kind==='window'?'wout':'dlab'},g);
+      t.textContent=label;}
+  }
+
+  // ② 문 — doors[] 가 1급. 위치는 벽 위.
+  for(const d of (G.doors||[])){
+    const cn=(d.connects||[]).map(String).filter(x=>R[x]);
+    const miss=(d.connects||[]).map(String).filter(x=>!R[x]);
+    const p=d.position||(d.bbox_px?[d.bbox_px[0]+d.bbox_px[2]/2,d.bbox_px[1]+d.bbox_px[3]/2]:null);
+    if(!p){
+      // 위치를 모르는 문(우리가 연결만 세운 것) — 두 방 중간에 흐리게
+      if(cn.length===2){const a=ctrOf(cn[0]),b=ctrOf(cn[1]);
+        if(a&&b){const m=[(a[0]+b[0])/2,(a[1]+b[1])/2];
+          el('rect',{x:m[0]-6,y:m[1]-6,width:12,height:12,class:'nopos'},g);
+          const t=el('text',{x:m[0],y:m[1]-10,class:'dlab'},g);t.textContent='위치 미상';
+          el('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],class:'door'},g);}}
+      nNoPos++;continue;
+    }
+    const ra=cn[0]?R[cn[0]]:null, rb=cn[1]?R[cn[1]]:null;
+    const same=ra&&rb&&ra.role===rb.role&&ra.role!=='발코니';
+    const bad=same||miss.length>0;
+    if(bad)nBad++;
+    const lab=miss.length?('없는 방 '+miss.join(',')):
+      (d.width_m?(d.width_m.toFixed(2)+'m'):(d.width_source==='unknown'?'폭 미상':''));
+    drawOpening(p,cn,'door',!!d.to_outside,lab,bad);
+  }
+
+  // ③ 창 — windows[] 가 1급. 두 방에 걸친 창이면 양쪽, 아니면 외벽.
   for(const w of (G.windows||[])){
     const bt=String(w.belongs_to);
-    const r=(G.rooms||{})[bt];
     const p=w.position||(w.bbox_px?[w.bbox_px[0]+w.bbox_px[2]/2,w.bbox_px[1]+w.bbox_px[3]/2]:null);
     if(!p)continue;
-    const linked=(G.edges||[]).some(e=>e.via==='window'&&e.window_id===w.id);
-    if(linked)continue;
-    nWinOut++;
-    const c=r?ctrOf(bt):null;
-    if(c){
-      const dx=c[0]-p[0],dy=c[1]-p[1],L=Math.hypot(dx,dy)||1,k=Math.min(34,L*0.45);
-      el('line',{x1:p[0],y1:p[1],x2:p[0]+dx/L*k,y2:p[1]+dy/L*k,class:'winout'},g);
+    let rooms=R[bt]?[bt]:[];
+    // 창 엣지가 있으면 상대 방도 함께
+    for(const e of (G.edges||[])){
+      if(e.via!=='window')continue;
+      if(e.window_id&&e.window_id!==w.id)continue;
+      const a=String(e.from),b=String(e.to);
+      if(a===bt&&R[b]&&rooms.indexOf(b)<0)rooms.push(b);
+      else if(b===bt&&R[a]&&rooms.indexOf(a)<0)rooms.push(a);
     }
-    el('rect',{x:p[0]-5,y:p[1]-5,width:10,height:10,class:'winout'},g);
-    const lab=r?(r.role||'?'):('없는 방 '+bt);
-    const tx=el('text',{x:p[0],y:p[1]-9,class:r?'wout':'bad'},g);
-    tx.textContent=lab+(w.width_m?(' '+w.width_m.toFixed(2)+'m'):'');
-    if(!r)nBad++;
+    const bad=!R[bt];
+    if(bad)nBad++;
+    const lab=bad?('없는 방 '+bt):
+      ((R[bt].role||'')+(w.width_m?(' '+w.width_m.toFixed(2)+'m'):''));
+    drawOpening(p,rooms,'window',rooms.length<2,lab,bad);
   }
-  for(const d of (G.doors||[])){
-    const c=d.connects||[];
-    if(c.length===2&&(!(G.rooms||{})[c[0]]||!(G.rooms||{})[c[1]])){
-      const p=d.position||[0,0];nBad++;
-      el('rect',{x:p[0]-7,y:p[1]-7,width:14,height:14,class:'bad'},g);
-      const tx=el('text',{x:p[0],y:p[1]-14},g);tx.textContent='없는 방';}
-  }
+
   const tag=document.getElementById('gctog');
-  if(tag)tag.textContent=(nBad?('🔗 기하연결 ⚠'+nBad):'🔗 기하연결')+(nWinOut?(' · 외벽창 '+nWinOut):'');
+  if(tag)tag.textContent=(nBad?('🔗 기하연결 ⚠'+nBad):'🔗 기하연결')
+    +(nOut?(' · 외부 '+nOut):'')+(nNoPos?(' · 위치미상 '+nNoPos):'');
 }
 
 function render(){
