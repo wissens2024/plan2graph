@@ -67,6 +67,9 @@ MARGIN = 4.0          # 벽면에서 더 들어가는 여유(px)
 PAD = 10.0            # 벽으로 못 풀 때 문 상자를 키우는 폭(px)
 THIN_DOOR_PX = 25.0   # 이보다 좁은 문은 의심 표시
 OPEN_MIN = 20.0       # 벽이 덮지 않은 구간이 이보다 길면 개방으로 본다
+WIN_PAD = 14.0        # 창 상자를 키우는 폭(px) — 벽을 건너가도록
+AXIS_LEN = 300.0      # 이보다 긴 벽 레코드는 제도 축선으로 보고 막힘에서 제외
+WIN_RATIO = 0.30      # 두 번째 방의 겹침이 첫 번째의 이 비율 미만이면 스친 것
 
 
 def polys_of(g):
@@ -158,6 +161,13 @@ def open_runs(polys, walls, scale, open_min):
             # 개방 폭은 가장 두꺼운 벽보다 넓게 — 안 그러면 벽 버퍼를 다 못 걷어낸다.
             # cap_style=2(평평)로 선 끝을 넘어 번지지 않게 한다.
             opened.append(ln.buffer(12.0, cap_style=2))
+        elif ln.length > AXIS_LEN:
+            # 길이 AXIS_LEN 초과 = 도면을 가로지르는 **제도 축선**이다(벽이 아니다).
+            # 실측: w81 은 y=784.2 위 569.7px 'exterior' 레코드인데 주방 아랫변·알파룸
+            # 아랫변·거실 윗변·복도 윗변을 한꺼번에 지나며 6개 방에 걸친다. 현관↔복도
+            # 틈 11px 도 이 선이 '벽'으로 덮어 현관이 집과 끊겼다.
+            # 진짜 외벽이 길어도 외부와는 방-방 쌍이 없으므로 빼도 안전하다.
+            continue
         else:
             t_px = (float(t_mm) / scale) if scale else 7.0
             solid.append(ln.buffer(t_px / 2.0 + 2.0))
@@ -231,23 +241,58 @@ def rebuild(g, thin_px=THIN_DOOR_PX):
         pair, how = None, ""
         b0 = grp[0]["bbox_px"]
         ctr = (b0[0] + b0[2] / 2.0, b0[1] + b0[3] / 2.0)
-        for d in grp:                                  # 올라탄 벽에서, 문 위치로 푼다
-            ent = wall_rooms.get(str(d.get("on_wall")) or "")
-            if not ent:
+
+        # 순서: 문 폴리곤(스윙 호) → 문 상자 → 벽.
+        # 2026-11-13 사용자 지상진실로 검증: 벽을 먼저 믿으면 틀린다.
+        #   d6 은 상자로 풀면 발코니(89)+현관(78)(=사용자 확인 "발코니와 현관에 문이 있다")
+        #   인데 벽 w65(욕실74·현관78)로 덮으면 "현관↔욕실"이 되고, 사용자는 그 문이
+        #   없다고 명시했다. 벽 레코드는 문이 실제로 난 자리를 모른다.
+        def _pick(geom):
+            hs = sorted(((geom.intersection(q).area, rid) for rid, q in polys.items()
+                         if geom.intersection(q).area > 1.0), reverse=True)
+            return [hs[0][1], hs[1][1]] if len(hs) >= 2 else None
+
+        for d in grp:                                  # ① 스윙 호가 열리는 두 방
+            pts = d.get("polygon") or []
+            if len(pts) < 3:
                 continue
-            _, _, seg, t_px = ent
-            a, bb = probe_at(seg, t_px, polys, pt=ctr, reach=20.0)
-            if a and bb and a != bb:
-                pair, how = [a, bb], "벽 " + str(d.get("on_wall"))
+            try:
+                q = Polygon([(x, y) for x, y in pts])
+                if not q.is_valid:
+                    q = q.buffer(0)
+                got = _pick(q.buffer(6.0))
+            except Exception:
+                got = None
+            if got:
+                pair, how = got, "스윙"
                 break
-        if pair is None:                               # 벽으로 못 풀면 상자를 키운다
-            b = grp[0]["bbox_px"]
+        if pair is None:                               # ② 문 상자를 키워가며
             for pad in (PAD, PAD * 2, PAD * 3):
-                z = box(b[0] - pad, b[1] - pad, b[0] + b[2] + pad, b[1] + b[3] + pad)
-                hits = sorted(((z.intersection(q).area, rid) for rid, q in polys.items()
-                               if z.intersection(q).area > 1.0), reverse=True)
-                if len(hits) >= 2:
-                    pair, how = [hits[0][1], hits[1][1]], "상자+%d" % int(pad)
+                got = _pick(box(b0[0] - pad, b0[1] - pad,
+                                b0[0] + b0[2] + pad, b0[1] + b0[3] + pad))
+                if got:
+                    pair, how = got, "상자+%d" % int(pad)
+                    break
+        if pair is None:                               # ③ 마지막으로 벽 법선
+            cand = []
+            for d in grp:
+                ow = d.get("on_wall")
+                for wid in (ow if isinstance(ow, list) else [ow]):
+                    if not wid:
+                        continue
+                    ent = wall_rooms.get(str(wid))
+                    if not ent:
+                        continue
+                    _, _, seg, t_px = ent
+                    try:
+                        dist0 = LineString([tuple(seg[0]), tuple(seg[1])]).distance(Point(*ctr))
+                    except Exception:
+                        dist0 = 1e9
+                    cand.append((dist0, str(wid), seg, t_px))
+            for _, wid, seg, t_px in sorted(cand, key=lambda c: c[0]):
+                a, bb = probe_at(seg, t_px, polys, pt=ctr, reach=20.0)
+                if a and bb and a != bb:
+                    pair, how = [a, bb], "벽 " + wid
                     break
         keep = dict(grp[0])
         keep["on_wall"] = [str(d.get("on_wall")) for d in grp if d.get("on_wall")] or None
@@ -288,7 +333,37 @@ def rebuild(g, thin_px=THIN_DOOR_PX):
                                "boundary": "door", "door_id": d.get("id"),
                                "door_swing_deg": d.get("orientation_deg"),
                                "door_pos": d.get("position")}
-    # (a) 개방으로 검출된 벽 레코드 — 두꺼운 경계를 끼고 떨어진 쌍(방↔발코니)을 잡는다
+    # (a) 창호 — 발코니는 벽을 끼고 창(실제로는 미닫이문)으로 이어진다.
+    # 실측: win12 는 침실70(2183px2)+발코니86(1906px2) 양쪽에 걸쳐 있는데
+    # 벽 레코드에 open 이 없어 엣지가 생기지 않았다. 창을 근거에 넣는다.
+    # 외벽 창(한 방만 닿음)은 통로가 아니므로 제외하고, 두 번째 방의 겹침이
+    # 첫 번째의 WIN_RATIO 미만이면 스쳐 지난 것으로 보고 버린다.
+    for w in (g.get("windows") or []):
+        b = w.get("bbox_px")
+        if not b or not b[2] or not b[3]:
+            continue
+        z = box(b[0] - WIN_PAD, b[1] - WIN_PAD,
+                b[0] + b[2] + WIN_PAD, b[1] + b[3] + WIN_PAD)
+        hits = sorted(((z.intersection(q).area, rid) for rid, q in polys.items()
+                       if z.intersection(q).area > 1.0), reverse=True)
+        if len(hits) < 2 or hits[1][0] < hits[0][0] * WIN_RATIO:
+            continue
+        k = frozenset((hits[0][1], hits[1][1]))
+        if k in edges:
+            continue
+        x, y = sorted(k)
+        # 창 연결은 오픈공간이 아니다 — 사용자 지적(2026-11-13):
+        # "알파룸과 발코니는 창문으로 연결되어 있다. 오픈 공간(점선) 아니다."
+        edges[k] = {"from": x, "to": y, "via": "window", "boundary": "window",
+                    "door_id": None, "door_swing_deg": None, "door_pos": None,
+                    "window_id": str(w.get("id"))}
+
+    # 순서가 중요하다 — 창이 벽-개방 레코드를 **이긴다**.
+    # 사용자 지상진실(2026-11-13): "알파룸과 발코니는 창문으로 연결되어 있다.
+    # 오픈 공간(점선) 아니다." 그런데 그 경계에는 type=open 벽 레코드(w88)도 있다.
+    # 창이 난 자리를 개방으로 적으면 통행 가능성을 모르는 것을 안다고 적는 셈이다.
+
+    # (b) 개방으로 검출된 벽 레코드 — 두꺼운 경계를 끼고 떨어진 쌍(방↔발코니)을 잡는다
     for w in (g.get("walls") or []):
         if (w.get("type") or "") != "open" and float(w.get("thickness_mm") or 1) != 0:
             continue
@@ -302,7 +377,7 @@ def rebuild(g, thin_px=THIN_DOOR_PX):
             edges[k] = {"from": x, "to": y, "via": "open", "boundary": "open",
                         "door_id": None, "door_swing_deg": None, "door_pos": None,
                         "open_from": "wall:" + str(w.get("id"))}
-    # (b) 벽 레코드가 없는 경계 — 맞닿은 길이에서 막힌 구간을 뺀 나머지
+    # (c) 벽 레코드가 없는 경계 — 맞닿은 길이에서 막힌 구간을 뺀 나머지
     for k, L in open_runs(polys, g.get("walls") or [], scale, OPEN_MIN).items():
         if k in edges:
             continue

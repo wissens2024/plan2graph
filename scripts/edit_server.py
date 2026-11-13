@@ -692,6 +692,16 @@ a.dedup:hover{background:#2c3d58}
  .cut .swatch{stroke:#0b0d12;stroke-width:2.5}
  .cut .sl{font-size:17px;font-weight:800;fill:#fff;text-anchor:middle;dominant-baseline:central;
    paint-order:stroke;stroke:#0b0d12;stroke-width:4;stroke-linejoin:round}
+ .gcon line{pointer-events:none}
+ .gcon .door{stroke:#16a34a;stroke-width:3}
+ .gcon .open{stroke:#2563eb;stroke-width:2.5;stroke-dasharray:9 7}
+ .gcon .win{stroke:#9333ea;stroke-width:2.5;stroke-dasharray:2 5;stroke-linecap:round}
+ .gcon .bad{stroke:#dc2626;stroke-width:4}
+ .gcon rect{fill:#16a34a;stroke:#fff;stroke-width:1.5;pointer-events:none}
+ .gcon rect.bad{fill:#dc2626}
+ .gcon text.wlab{font-size:12px;font-weight:800;fill:#9333ea;stroke-width:3px}
+ .gcon text{font-size:14px;font-weight:800;fill:#dc2626;paint-order:stroke;stroke:#fff;stroke-width:4px;pointer-events:none;text-anchor:middle}
+ #gctog.off{opacity:.45}
  .rlabel{font-size:19px;fill:#fff;font-weight:800;pointer-events:none;
    paint-order:stroke;stroke:#0b0d12;stroke-width:4.5;stroke-linejoin:round}
  .rbadge{pointer-events:none}
@@ -801,7 +811,7 @@ a.dedup:hover{background:#2c3d58}
   <div class="modetag" id="modetag">🎨 역할</div>
   <div id="toast"></div>
   <div id="pngwarn">⚠ 원본 PNG 없음(인덱싱중일 수 있음) — 해석만 표시</div>
-  <div id="hud"><button id="ovtog" title="주석 겹쳐보기 끄기/켜기 — 원본 도면만 보기 (H)">👁 오버레이</button><button id="fit">맞춤 (F)</button></div>
+  <div id="hud"><button id="ovtog" title="주석 겹쳐보기 끄기/켜기 — 원본 도면만 보기 (H)">👁 오버레이</button><button id="gctog" title="기하 연결 보기 — 초록 실선=문, 파란 긴점선=개방공간, 보라 짧은점선=창, 빨강=끊어짐 (G)">🔗 기하연결</button><button id="fit">맞춤 (F)</button></div>
 </div>
 <script>
 const NS='http://www.w3.org/2000/svg', svg=document.getElementById('svg');
@@ -823,6 +833,7 @@ let splitSel=null,cutPts=[],splitRoles=null,snapOrtho=true;
 let rulerPts=[];                              // 스케일 측정 2점
 let addPts=[],addRole='실외기실',addSnap=true;  // 신규 노드: 사각형 대각 2점 + 기본 역할 + 코너 스냅
 let overlayOn=true;                           // 주석 겹쳐보기(H로 토글)
+let geomOn=false;                             // 기하 연결 보기(G) — 문/개방 연결선
 let LIST=[],undoStack=[];
 let OFFSET=0,MATCHED=0;const NPP=100;   // 페이지네이션: 현재 페이지 시작인덱스 / 결과셋 총개수 / 페이지당 개수
 function evToUser(ev){const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;
@@ -850,6 +861,10 @@ function undo(){if(!undoStack.length)return;G=JSON.parse(undoStack.pop());
   setDirty(true);render();showStatusLocal();toast('되돌림');}
 function showStatusLocal(){/* 로컬 변경 후엔 게이트 재판정은 저장 시 — 표시는 유지 */}
 // 오버레이(주석) 끄기/켜기 — 라벨·채움이 원본을 가릴 때 원본만 본다. svg에 .noov 토글(재렌더 유지).
+function toggleGeom(){geomOn=!geomOn;
+  const b=document.getElementById('gctog');if(b)b.classList.toggle('off',!geomOn);
+  render();toast('기하 연결 '+(geomOn?'켜짐 — 실선=문, 점선=개방, 빨강=끊어짐':'꺼짐'));}
+
 function toggleOverlay(){overlayOn=!overlayOn;svg.classList.toggle('noov',!overlayOn);
   const b=document.getElementById('ovtog');if(b)b.classList.toggle('off',!overlayOn);
   toast('주석 겹쳐보기 '+(overlayOn?'켜짐':'꺼짐 — 원본만'));}
@@ -1010,6 +1025,43 @@ async function propagateSiblings(){
 // ── 캔버스 ──────────────────────────────────────────────────────────────────
 function bbox(){const b=G.bbox_px||[0,0,1000,1000];const pad=Math.max(b[2],b[3])*0.06;
   return [b[0]-pad,b[1]-pad,b[2]+2*pad,b[3]+2*pad];}
+function ctrOf(id){const r=(G.rooms||{})[id];if(!r)return null;
+  if(r.centroid)return r.centroid;
+  if(r.polygon&&r.polygon.length)return r.polygon[0];return null;}
+
+// 기하 연결 — edges(via=door|open) 기준. 끊어지거나 같은 역할 직결이면 빨강.
+function drawGeomLinks(){
+  const g=el('g',{class:'gcon'},svg);
+  const doorById={};for(const d of (G.doors||[]))if(d.id)doorById[d.id]=d;
+  let nBad=0;
+  for(const e of (G.edges||[])){
+    const a=ctrOf(e.from),b=ctrOf(e.to);
+    const ra=(G.rooms||{})[e.from],rb=(G.rooms||{})[e.to];
+    if(!a||!b){nBad++;const p=a||b;if(!p)continue;
+      const tx=el('text',{x:p[0],y:p[1]-26},g);tx.textContent='끊어진 연결';continue;}
+    const same=ra&&rb&&ra.role===rb.role&&ra.role!=='발코니';
+    const bad=(e.via==='door')&&same;
+    if(bad)nBad++;
+    const cls=bad?'bad':(e.via==='window'?'win':(e.via==='open'?'open':'door'));
+    el('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],class:cls},g);
+    if(e.via==='window'){const p=[(a[0]+b[0])/2,(a[1]+b[1])/2];
+      const tx=el('text',{x:p[0],y:p[1]-6,class:'wlab'},g);tx.textContent='창';}
+    if(e.via==='door'){
+      const d=e.door_id?doorById[e.door_id]:null;
+      const p=(d&&d.position)?d.position:[(a[0]+b[0])/2,(a[1]+b[1])/2];
+      el('rect',{x:p[0]-7,y:p[1]-7,width:14,height:14,class:bad?'bad':''},g);}
+  }
+  for(const d of (G.doors||[])){
+    const c=d.connects||[];
+    if(c.length===2&&(!(G.rooms||{})[c[0]]||!(G.rooms||{})[c[1]])){
+      const p=d.position||[0,0];nBad++;
+      el('rect',{x:p[0]-7,y:p[1]-7,width:14,height:14,class:'bad'},g);
+      const tx=el('text',{x:p[0],y:p[1]-14},g);tx.textContent='없는 방';}
+  }
+  const tag=document.getElementById('gctog');
+  if(tag)tag.textContent=nBad?('🔗 기하연결 ⚠'+nBad):'🔗 기하연결';
+}
+
 function render(){
   while(svg.firstChild)svg.removeChild(svg.firstChild);
   if(!vb)vb=bbox();
@@ -1021,7 +1073,9 @@ function render(){
   probe.onerror=()=>{document.getElementById('pngwarn').style.display='block';};
   probe.src='api/png/'+GID;
 
-  // 위상(엣지)은 자동 도출 — 오버레이에 연결선 표시 안 함(사람 편집 대상 아님)
+  // 기하 연결(G) — 문/개방 연결을 눈으로 확인한다. 이 정보가 화면에 없던 탓에
+  // '방 보정은 맞는데 문 배정은 파싱 시점 그대로'인 도면을 아무도 못 잡았다.
+  if(geomOn)drawGeomLinks();
 
   // 방: 큰 것 먼저 → 작은 것이 위에(겹침/중첩서 작은방 클릭 보장)
   const entries=Object.entries(G.rooms||{}).filter(([id,r])=>r.polygon&&r.polygon.length>=3);
@@ -1336,6 +1390,7 @@ document.addEventListener('keydown',ev=>{
   const k=ev.key.toLowerCase();
   if(k==='f'){fit();return;}
   if(k==='h'){toggleOverlay();return;}
+  if(k==='g'){toggleGeom();return;}
   if(k==='n'){setMode('add');return;}
   if(k==='r'){setMode('role');return;} if(k==='m'){setMode('merge');return;} if(k==='d'){setMode('del');return;}
   if(k==='s'){setMode('split');return;} if(k==='l'){setMode('scale');return;}
@@ -1461,6 +1516,7 @@ svg.addEventListener('mousemove',ev=>{
     r.setAttribute('x',Math.min(p[0],u[0]));r.setAttribute('y',Math.min(p[1],u[1]));
     r.setAttribute('width',Math.abs(u[0]-p[0]));r.setAttribute('height',Math.abs(u[1]-p[1]));}});
 
+document.getElementById('gctog').onclick=toggleGeom;
 renderCtx();
 (async()=>{const _g=new URLSearchParams(location.search).get('gid');
   if(_g){document.getElementById('search').value=_g;await loadList(_g);loadGraph(_g);}
