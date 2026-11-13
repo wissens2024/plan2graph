@@ -36,8 +36,10 @@ def sheet_of(pid):
 
 
 def main():
+    # 모집단 = parsed 전체. 인덱스는 이미 오염을 빼고 만들어지므로 모집단이 될 수 없다.
+    graphs = os.path.join(ST, "parsed", "graphs")
+    plans = {f[:-5] for f in os.listdir(graphs) if f.endswith(".json")}
     idx = json.load(open(os.path.join(ST, "dedup_index.json"), encoding="utf-8"))
-    plans = set(idx["sig_of"])
 
     size_sheets = {}
     p = os.path.join(ST, "ann_image_mismatch.json")
