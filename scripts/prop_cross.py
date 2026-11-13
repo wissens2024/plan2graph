@@ -112,7 +112,13 @@ def main():
                  if r.get("centroid")]
             if A and B:
                 ds = sorted(min(max(abs(x - u), abs(y - v)) for u, v in A) for x, y in B)
-                med = ds[len(ds) // 2]
+                # 중앙값이 아니라 **하위 1/4 분위**를 본다. 대상이 같은 그림이라도
+                # 방을 더 잘게 쪼개 놨으면 남는 조각들이 중앙값을 끌어올린다
+                # (실측 53b0ef46: 17방 중 11개가 10px 이내인데 복도 196px·발코니 238px
+                #  조각 때문에 중앙값이 9.4px 로 떠서 막혔다).
+                # 같은 절대좌표 박스에서 픽셀이 0개 차이면 좌표계는 이미 같다 —
+                # 이 검사는 거친 사고를 거르는 보조 장치다.
+                med = ds[max(0, len(ds) // 4 - 1)]
         use_identity = (a.identity and nz == 0 and med == med and med <= a.identity_med)
         if use_identity:
             t_tgt = t_src                      # 좌표계가 같다 — 항등 변환
@@ -121,7 +127,7 @@ def main():
             verdict.append("정렬오차 %.2fpx" % err)
         print("  %-34s 세대 다른 픽셀 %-7s %s %s"
               % (t, nz,
-                 ("항등(방중심 중앙 %.1fpx)" % med) if use_identity
+                 ("항등(방중심 p25 %.1fpx)" % med) if use_identity
                  else ("정렬오차 %.2f" % err if err == err else "정렬오차 nan"),
                  "  거부: " + " · ".join(verdict) if verdict else "  통과"))
         if verdict or not a.apply:

@@ -635,5 +635,26 @@
   "written": 3,
   "overwritten": 3,
   "backup": "/home/ju/plan2graph/data/staging/corrected/_dedup_backup/20261114_020526_cross"
+ },
+ {
+  "sig": "52e39409804c518d",
+  "source": "APT_FP_a47e0bb6_17447720_u1",
+  "targets": [
+   "APT_FP_b5e5fca0_17447720_u1",
+   "APT_FP_e2a19790_17447720_u1"
+  ],
+  "written": 2,
+  "overwritten": 0,
+  "backup": null
+ },
+ {
+  "sig": "cross",
+  "source": "APT_FP_a47e0bb6_17447720_u1",
+  "targets": [
+   "APT_FP_53b0ef46_17447720_u1"
+  ],
+  "written": 1,
+  "overwritten": 1,
+  "backup": "/home/ju/plan2graph/data/staging/corrected/_dedup_backup/20261114_025715_cross"
  }
 ]
