@@ -268,9 +268,13 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
         #   d6 은 상자로 풀면 발코니(89)+현관(78)(=사용자 확인 "발코니와 현관에 문이 있다")
         #   인데 벽 w65(욕실74·현관78)로 덮으면 "현관↔욕실"이 되고, 사용자는 그 문이
         #   없다고 명시했다. 벽 레코드는 문이 실제로 난 자리를 모른다.
+        hits1 = []
+
         def _pick(geom):
             hs = sorted(((geom.intersection(q).area, rid) for rid, q in polys.items()
                          if geom.intersection(q).area > 1.0), reverse=True)
+            if len(hs) == 1 and not hits1:
+                hits1.append(hs[0][1])
             return [hs[0][1], hs[1][1]] if len(hs) >= 2 else None
 
         for d in grp:                                  # ① 스윙 호가 열리는 두 방
@@ -325,6 +329,14 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
             if old != sorted(pair):
                 rep["door_pairs"] += 1
             rep["door_log"].append((keep.get("id"), how, old, list(pair)))
+        elif pair is None and len(hits1) == 1:
+            # 한쪽만 방 = **외부로 나가는 문**(현관 출입문). 버리면 안 된다.
+            # 실측(도면 1,500장): is_entrance 문 1,987개 중 579개(29%)가 이 경우다.
+            # 도면화에는 현관 출입문이 반드시 있어야 하고 피난 규정에도 필요하다.
+            keep["connects"] = [int(hits1[0]) if hits1[0].isdigit() else hits1[0]]
+            keep["to_outside"] = True
+            keep["is_entrance"] = True
+            rep["outside_door"] = rep.get("outside_door", 0) + 1
         else:
             keep["connects"] = []
             keep["suspect"] = True
@@ -583,6 +595,87 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
                     "open_from": "component_merge", "open_len_px": round(L, 1)}
         rep["comp_merge"] = rep.get("comp_merge", 0) + 1
 
+    # (i) 창의 belongs_to 도 다시 푼다 — doors[].connects 와 같은 함정이다.
+    # 코덱은 창을 "그 방 사이클의 어느 변 위, 몇 % 지점"으로 적는다
+    # (window = 외벽(1방 belongs_to)). 그래서 belongs_to 가 틀리면 엉뚱한 방 벽에 붙고,
+    # 이미 지워진 방을 가리키면 붙일 변이 없어 **증발한다**.
+    # 실측(창 12,708개·도면 1,200장): 일치 90.4% · 최대겹침 아님 4.4% ·
+    # 없는 방 3.9%(증발) · 전혀 다른 방 1.2% · 어디에도 안 닿음 0.1%.
+    # 창의 64.5%가 외벽 창(1방), 35.4%는 두 방 이상에 닿는다.
+    for w in (g.get("windows") or []):
+        b = w.get("bbox_px")
+        if not b or not b[2] or not b[3]:
+            continue
+        z = box(b[0] - WIN_PAD, b[1] - WIN_PAD,
+                b[0] + b[2] + WIN_PAD, b[1] + b[3] + WIN_PAD)
+        hits = sorted(((z.intersection(q).area, rid) for rid, q in polys.items()
+                       if z.intersection(q).area > 1.0), reverse=True)
+        old = str(w.get("belongs_to"))
+        if not hits:
+            if old not in polys:
+                w["suspect"] = True
+                w["suspect_reason"] = "어느 방에도 닿지 않는다"
+                rep["win_orphan"] = rep.get("win_orphan", 0) + 1
+            continue
+        # 두 방에 걸친 창(방↔발코니)은 **실내 쪽**을 적는다 — 발코니는 창이 나는 쪽이 아니다.
+        pick = hits[0][1]
+        if len(hits) >= 2:
+            ra = (rooms.get(hits[0][1]) or {}).get("role")
+            rb = (rooms.get(hits[1][1]) or {}).get("role")
+            if ra in OUTDOOR_ROLES and rb not in OUTDOOR_ROLES:
+                pick = hits[1][1]
+        if pick != old:
+            w["belongs_to_parsed"] = w.get("belongs_to")
+            w["belongs_to"] = int(pick) if pick.isdigit() else pick
+            w["belongs_to_source"] = "geometry_rebuild"
+            rep["win_fixed"] = rep.get("win_fixed", 0) + 1
+
+    # (j) 문 엣지인데 **문 레코드가 없는 것**에 레코드를 만들어 준다.
+    # 왜: wallcycle_codec.canonicalize 는 g["doors"] 레코드만 돈다. open 루프는
+    # via=="open" 만 본다. 그래서 확정값·규칙으로 만든 door 엣지는 레코드가 없으면
+    # **door 로도 open 으로도 토큰에 안 들어가고 통째로 증발한다.**
+    # 실측(APT_FP_01613b7f_17446927_u0): edges 의 door 7개 중 canon door 는 3개뿐이었다.
+    # 위치는 두 방이 맞닿은 구간의 가운데로 잡고, 폭은 그 맞닿은 길이로 둔다
+    # (검출된 문이 아니라 **우리가 만든 문**이므로 source 로 구분한다).
+    have = set()
+    for d in new_doors:
+        c = [str(x) for x in (d.get("connects") or [])]
+        if len(c) == 2:
+            have.add(frozenset(c))
+    seq = 0
+    for k, e in edges.items():
+        if e.get("via") != "door" or k in have:
+            continue
+        a2, b2 = tuple(k)
+        if a2 not in polys or b2 not in polys:
+            continue
+        pa, pb = polys[a2], polys[b2]
+        try:
+            band = pa.buffer(14.0).intersection(pb.buffer(14.0))
+            c = band.centroid
+            shared = pa.exterior.intersection(pb.buffer(max(2.0, pa.distance(pb) + 1.5))).length
+        except Exception:
+            continue
+        if c.is_empty:
+            continue
+        seq += 1
+        # ⚠ 폭은 **모른다**. 맞닿은 경계 길이를 폭으로 쓰면 측정값처럼 보이는 가짜가 된다
+        # (실측: 그렇게 만든 5개 중 3개가 상·하한에 그대로 걸렸다 — 1.576m·0.525m).
+        # 위치만 적고 폭은 비워 둔다. 원형 부호 OCR 로 채울 자리다.
+        rec = {"id": "dx%d" % seq, "connects": [int(x) if x.isdigit() else x for x in (a2, b2)],
+               "via": "door", "position": [round(c.x, 1), round(c.y, 1)],
+               "bbox_px": None, "width_px": None, "width_m": None,
+               "source": "link_rebuild", "link_source": "geometry_rebuild",
+               "width_source": "unknown",
+               "shared_len_px": round(shared, 1) if shared else None,
+               "from_edge": e.get("via_from") or e.get("open_from") or "rule"}
+        new_doors.append(rec)
+        e["door_id"] = rec["id"]
+        e["door_pos"] = rec["position"]
+        rep["door_made"] = rep.get("door_made", 0) + 1
+    g["doors"] = new_doors
+    g["n_doors"] = len(new_doors)
+
     # 위계 전이 · 현관 거리
     for e in edges.values():
         pa = PRIVACY.get((rooms.get(e["from"]) or {}).get("role"), "other")
@@ -637,6 +730,10 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
     rep.setdefault("ovr_forbid", 0)
     rep.setdefault("ovr_force", 0)
     rep.setdefault("comp_merge", 0)
+    rep.setdefault("win_fixed", 0)
+    rep.setdefault("win_orphan", 0)
+    rep.setdefault("door_made", 0)
+    rep.setdefault("outside_door", 0)
     rep["inferred"] = sum(1 for e in out
                           if e.get("open_from") in ("entrance_rule", "fallback_rule")
                           and e.get("via_from") != "user_override")
@@ -686,6 +783,10 @@ def main():
         T["ovr_forbid"] += rep.get("ovr_forbid", 0)
         T["ovr_force"] += rep.get("ovr_force", 0)
         T["comp_merge"] += rep.get("comp_merge", 0)
+        T["win_fixed"] += rep.get("win_fixed", 0)
+        T["win_orphan"] += rep.get("win_orphan", 0)
+        T["door_made"] += rep.get("door_made", 0)
+        T["outside_door"] += rep.get("outside_door", 0)
         T["edges"] += rep["edge_after"]
         T["inferred"] += rep["inferred"]
         T["unreachable"] += len(rep["unreachable"])
@@ -732,7 +833,10 @@ def main():
           "빈 문 버림 %d · 못 푼 문 %d · 좁은 문 표시 %d"
           % (T["wall_rooms"], T["door_pairs"], T["merged"],
              T["dropped"], T["unresolved"], T["thin"]))
-    print("   끊긴 조각 붙임 %d건" % T["comp_merge"])
+    print("   끊긴 조각 붙임 %d건 · 창 belongs_to 재산출 %d건 · 떠 있는 창 %d건"
+          % (T["comp_merge"], T["win_fixed"], T["win_orphan"]))
+    print("   레코드 없던 문 엣지에 문 레코드 생성 %d건(폭은 미상) · "
+          "외부로 나가는 문 보존 %d건" % (T["door_made"], T["outside_door"]))
     print("   현관 개방 규칙 %d건 · 증거없음 보완 %d건 · 끝내 못 이은 방 %d개"
           % (T["entrance_open"], T["fallback_open"], T["no_evidence"]))
     if T["ovr_forbid"] or T["ovr_force"]:

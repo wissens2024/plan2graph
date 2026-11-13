@@ -696,6 +696,9 @@ a.dedup:hover{background:#2c3d58}
  .gcon .door{stroke:#16a34a;stroke-width:3}
  .gcon .open{stroke:#2563eb;stroke-width:2.5;stroke-dasharray:9 7}
  .gcon .win{stroke:#9333ea;stroke-width:2.5;stroke-dasharray:2 5;stroke-linecap:round}
+ .gcon .winout{stroke:#9333ea;stroke-width:2;stroke-dasharray:2 4;opacity:.9}
+ .gcon rect.winout{fill:#9333ea;stroke:#fff;stroke-width:1.2}
+ .gcon text.wout{font-size:11px;font-weight:700;fill:#6b21a8;stroke-width:3px}
  .gcon .bad{stroke:#dc2626;stroke-width:4}
  .gcon rect{fill:#16a34a;stroke:#fff;stroke-width:1.5;pointer-events:none}
  .gcon rect.bad{fill:#dc2626}
@@ -811,7 +814,7 @@ a.dedup:hover{background:#2c3d58}
   <div class="modetag" id="modetag">🎨 역할</div>
   <div id="toast"></div>
   <div id="pngwarn">⚠ 원본 PNG 없음(인덱싱중일 수 있음) — 해석만 표시</div>
-  <div id="hud"><button id="ovtog" title="주석 겹쳐보기 끄기/켜기 — 원본 도면만 보기 (H)">👁 오버레이</button><button id="gctog" title="기하 연결 보기 — 초록 실선=문, 파란 긴점선=개방공간, 보라 짧은점선=창, 빨강=끊어짐 (G)">🔗 기하연결</button><button id="fit">맞춤 (F)</button></div>
+  <div id="hud"><button id="ovtog" title="주석 겹쳐보기 끄기/켜기 — 원본 도면만 보기 (H)">👁 오버레이</button><button id="gctog" title="기하 연결 보기 — 초록 실선=문, 파란 긴점선=개방공간, 보라 짧은점선=창, 보라 네모=외벽창(belongs_to 방 이름 표시), 빨강=끊어짐 (G)">🔗 기하연결</button><button id="fit">맞춤 (F)</button></div>
 </div>
 <script>
 const NS='http://www.w3.org/2000/svg', svg=document.getElementById('svg');
@@ -1051,6 +1054,28 @@ function drawGeomLinks(){
       const p=(d&&d.position)?d.position:[(a[0]+b[0])/2,(a[1]+b[1])/2];
       el('rect',{x:p[0]-7,y:p[1]-7,width:14,height:14,class:bad?'bad':''},g);}
   }
+  // 외벽 창 — 엣지가 없어 지금까지 화면에 안 나왔다. belongs_to 가 어느 방을 가리키는지
+  // 사람이 눈으로 확인할 수 있어야 한다(코덱은 이 값으로 창을 그 방 벽에 붙인다).
+  let nWinOut=0;
+  for(const w of (G.windows||[])){
+    const bt=String(w.belongs_to);
+    const r=(G.rooms||{})[bt];
+    const p=w.position||(w.bbox_px?[w.bbox_px[0]+w.bbox_px[2]/2,w.bbox_px[1]+w.bbox_px[3]/2]:null);
+    if(!p)continue;
+    const linked=(G.edges||[]).some(e=>e.via==='window'&&e.window_id===w.id);
+    if(linked)continue;
+    nWinOut++;
+    const c=r?ctrOf(bt):null;
+    if(c){
+      const dx=c[0]-p[0],dy=c[1]-p[1],L=Math.hypot(dx,dy)||1,k=Math.min(34,L*0.45);
+      el('line',{x1:p[0],y1:p[1],x2:p[0]+dx/L*k,y2:p[1]+dy/L*k,class:'winout'},g);
+    }
+    el('rect',{x:p[0]-5,y:p[1]-5,width:10,height:10,class:'winout'},g);
+    const lab=r?(r.role||'?'):('없는 방 '+bt);
+    const tx=el('text',{x:p[0],y:p[1]-9,class:r?'wout':'bad'},g);
+    tx.textContent=lab+(w.width_m?(' '+w.width_m.toFixed(2)+'m'):'');
+    if(!r)nBad++;
+  }
   for(const d of (G.doors||[])){
     const c=d.connects||[];
     if(c.length===2&&(!(G.rooms||{})[c[0]]||!(G.rooms||{})[c[1]])){
@@ -1059,7 +1084,7 @@ function drawGeomLinks(){
       const tx=el('text',{x:p[0],y:p[1]-14},g);tx.textContent='없는 방';}
   }
   const tag=document.getElementById('gctog');
-  if(tag)tag.textContent=nBad?('🔗 기하연결 ⚠'+nBad):'🔗 기하연결';
+  if(tag)tag.textContent=(nBad?('🔗 기하연결 ⚠'+nBad):'🔗 기하연결')+(nWinOut?(' · 외벽창 '+nWinOut):'');
 }
 
 function render(){
