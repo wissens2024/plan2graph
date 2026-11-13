@@ -86,6 +86,7 @@ AXIS_LEN = 300.0      # 이보다 긴 벽 레코드는 제도 축선으로 보�
 # 실측(APT_FP_43f02133_17446927_u0): 거실↔발코니하단 25%, 안방↔발코니하단 23% 가
 # 둘 다 진짜 창인데 걸러졌다(사용자 확인).
 WIN_RATIO = 0.20
+WIN_MERGE = 25.0   # 같은 방의 창 중심이 이 안이면 같은 창으로 본다
 
 
 def polys_of(g):
@@ -769,6 +770,41 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
                 d["position_source"] = "user_override"
                 rep["ovr_door_pos"] = rep.get("ovr_door_pos", 0) + 1
 
+    # (l2) **겹친 창 합치기** — 같은 방의 같은 자리에 창이 여러 개 검출된다.
+    # 실측: 주방 하나에 win4/5/6 이 bbox 의 x·y·w 가 똑같고 높이만 달랐다.
+    wins = g.get("windows") or []
+    if len(wins) > 1:
+        keep, drop, remap = [], 0, {}
+        for w in sorted(wins, key=lambda v: -((v.get("bbox_px") or [0, 0, 0, 0])[2]
+                                              * (v.get("bbox_px") or [0, 0, 0, 0])[3])):
+            p = w.get("position")
+            hit = None
+            for k in keep:
+                q = k.get("position")
+                if (p and q and str(w.get("belongs_to")) == str(k.get("belongs_to"))
+                        and abs(p[0] - q[0]) <= WIN_MERGE and abs(p[1] - q[1]) <= WIN_MERGE):
+                    hit = k
+                    break
+            if hit is None:
+                keep.append(w)
+                continue
+            remap[w.get("id")] = hit.get("id")
+            a1, b1 = hit.get("bbox_px"), w.get("bbox_px")
+            if a1 and b1:                       # bbox 는 합집합으로 넓힌다
+                x0 = min(a1[0], b1[0]); y0 = min(a1[1], b1[1])
+                x1 = max(a1[0] + a1[2], b1[0] + b1[2])
+                y1 = max(a1[1] + a1[3], b1[1] + b1[3])
+                hit["bbox_px"] = [round(x0, 1), round(y0, 1),
+                                  round(x1 - x0, 1), round(y1 - y0, 1)]
+            drop += 1
+        if drop:
+            g["windows"] = keep
+            g["n_windows"] = len(keep)
+            for e in edges.values():
+                if e.get("window_id") in remap:
+                    e["window_id"] = remap[e["window_id"]]
+            rep["win_merged"] = rep.get("win_merged", 0) + drop
+
     # (m) 사용자가 짚어준 **창** — 문과 같은 모양으로 받는다.
     # 맨 뒤에서 돈다: (i) 창 belongs_to 재산출이 이걸 덮으면 안 된다.
     for ow in (o.get("windows") or []):
@@ -850,6 +886,7 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
     rep.setdefault("ovr_door_add", 0)
     rep.setdefault("ovr_door_pos", 0)
     rep.setdefault("ovr_win_add", 0)
+    rep.setdefault("win_merged", 0)
     rep.setdefault("comp_merge", 0)
     rep.setdefault("win_fixed", 0)
     rep.setdefault("win_orphan", 0)
@@ -944,6 +981,7 @@ def main():
         T["ovr_door_add"] += rep.get("ovr_door_add", 0)
         T["ovr_door_pos"] += rep.get("ovr_door_pos", 0)
         T["ovr_win_add"] = T.get("ovr_win_add", 0) + rep.get("ovr_win_add", 0)
+        T["win_merged"] = T.get("win_merged", 0) + rep.get("win_merged", 0)
         T["comp_merge"] += rep.get("comp_merge", 0)
         T["win_fixed"] += rep.get("win_fixed", 0)
         T["win_orphan"] += rep.get("win_orphan", 0)
@@ -1022,6 +1060,8 @@ def main():
             print("   확정 창 %d건" % T["ovr_win_add"])
     print("   역할쌍 규칙으로 종류 교정 %d건 · 금지 쌍의 문 표시 %d건"
           % (T["via_fixed"], T["forbidden_door"]))
+    if T.get("win_merged"):
+        print("   겹친 창 합침 %d개" % T["win_merged"])
     if T["edges"]:
         print("   엣지 %d개 중 추론 %d개 (%.1f%%) — 나머지는 문·창·벽 증거"
               % (T["edges"], T["inferred"], 100.0 * T["inferred"] / T["edges"]))
