@@ -805,6 +805,16 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
                     e["window_id"] = remap[e["window_id"]]
             rep["win_merged"] = rep.get("win_merged", 0) + drop
 
+    # (n-1) 사용자가 **문 id 를 집어서** 버리라고 한 것 — forbid 는 방 쌍이 있어야
+    # 닿으므로, 한쪽만 방인 문(to_outside)은 이걸로만 지울 수 있다.
+    kill_ids = {str(x) for x in (o.get("drop_doors") or [])}
+    if kill_ids:
+        n0 = len(new_doors)
+        new_doors[:] = [d for d in new_doors if str(d.get("id")) not in kill_ids]
+        rep["ovr_door_drop"] = rep.get("ovr_door_drop", 0) + (n0 - len(new_doors))
+        for k2 in [k for k, e2 in edges.items() if str(e2.get("door_id")) in kill_ids]:
+            del edges[k2]
+
     # (n0) 방이 하나도 없는 문은 버린다 — 사용자가 세대 밖 공용부를 지우면
     # 그쪽으로 나가던 문이 connects=[] 인 채 to_outside 로 남아 유령이 된다.
     n_before = len(new_doors)
