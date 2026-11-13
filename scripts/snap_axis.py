@@ -17,6 +17,9 @@ AI-Hub 주석은 방마다 따로 외곽선을 추적해서, 같은 벽인데도
 원래대로 되돌린다**(도면 전체를 버리지 않는다).
 
 읽기 전용(기본). --apply 를 줘야 쓴다.
+usage:
+  python scripts/snap_axis.py --sample 2000 --tol 4
+  python scripts/snap_axis.py --sample -1 --tol 4 --apply     # 전체
 """
 from __future__ import annotations
 
@@ -27,6 +30,7 @@ import json
 import os
 import random
 import shutil
+import time as _time
 
 from shapely.geometry import Polygon
 
@@ -111,11 +115,20 @@ def process(g, tol, max_pct):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--plans", nargs="*", default=[])
-    ap.add_argument("--sample", type=int, default=0)
+    ap.add_argument("--sample", type=int, default=0,
+                    help="0 이면 --plans 만. 전체는 --sample -1")
     ap.add_argument("--tol", type=float, default=6.0, help="이 간격 이내 좌표를 한 축선으로")
     ap.add_argument("--max-area-pct", type=float, default=3.0)
     ap.add_argument("--seed", type=int, default=3)
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--shard", default=None,
+                    help="I/N - 대상을 N 등분해 I 번째만 돈다(병렬 실행용)")
+    ap.add_argument("--plans-file", default=None,
+                    help="한 줄에 하나씩 적힌 plan_id 만 돈다")
+    ap.add_argument("--exclude-file", default=None,
+                    help="한 줄에 하나씩 적힌 plan_id 는 손대지 않는다")
+    ap.add_argument("--progress", type=int, default=0)
+    ap.add_argument("--stats-json", default=None)
     args = ap.parse_args()
 
     EDITS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -125,17 +138,45 @@ def main():
     if args.sample:
         fs = [f[:-5] for f in os.listdir(EDITS) if f.endswith(".json")]
         random.Random(args.seed).shuffle(fs)
-        pool += fs[: args.sample]
+        # ⚠ --sample -1(전체) 은 fs[:-1] 이 되어 **한 장을 빼먹는다**. 분기한다.
+        pool += fs if args.sample < 0 else fs[: args.sample]
+
+    if args.plans_file:
+        pool += [l.strip() for l in open(args.plans_file, encoding="utf-8") if l.strip()]
+
+    ex = set()
+    if args.exclude_file and os.path.exists(args.exclude_file):
+        ex = {l.strip() for l in open(args.exclude_file, encoding="utf-8") if l.strip()}
+    n_ex = sum(1 for p in pool if p in ex)
+    pool = [p for p in pool if p not in ex]
+    if n_ex:
+        print("보호 대상 %d장 제외" % n_ex)
+
+    if args.shard:                       # I/N - 같은 일을 나눠 동시에 돈다
+        si, sn = (int(x) for x in args.shard.split("/"))
+        pool = [q for k, q in enumerate(sorted(set(pool))) if k % sn == si]
 
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     bk = os.path.join(BK, stamp + "_snapaxis")
     tp = tr = tpt = trv = 0
-    for pid in pool:
+    FAILED = []
+    _t0 = _time.time()
+    for _i, pid in enumerate(pool, 1):
+        if args.progress and _i % args.progress == 0:
+            el = _time.time() - _t0
+            print("[진행] %d/%d  %.1f장/초  경과 %.1f분  실패 %d"
+                  % (_i, len(pool), _i / max(el, 1e-9), el / 60.0, len(FAILED)),
+                  flush=True)
         p = os.path.join(EDITS, pid + ".json")
         if not os.path.exists(p):
+            FAILED.append((pid, "FileNotFound", ""))
             continue
-        g = json.load(open(p, encoding="utf-8"))
-        mv, pts, rev, nx, ny = process(g, args.tol, args.max_area_pct)
+        try:                             # 한 장이 깨져도 나머지는 돈다
+            g = json.load(open(p, encoding="utf-8"))
+            mv, pts, rev, nx, ny = process(g, args.tol, args.max_area_pct)
+        except Exception as exc:
+            FAILED.append((pid, type(exc).__name__, str(exc)[:200]))
+            continue
         if args.plans:
             print("%s  방 %d 정리 · 꼭짓점 %d 감소 · 되돌림 %d · 축선 x%d y%d"
                   % (pid, mv, pts, rev, nx, ny))
@@ -146,15 +187,38 @@ def main():
         tpt += pts
         trv += rev
         if args.apply:
-            os.makedirs(bk, exist_ok=True)
-            shutil.copy(p, os.path.join(bk, pid + ".json"))
-            tmp = p + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(g, f, ensure_ascii=False)
-            os.replace(tmp, p)
+            tmp = None
+            try:
+                os.makedirs(bk, exist_ok=True)
+                shutil.copy(p, os.path.join(bk, pid + ".json"))
+                tmp = p + ".%d.tmp" % os.getpid()
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(g, f, ensure_ascii=False)
+                os.replace(tmp, p)
+            except Exception as exc:     # 쓰다 실패하면 원본은 그대로 둔다
+                FAILED.append((pid, "write:" + type(exc).__name__, str(exc)[:200]))
+                try:
+                    if tmp:
+                        os.remove(tmp)
+                except Exception:
+                    pass
 
     print("\n도면 %d · 고친 도면 %d · 방 %d · 꼭짓점 %d개 감소 · 되돌린 방 %d"
           % (len(pool), tp, tr, tpt, trv))
+    if FAILED:
+        kinds = collections.Counter(k for _, k, _ in FAILED)
+        print("   ! 실패 %d건 - %s"
+              % (len(FAILED), " · ".join("%s %d" % kv for kv in kinds.most_common())))
+        for pid, k, m in FAILED[:20]:
+            print("      %s  %s  %s" % (pid, k, m))
+    else:
+        print("   실패 0건")
+    if args.stats_json:
+        with open(args.stats_json, "w", encoding="utf-8") as f:
+            json.dump({"pool": len(pool), "plans_changed": tp, "rooms": tr,
+                       "vtx_drop": tpt, "reverted": trv,
+                       "failed": FAILED, "backup": bk if args.apply else None},
+                      f, ensure_ascii=False)
     print("백업 → " + bk if args.apply else "[드라이런] --apply 로 적용")
 
 

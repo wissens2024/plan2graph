@@ -41,6 +41,7 @@ import os
 import random
 import shutil
 import statistics
+import time as _time
 
 DOOR_M = (0.5, 1.6)
 WIN_M = (0.3, 4.0)
@@ -118,6 +119,15 @@ def main():
                     help="0 이면 --plans 만. 전체는 --sample -1")
     ap.add_argument("--seed", type=int, default=11)
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--plans-file", default=None,
+                    help="한 줄에 하나씩 적힌 plan_id 만 돈다")
+    ap.add_argument("--exclude-file", default=None,
+                    help="한 줄에 하나씩 적힌 plan_id 는 손대지 않는다")
+    ap.add_argument("--shard", default=None,
+                    help="I/N - 대상을 N 등분해 I 번째만 돈다(병렬 실행용)")
+    ap.add_argument("--progress", type=int, default=0,
+                    help=">0 이면 그 수만큼 처리할 때마다 진행을 한 줄 찍는다")
+    ap.add_argument("--stats-json", default=None, help="집계를 JSON 으로 쓴다")
     args = ap.parse_args()
 
     ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -130,16 +140,43 @@ def main():
         random.Random(args.seed).shuffle(fs)
         pool += fs if args.sample < 0 else fs[: args.sample]
 
+    if args.plans_file:
+        pool += [l.strip() for l in open(args.plans_file, encoding="utf-8") if l.strip()]
+
+    ex = set()
+    if args.exclude_file and os.path.exists(args.exclude_file):
+        ex = {l.strip() for l in open(args.exclude_file, encoding="utf-8") if l.strip()}
+    n_ex = sum(1 for p in pool if p in ex)
+    pool = [p for p in pool if p not in ex]
+    if n_ex:
+        print("보호 대상 %d장 제외" % n_ex)
+
+    if args.shard:                       # I/N - 같은 일을 나눠 동시에 돈다
+        si, sn = (int(x) for x in args.shard.split("/"))
+        pool = [q for k, q in enumerate(sorted(set(pool))) if k % sn == si]
+
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     bk = os.path.join(BK, stamp + "_openings")
     T = collections.Counter()
     before = {"문": [], "창": []}
     after = {"문": [], "창": []}
-    for pid in pool:
+    FAILED = []                          # (plan_id, 예외종류, 메시지)
+    _t0 = _time.time()
+    for _i, pid in enumerate(pool, 1):
+        if args.progress and _i % args.progress == 0:
+            el = _time.time() - _t0
+            print("[진행] %d/%d  %.1f장/초  경과 %.1f분  실패 %d"
+                  % (_i, len(pool), _i / max(el, 1e-9), el / 60.0, len(FAILED)),
+                  flush=True)
         p = os.path.join(EDITS, pid + ".json")
         if not os.path.exists(p):
+            FAILED.append((pid, "FileNotFound", ""))
             continue
-        g = json.load(open(p, encoding="utf-8"))
+        try:                             # 한 장이 깨져도 나머지는 돈다
+            g = json.load(open(p, encoding="utf-8"))
+        except Exception as exc:
+            FAILED.append((pid, type(exc).__name__, str(exc)[:200]))
+            continue
         sc = g.get("scale_mm_per_px")
         sc = float(sc) if sc else None
         walls = g.get("walls") or []
@@ -150,7 +187,12 @@ def main():
                     b = o.get("bbox_px")
                     if b and o.get("width_px") is not None:
                         before[kind].append(float(o["width_px"]) * sc / 1000.0)
-                r = fix_one(o, walls, sc, *rng)
+                try:
+                    r = fix_one(o, walls, sc, *rng)
+                except Exception as exc:
+                    FAILED.append((pid + ":" + str(o.get("id")),
+                                   type(exc).__name__, str(exc)[:200]))
+                    continue
                 if not r:
                     T[kind + " 상자없음"] += 1
                     continue
@@ -164,12 +206,21 @@ def main():
             continue
         T["도면"] += 1
         if args.apply:
-            os.makedirs(bk, exist_ok=True)
-            shutil.copy(p, os.path.join(bk, pid + ".json"))
-            tmp = p + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(g, f, ensure_ascii=False)
-            os.replace(tmp, p)
+            tmp = None
+            try:
+                os.makedirs(bk, exist_ok=True)
+                shutil.copy(p, os.path.join(bk, pid + ".json"))
+                tmp = p + ".%d.tmp" % os.getpid()
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(g, f, ensure_ascii=False)
+                os.replace(tmp, p)
+            except Exception as exc:     # 쓰다 실패하면 원본은 그대로 둔다
+                FAILED.append((pid, "write:" + type(exc).__name__, str(exc)[:200]))
+                try:
+                    if tmp:
+                        os.remove(tmp)
+                except Exception:
+                    pass
         elif args.plans:
             print("== %s" % pid)
             for kind, key in (("문", "doors"), ("창", "windows")):
@@ -194,6 +245,19 @@ def main():
         print("   %s 폭 중앙값 %.2fm → %.2fm · 현실범위 %.1f%% → %.1f%%"
               % (kind, statistics.median(before[kind]) if before[kind] else 0,
                  statistics.median(after[kind]), okb, oka))
+    if FAILED:
+        kinds = collections.Counter(k for _, k, _ in FAILED)
+        print("   ! 실패 %d건 - %s"
+              % (len(FAILED), " · ".join("%s %d" % kv for kv in kinds.most_common())))
+        for pid, k, m in FAILED[:20]:
+            print("      %s  %s  %s" % (pid, k, m))
+    else:
+        print("   실패 0건")
+    if args.stats_json:
+        with open(args.stats_json, "w", encoding="utf-8") as f:
+            json.dump({"counts": dict(T), "n_pool": len(pool),
+                       "failed": FAILED, "backup": bk if args.apply else None},
+                      f, ensure_ascii=False)
     print("백업 → " + bk if args.apply else "[드라이런] --apply 로 적용")
 
 

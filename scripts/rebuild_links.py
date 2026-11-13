@@ -81,7 +81,11 @@ OPEN_MIN = 20.0       # 벽이 덮지 않은 구간이 이보다 길면 개방�
 WIN_PAD = 14.0        # 창 상자를 키우는 폭(px) — 벽을 건너가도록
 OUTDOOR_ROLES = ("발코니", "실외기실", "테라스")   # 집 안이 아닌 공간
 AXIS_LEN = 300.0      # 이보다 긴 벽 레코드는 제도 축선으로 보고 막힘에서 제외
-WIN_RATIO = 0.30      # 두 번째 방의 겹침이 첫 번째의 이 비율 미만이면 스친 것
+# 두 번째 방의 겹침이 첫 번째의 이 비율 미만이면 스친 것으로 본다.
+# 0.30 은 과했다 — 발코니 전면창은 발코니 쪽에 훨씬 크게 걸린다.
+# 실측(APT_FP_43f02133_17446927_u0): 거실↔발코니하단 25%, 안방↔발코니하단 23% 가
+# 둘 다 진짜 창인데 걸러졌다(사용자 확인).
+WIN_RATIO = 0.20
 
 
 def polys_of(g):
@@ -705,7 +709,11 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
             continue
         pa, pb = polys[a2], polys[b2]
         try:
-            band = pa.buffer(14.0).intersection(pb.buffer(14.0))
+            # 버퍼는 **실제 간격**을 건너야 한다. 14+14=28px 고정이면 그보다 벌어진
+            # 쌍에서 띠가 비어 문 레코드가 안 생기고, 화면에 문이 안 그려진다
+            # (실측: 발코니상단-복도 간격 32px → door_id=None).
+            br = max(14.0, pa.distance(pb) / 2.0 + 6.0)
+            band = pa.buffer(br).intersection(pb.buffer(br))
             c = band.centroid
             shared = pa.exterior.intersection(pb.buffer(max(2.0, pa.distance(pb) + 1.5))).length
         except Exception:
@@ -839,6 +847,10 @@ def main():
     ap.add_argument("--thin-px", type=float, default=THIN_DOOR_PX)
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--plans-file", default=None,
+                    help="한 줄에 하나씩 적힌 plan_id 만 돈다")
+    ap.add_argument("--exclude-file", default=None,
+                    help="한 줄에 하나씩 적힌 plan_id 는 손대지 않는다")
     ap.add_argument("--shard", default=None,
                     help="I/N - 대상을 N 등분해 I 번째만 돈다(병렬 실행용)")
     ap.add_argument("--progress", type=int, default=0,
@@ -851,6 +863,17 @@ def main():
         fs = [f[:-5] for f in os.listdir(EDITS) if f.endswith(".json")]
         random.Random(args.seed).shuffle(fs)
         pool += fs if args.sample < 0 else fs[: args.sample]
+
+    if args.plans_file:
+        pool += [l.strip() for l in open(args.plans_file, encoding="utf-8") if l.strip()]
+
+    ex = set()
+    if args.exclude_file and os.path.exists(args.exclude_file):
+        ex = {l.strip() for l in open(args.exclude_file, encoding="utf-8") if l.strip()}
+    n_ex = sum(1 for p in pool if p in ex)
+    pool = [p for p in pool if p not in ex]
+    if n_ex:
+        print("보호 대상 %d장 제외" % n_ex)
 
     if args.shard:                       # I/N - 같은 일을 나눠 동시에 돈다
         si, sn = (int(x) for x in args.shard.split("/"))
