@@ -695,6 +695,8 @@ a.dedup:hover{background:#2c3d58}
  .gcon line{pointer-events:none}
  .gcon .door{stroke:#16a34a;stroke-width:3}
  .gcon .open{stroke:#2563eb;stroke-width:2.5;stroke-dasharray:9 7}
+ .gcon circle.openpt{fill:#2563eb;stroke:#fff;stroke-width:1.4}
+ .gcon text.tlab{font-size:11px;font-weight:700;fill:#b45309;stroke-width:3px}
  .gcon .tagln{stroke:#f59e0b;stroke-width:2.2;opacity:.95}
  .gcon .tagref{stroke:#fcd34d;stroke-width:1.2;stroke-dasharray:2 3}
  .gcon polygon.tagpt{fill:#f59e0b;stroke:#78350f;stroke-width:1.4}
@@ -1039,123 +1041,107 @@ function ctrOf(id){const r=(G.rooms||{})[id];if(!r)return null;
   if(r.centroid)return r.centroid;
   if(r.polygon&&r.polygon.length)return r.polygon[0];return null;}
 
-// 기하 연결 — **개구부를 노드로 세운다.**
-// 사용자(2026-11-13): "기하연결이 단순히 역할만 연결하지 말고, 문/창도 연결하고
-// 외부에 붙어 있는 창과 문도 표시하고 연결하자. 문과 창은 벽에 붙이면 되고."
-//   · 문·창은 **자기 위치(벽 위)** 에 네모로 서고, 거기서 닿는 방으로 선이 간다.
-//   · 한쪽이 외부면(현관 출입문·외벽 창) 방 반대쪽으로 짧게 뻗고 '외부' 라고 적는다.
-//   · 개방 경계만 방↔방 선으로 남는다(개구부 실체가 없으므로).
+// 기하 연결 — **도면처럼 읽히게.** 방 중심까지 긴 선을 긋지 않는다.
+// 사용자(2026-11-13): 중심으로 선이 모여 거미줄이 됐다 → "완전 별로다".
+//   · 개구부는 **벽 위 제자리**에 서고, 거기서 **양쪽으로 짧은 꼬리**만 낸다.
+//     꼬리가 들어가는 방이 곧 연결이다. 긴 선이 필요 없다.
+//   · 한쪽이 외부면 꼬리가 하나뿐이고 끝에 '외부' 라고 적는다.
+//   · 개방 경계도 **맞닿은 자리**에 표시한다(방 중심끼리 잇지 않는다).
 function drawGeomLinks(){
   const g=el('g',{class:'gcon'},svg);
   const R=G.rooms||{};
   let nBad=0,nOut=0,nNoPos=0;
-  const key=(a,b)=>[String(a),String(b)].sort().join('|');
+  const TAIL=26;
 
-  // 엣지 종류를 방쌍으로 찾아보기 위한 색인
-  const viaOf={};
-  for(const e of (G.edges||[]))viaOf[key(e.from,e.to)]=e.via;
+  function ctrP(id){const c=ctrOf(id);return c?{x:c[0],y:c[1]}:null;}
 
-  // ① 개방 경계 — 개구부 실체가 없으니 방↔방 선으로 둔다
-  for(const e of (G.edges||[])){
-    if(e.via!=='open')continue;
-    const a=ctrOf(e.from),b=ctrOf(e.to);
-    if(!a||!b){nBad++;continue;}
-    el('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],class:'open'},g);
-  }
-
-  // 개구부 하나를 그린다: 벽 위 네모 + 닿는 방으로 가는 선 (+ 외부 스텁)
-  function drawOpening(p,rooms,kind,toOutside,label,bad){
-    const cls=bad?'bad':(kind==='window'?'win':'door');
-    const pts=[];
+  // 개구부 하나: 벽 위 마커 + 방 쪽으로 짧은 꼬리
+  function mark(p,rooms,kind,outside,label,bad,shape){
+    const cls=bad?'bad':(kind==='window'?'win':(kind==='tag'?'tagln':'door'));
+    const dirs=[];
     for(const rid of rooms){
-      const c=ctrOf(rid);
-      if(c){el('line',{x1:p[0],y1:p[1],x2:c[0],y2:c[1],class:cls},g);pts.push(c);}
+      const c=ctrP(rid); if(!c)continue;
+      let dx=c.x-p[0],dy=c.y-p[1];const L=Math.hypot(dx,dy)||1;dx/=L;dy/=L;
+      dirs.push([dx,dy]);
+      // 방 중심까지 **전체 선**. 짧은 꼬리는 무엇과 무엇이 이어지는지 안 보였다.
+      el('line',{x1:p[0],y1:p[1],x2:c.x,y2:c.y,class:cls},g);
     }
-    if(toOutside||rooms.length===0){
-      // 방 쪽 평균의 반대 방향으로 짧게 뻗는다 = 외부
+    if(outside||rooms.length===0){
       let dx=0,dy=0;
-      for(const c of pts){dx+=p[0]-c[0];dy+=p[1]-c[1];}
+      for(const d of dirs){dx-=d[0];dy-=d[1];}
+      if(!dirs.length){dx=0;dy=-1;}
       const L=Math.hypot(dx,dy)||1;
-      const k=30;
-      const ex=p[0]+dx/L*k, ey=p[1]+dy/L*k;
+      const ex=p[0]+dx/L*TAIL, ey=p[1]+dy/L*TAIL;
       el('line',{x1:p[0],y1:p[1],x2:ex,y2:ey,class:'outstub'},g);
-      const t=el('text',{x:ex,y:ey-5,class:'olab'},g);t.textContent='외부';
+      const t=el('text',{x:ex+dx/L*8,y:ey+dy/L*8,class:'olab'},g);t.textContent='외부';
       nOut++;
     }
-    const s=kind==='window'?5:7;
-    el('rect',{x:p[0]-s,y:p[1]-s,width:s*2,height:s*2,
-               class:(bad?'bad':(kind==='window'?'winout':''))},g);
-    if(label){const t=el('text',{x:p[0],y:p[1]-s-4,class:kind==='window'?'wout':'dlab'},g);
-      t.textContent=label;}
+    if(shape==='diamond'){
+      const d=7;
+      el('polygon',{points:[[p[0],p[1]-d],[p[0]+d,p[1]],[p[0],p[1]+d],[p[0]-d,p[1]]]
+        .map(v=>v.join(',')).join(' '),class:'tagpt'},g);
+    }else{
+      const s=kind==='window'?5:6;
+      el('rect',{x:p[0]-s,y:p[1]-s,width:s*2,height:s*2,
+                 class:(bad?'bad':(kind==='window'?'winout':''))},g);
+    }
+    if(label){
+      const t=el('text',{x:p[0],y:p[1]-11,
+        class:bad?'bad':(kind==='window'?'wout':(kind==='tag'?'tlab':'dlab'))},g);
+      t.textContent=label;
+    }
   }
 
-  // ② 문 — doors[] 가 1급. 위치는 벽 위.
+  // ① 개방 경계 — 맞닿은 자리에 표시한다(중심끼리 잇지 않는다)
+  for(const e of (G.edges||[])){
+    if(e.via!=='open')continue;
+    const a=ctrP(e.from),b=ctrP(e.to);
+    if(!a||!b){nBad++;continue;}
+    // 두 방 경계의 대략 중점 = 두 중심의 중간을 가까운 폴리곤 변에 투영하지 않고
+    // 중간점으로 둔다(개방은 면이지 점이 아니다).
+    // 맞닿은 자리 — rebuild_links 가 계산해 넣은 pos 를 쓴다.
+    // 없으면 중심의 중간(옛 방식, 방 한가운데 떠 보인다)
+    const m=e.pos?[e.pos[0],e.pos[1]]:[(a.x+b.x)/2,(a.y+b.y)/2];
+    for(const c of [a,b]){
+      let dx=c.x-m[0],dy=c.y-m[1];const L=Math.hypot(dx,dy)||1;
+      el('line',{x1:m[0],y1:m[1],x2:c.x,y2:c.y,class:'open'},g);
+    }
+    el('circle',{cx:m[0],cy:m[1],r:5,class:'openpt'},g);
+  }
+
+  // ② 문
   for(const d of (G.doors||[])){
     const cn=(d.connects||[]).map(String).filter(x=>R[x]);
     const miss=(d.connects||[]).map(String).filter(x=>!R[x]);
     const p=d.position||(d.bbox_px?[d.bbox_px[0]+d.bbox_px[2]/2,d.bbox_px[1]+d.bbox_px[3]/2]:null);
-    if(!p){
-      // 위치를 모르는 문(우리가 연결만 세운 것) — 두 방 중간에 흐리게
-      if(cn.length===2){const a=ctrOf(cn[0]),b=ctrOf(cn[1]);
-        if(a&&b){const m=[(a[0]+b[0])/2,(a[1]+b[1])/2];
-          el('rect',{x:m[0]-6,y:m[1]-6,width:12,height:12,class:'nopos'},g);
-          const t=el('text',{x:m[0],y:m[1]-10,class:'dlab'},g);t.textContent='위치 미상';
-          el('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],class:'door'},g);}}
-      nNoPos++;continue;
-    }
+    if(!p){nNoPos++;continue;}
     const ra=cn[0]?R[cn[0]]:null, rb=cn[1]?R[cn[1]]:null;
-    const same=ra&&rb&&ra.role===rb.role&&ra.role!=='발코니';
-    const bad=same||miss.length>0;
+    const bad=(ra&&rb&&ra.role===rb.role&&ra.role!=='발코니')||miss.length>0;
     if(bad)nBad++;
-    const lab=miss.length?('없는 방 '+miss.join(',')):
-      (d.width_m?(d.width_m.toFixed(2)+'m'):(d.width_source==='unknown'?'폭 미상':''));
-    drawOpening(p,cn,'door',!!d.to_outside,lab,bad);
+    mark(p,cn,'door',!!d.to_outside,miss.length?('없는 방 '+miss.join(',')):'',bad);
   }
 
-  // ③ 창 — windows[] 가 1급. 두 방에 걸친 창이면 양쪽, 아니면 외벽.
+  // ③ 창
   for(const w of (G.windows||[])){
     const bt=String(w.belongs_to);
     const p=w.position||(w.bbox_px?[w.bbox_px[0]+w.bbox_px[2]/2,w.bbox_px[1]+w.bbox_px[3]/2]:null);
     if(!p)continue;
     let rooms=R[bt]?[bt]:[];
-    // 창 엣지가 있으면 상대 방도 함께
     for(const e of (G.edges||[])){
-      if(e.via!=='window')continue;
-      if(e.window_id!==w.id)continue;   // window_id 없는 엣지는 아무 창에나 붙이지 않는다
+      if(e.via!=='window'||e.window_id!==w.id)continue;
       const a=String(e.from),b=String(e.to);
       if(a===bt&&R[b]&&rooms.indexOf(b)<0)rooms.push(b);
       else if(b===bt&&R[a]&&rooms.indexOf(a)<0)rooms.push(a);
     }
     const bad=!R[bt];
     if(bad)nBad++;
-    const lab=bad?('없는 방 '+bt):
-      ((R[bt].role||'')+(w.width_m?(' '+w.width_m.toFixed(2)+'m'):''));
-    drawOpening(p,rooms,'window',rooms.length<2,lab,bad);
+    mark(p,rooms,'window',rooms.length<2,bad?('없는 방 '+bt):'',bad);
   }
 
-  // ④ 태그 개구부 — 도면에 인쇄된 원형 부호(9x22 WD 등)에서 복원한 **진짜 위치**.
-  // 검출된 문(초록)과 나란히 보여 어디가 틀렸는지 눈으로 대조할 수 있게 한다.
-  let nTag=0;
-  for(const t of (G.tag_openings||[])){
-    const p=t.pos; if(!p)continue; nTag++;
-    const rooms=(t.rooms||[]).map(String).filter(x=>R[x]);
-    for(const rid of rooms){const c=ctrOf(rid);
-      if(c)el('line',{x1:p[0],y1:p[1],x2:c[0],y2:c[1],class:'tagln'},g);}
-    if(rooms.length<2){
-      let dx=0,dy=0;
-      for(const rid of rooms){const c=ctrOf(rid);if(c){dx+=p[0]-c[0];dy+=p[1]-c[1];}}
-      const L=Math.hypot(dx,dy)||1;
-      el('line',{x1:p[0],y1:p[1],x2:p[0]+dx/L*28,y2:p[1]+dy/L*28,class:'outstub'},g);
-      const o=el('text',{x:p[0]+dx/L*34,y:p[1]+dy/L*34-4,class:'olab'},g);o.textContent='외부';
-    }
-    const d=8;
-    const pg=el('polygon',{points:[[p[0],p[1]-d],[p[0]+d,p[1]],[p[0],p[1]+d],[p[0]-d,p[1]]]
-      .map(v=>v.join(',')).join(' '),class:'tagpt'},g);
-    if(t.tag)el('line',{x1:p[0],y1:p[1],x2:t.tag[0],y2:t.tag[1],class:'tagref'},g);
-  }
   const tag=document.getElementById('gctog');
-  if(tag)tag.textContent=(nBad?('🔗 기하연결 ⚠'+nBad):'🔗 기하연결')+(nTag?(' · 태그 '+nTag):'')
-    +(nOut?(' · 외부 '+nOut):'')+(nNoPos?(' · 위치미상 '+nNoPos):'');
+  if(tag)tag.textContent=(nBad?('🔗 기하연결 ⚠'+nBad):'🔗 기하연결')
+    +(nOut?(' · 외부 '+nOut):'')
+    +(nNoPos?(' · 위치미상 '+nNoPos):'');
 }
 
 function render(){

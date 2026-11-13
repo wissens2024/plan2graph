@@ -519,11 +519,42 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
 
     # (g) 사용자 확정값 — 사람이 도면을 직접 보고 알려준 사실이 마지막에 이긴다.
     o = (ovr or {}).get(str(g.get("plan_id")) or "") or {}
+    rooms_all = set(rooms)
     for pair in (o.get("forbid") or []):
         k = frozenset(str(x) for x in pair[:2])
         if k in edges:
             del edges[k]
             rep["ovr_forbid"] = rep.get("ovr_forbid", 0) + 1
+    # 금지된 쌍의 **문 레코드도 지운다** — 엣지만 지우면 화면에 문이 그대로 남는다
+    # (실측: 욕실↔현관을 금지했는데 d1 이 샤워부스 위에 계속 떠 있었다).
+    for pair in (o.get("forbid") or []):
+        kk = {str(x) for x in pair[:2]}
+        before = len(new_doors)
+        new_doors[:] = [d for d in new_doors
+                        if {str(x) for x in (d.get("connects") or [])} != kk]
+        rep["ovr_door_drop"] = rep.get("ovr_door_drop", 0) + (before - len(new_doors))
+
+    # 사용자가 확인한 **개구부**를 넣는다 — 한쪽만 방이면 외부로 나가는 문이다
+    for od in (o.get("doors") or []):
+        orooms = [str(x) for x in (od.get("rooms") or []) if str(x) in rooms_all]
+        rec = {"id": od.get("id") or ("du%d" % (len(new_doors) + 1)),
+               "connects": [int(x) if x.isdigit() else x for x in orooms],
+               "via": "door", "position": od.get("pos"),
+               "bbox_px": None, "width_px": None, "width_m": None,
+               "width_source": "unknown",
+               "source": "user_override", "position_source": "user_override"}
+        if od.get("to_outside") or len(orooms) < 2:
+            rec["to_outside"] = True
+            rec["is_entrance"] = bool(od.get("is_entrance"))
+        new_doors.append(rec)
+        rep["ovr_door_add"] = rep.get("ovr_door_add", 0) + 1
+        if len(orooms) == 2:
+            k = frozenset(orooms)
+            x, y = sorted(k)
+            edges[k] = {"from": x, "to": y, "via": "door", "boundary": "door",
+                        "door_id": rec["id"], "door_swing_deg": None,
+                        "door_pos": rec["position"], "via_from": "user_override"}
+
     for item in (o.get("force") or []):
         a, b = str(item[0]), str(item[1])
         via = item[2] if len(item) > 2 else "door"
@@ -699,6 +730,24 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
     g["doors"] = new_doors
     g["n_doors"] = len(new_doors)
 
+    # (k) 개방 경계에 **위치**를 붙인다 — 화면에서 방 한가운데 떠 있으면 안 된다.
+    # 두 방 폴리곤이 맞닿은(또는 가장 가까운) 구간의 가운데를 쓴다.
+    for k, e in edges.items():
+        if e.get("via") != "open" or e.get("pos"):
+            continue
+        a3, b3 = tuple(k)
+        if a3 not in polys or b3 not in polys:
+            continue
+        pa, pb = polys[a3], polys[b3]
+        try:
+            gap = pa.distance(pb)
+            band = pa.buffer(gap / 2.0 + 2.0).intersection(pb.buffer(gap / 2.0 + 2.0))
+            c = band.centroid if not band.is_empty else None
+        except Exception:
+            c = None
+        if c is not None and not c.is_empty:
+            e["pos"] = [round(c.x, 1), round(c.y, 1)]
+
     # 위계 전이 · 현관 거리
     for e in edges.values():
         pa = PRIVACY.get((rooms.get(e["from"]) or {}).get("role"), "other")
@@ -752,6 +801,8 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
     rep.setdefault("forbidden_door", 0)
     rep.setdefault("ovr_forbid", 0)
     rep.setdefault("ovr_force", 0)
+    rep.setdefault("ovr_door_drop", 0)
+    rep.setdefault("ovr_door_add", 0)
     rep.setdefault("comp_merge", 0)
     rep.setdefault("win_fixed", 0)
     rep.setdefault("win_orphan", 0)
@@ -827,6 +878,8 @@ def main():
         T["forbidden_door"] += rep.get("forbidden_door", 0)
         T["ovr_forbid"] += rep.get("ovr_forbid", 0)
         T["ovr_force"] += rep.get("ovr_force", 0)
+        T["ovr_door_drop"] += rep.get("ovr_door_drop", 0)
+        T["ovr_door_add"] += rep.get("ovr_door_add", 0)
         T["comp_merge"] += rep.get("comp_merge", 0)
         T["win_fixed"] += rep.get("win_fixed", 0)
         T["win_orphan"] += rep.get("win_orphan", 0)
@@ -897,6 +950,8 @@ def main():
     if T["ovr_forbid"] or T["ovr_force"]:
         print("   사용자 확정값 적용 — 지움 %d · 넣음 %d"
               % (T["ovr_forbid"], T["ovr_force"]))
+        print("   확정 문 — 지움 %d · 넣음 %d"
+              % (T["ovr_door_drop"], T["ovr_door_add"]))
     print("   역할쌍 규칙으로 종류 교정 %d건 · 금지 쌍의 문 표시 %d건"
           % (T["via_fixed"], T["forbidden_door"]))
     if T["edges"]:
