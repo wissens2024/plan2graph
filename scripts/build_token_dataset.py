@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import copy
 import glob
 import hashlib
 import json
@@ -23,6 +24,43 @@ import sys
 
 sys.path.insert(0, "src")
 from plan2graph import wallcycle_codec as wc  # noqa: E402
+
+
+# 단위세대에서 방이 아닌 것 — 기둥·샤프트처럼 다룬다(면적 회계에는 남는다).
+STRUCTURE_ROLES = ("계단실", "엘리베이터", "엘리베이터홀", "구조물")
+
+
+def drop_structure(g):
+    """plan_scope=="unit" 이면 수직동선·구조물을 그래프에서 뺀다. (새 그래프, 뺀 수)
+
+    층 평면도에서는 계단실이 **진짜 공용 계단실**이라 그대로 둔다.
+    실측(표본 3,000장): 계단실 노드의 91%가 연결 차수 0 — 이미 그래프에서 떠 있다.
+    """
+    if (g.get("meta") or {}).get("plan_scope") == "floor":
+        return g, 0
+    rooms = g.get("rooms") or {}
+    drop = {str(rid) for rid, r in rooms.items()
+            if (r.get("role") or r.get("base") or "") in STRUCTURE_ROLES}
+    if not drop:
+        return g, 0
+    g = copy.deepcopy(g)
+    for rid in list(g.get("rooms") or {}):
+        if str(rid) in drop:
+            g["rooms"].pop(rid, None)
+    g["edges"] = [e for e in (g.get("edges") or [])
+                  if str(e.get("from")) not in drop and str(e.get("to")) not in drop]
+    g["doors"] = [d for d in (g.get("doors") or [])
+                  if not ({str(x) for x in (d.get("connects") or [])} & drop)]
+    g["windows"] = [w for w in (g.get("windows") or [])
+                    if str(w.get("belongs_to")) not in drop]
+    for w in (g.get("walls") or []):
+        if w.get("rooms"):
+            w["rooms"] = [x for x in w["rooms"] if str(x) not in drop]
+    g["n_rooms"] = len(g.get("rooms") or {})
+    g["n_edges"] = len(g.get("edges") or [])
+    g["n_doors"] = len(g.get("doors") or [])
+    g["n_windows"] = len(g.get("windows") or [])
+    return g, len(drop)
 
 
 def _n_entrance(g):
@@ -79,6 +117,10 @@ def main():
         if _n_entrance(g) != 1:
             skip["not_single_entrance"] += 1
             continue
+        g, n_drop = drop_structure(g)          # 단위세대의 계단·EV 는 방이 아니다
+        if n_drop:
+            skip["structure_dropped"] += n_drop
+            skip["plans_with_structure"] += 1
         nr = len(g.get("rooms") or {})
         if nr > args.max_rooms:
             skip["too_many_rooms"] += 1
