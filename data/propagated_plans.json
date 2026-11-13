@@ -350,5 +350,16 @@
   "written": 1,
   "overwritten": 1,
   "backup": "/home/ju/plan2graph/data/staging/corrected/_dedup_backup/20261113_235644_d88a4f8f"
+ },
+ {
+  "sig": "cross",
+  "source": "APT_FP_583b053a_17447720_u0",
+  "targets": [
+   "APT_FP_44549e8c_17447720_u0",
+   "APT_FP_741d95ac_17447720_u0"
+  ],
+  "written": 2,
+  "overwritten": 2,
+  "backup": "/home/ju/plan2graph/data/staging/corrected/_dedup_backup/20261114_000204_cross"
  }
 ]
