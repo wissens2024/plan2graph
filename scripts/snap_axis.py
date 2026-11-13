@@ -96,6 +96,15 @@ def process(g, tol, max_pct):
             reverted += 1
             continue
         n0 = len(pts)
+        ring = list(q.exterior.coords)[:-1]
+        lean = drop_collinear(ring)            # 같은 직선 위 군더더기 제거(무손실)
+        if len(lean) >= 3:
+            q2 = Polygon(lean)
+            if not q2.is_valid:
+                q2 = q2.buffer(0)
+            if (q2.geom_type == "Polygon" and not q2.is_empty
+                    and abs(q2.area - q.area) <= 0.5):
+                q = q2
         r["polygon"] = [[round(x, 1), round(y, 1)] for x, y in list(q.exterior.coords)[:-1]]
         b = q.bounds
         r["bbox_px"] = [round(b[0], 1), round(b[1], 1),
@@ -110,6 +119,27 @@ def process(g, tol, max_pct):
         moved += 1
         kept += n0 - len(r["polygon"])
     return moved, kept, reverted, len(set(mx.values())), len(set(my.values()))
+
+
+
+def drop_collinear(pts, eps=0.05):
+    """같은 직선 위에 얹힌 가운데 점을 뺀다. 도형은 그대로다."""
+    if len(pts) < 4:
+        return pts
+    out = list(pts)
+    changed = True
+    while changed and len(out) > 3:
+        changed = False
+        n = len(out)
+        for i in range(n):
+            a, b, c = out[(i - 1) % n], out[i], out[(i + 1) % n]
+            cross = abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]))
+            base = max(abs(c[0] - a[0]), abs(c[1] - a[1]), 1e-9)
+            if cross / base <= eps:
+                del out[i]
+                changed = True
+                break
+    return out
 
 
 def main():
