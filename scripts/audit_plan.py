@@ -85,6 +85,9 @@ def main():
     g = json.load(open(os.path.join(EDITS, a.plan + ".json"), encoding="utf-8"))
     R = {str(k): v for k, v in (g.get("rooms") or {}).items()}
     scale = float(g.get("scale_mm_per_px") or 0) or None
+    unit = "mm" if scale else "px"      # 축척 없는 도면도 px 로 재야 한다
+    k = scale or 1.0
+    DOOR_MIN = 500.0 if scale else 45.0
     polys = {k: poly_of(v) for k, v in R.items()}
     polys = {k: v for k, v in polys.items() if v is not None}
 
@@ -98,6 +101,9 @@ def main():
         return "%s(%s)" % ((R.get(r) or {}).get("role"), r) if r in R else "외부"
 
     dby = {str(d.get("id")): d for d in (g.get("doors") or [])}
+    if not scale:
+        print("⚠ 축척(scale_mm_per_px)이 없다 — 틈은 px 로 잰다. "
+              "폭·면적도 산출 불가다.")
     print("%s — 방 %d · 문 %d · 창 %d · 엣지 %d"
           % (a.plan, len(R), len(g.get("doors") or []), len(g.get("windows") or []),
              len(g.get("edges") or [])))
@@ -118,14 +124,15 @@ def main():
         else:
             grade = None
         gapmm = note = ""
-        if ink is not None and scale and fa in polys and fb in polys:
-            r = gap_on_wall(ink, polys[fa], polys[fb], scale)
+        if ink is not None and fa in polys and fb in polys:
+            r = gap_on_wall(ink, polys[fa], polys[fb], k)
             if r:
-                gapmm = "%5.0fmm" % r[0]
+                gapmm = "%5.0f%s" % (r[0], unit)
                 if r[2] < 1.0:
                     note = "겹침주의(벽두께 0)"
                 if grade is None:
-                    grade = "틈" if r[0] >= 500 else ("벽" if via == "door" else "미확인")
+                    grade = ("틈" if r[0] >= DOOR_MIN
+                             else ("벽" if via == "door" else "미확인"))
         if grade is None:
             grade = "?"
         flag = grade in ("추론", "벽", "미확인", "?")
@@ -149,10 +156,11 @@ def main():
     print("  %-16s %s" % ("방", "문 / 개방 / 창"))
     for k in sorted(deg, key=int):
         a0, b0, c0 = deg[k]
-        bad = (a0 + b0) == 0
+        bad = (a0 + b0 + c0) == 0
         print("  %-16s %d / %d / %d%s" % (nm(k), a0, b0, c0,
-                                          "   <= 고립" if bad else
-                                          ("   <= 문이 없다" if a0 == 0 else "")))
+                                          "   <= 고립(아무 연결 없음)" if bad else
+                                          ("   <= 창만 있다" if (a0 + b0) == 0 else
+                                           ("   <= 문이 없다" if a0 == 0 else ""))))
     print()
     print("봐야 할 엣지 %d개" % len(need))
 
