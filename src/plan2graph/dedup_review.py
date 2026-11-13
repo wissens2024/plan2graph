@@ -168,13 +168,16 @@ def thumb_png(ctx, gid, w=_THUMB_W):
 # ─────────────────────────────────────────────────────────────────────────────
 # 전파
 # ─────────────────────────────────────────────────────────────────────────────
-def propagate(ctx, sig, source, mode="fill", limit=None):
+def propagate(ctx, sig, source, mode="fill", limit=None, force=False):
     """source 의 보정을 그룹 sig 의 형제 도면에 복사.
 
     mode="fill"  : 아직 보정 없는 형제에만 채운다. 기존 사람 보정은 절대 안 건드림.
     mode="unify" : 위 + **다르게 보정된** 형제까지 이 보정으로 덮어씀(백업 후).
                    이미 같은 보정인 형제는 건너뛴다 — 내용이 같은데 덮어쓰면 사람 보정
                    이력이 propagated 로 바뀌고 백업만 쌓이기 때문.
+    force=True   : 그 건너뛰기를 하지 않는다. '같은 보정' 판정은 방 격자와 역할만 보고
+                   개구부는 안 보므로, 엣지를 만들지 않는 문(현관 외부문처럼 한쪽만
+                   방인 문)을 나중에 넣으면 사본이 그 문을 못 받는다. 그때 쓴다.
 
     반환 {written, skipped, overwritten, backup, errors}
     """
@@ -231,7 +234,7 @@ def propagate(ctx, sig, source, mode="fill", limit=None):
                 skipped.append([tid, f"정렬오차 {err:.1f}px"])
                 continue
             dst = os.path.join(EDITS, tid + ".json")
-            if mode == "unify" and os.path.exists(dst):
+            if mode == "unify" and not force and os.path.exists(dst):
                 try:
                     with open(dst, encoding="utf-8") as fh:
                         cur, _r = corr_cells(json.load(fh), t_tgt)
