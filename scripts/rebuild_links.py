@@ -68,6 +68,7 @@ PAD = 10.0            # 벽으로 못 풀 때 문 상자를 키우는 폭(px)
 THIN_DOOR_PX = 25.0   # 이보다 좁은 문은 의심 표시
 OPEN_MIN = 20.0       # 벽이 덮지 않은 구간이 이보다 길면 개방으로 본다
 WIN_PAD = 14.0        # 창 상자를 키우는 폭(px) — 벽을 건너가도록
+OUTDOOR_ROLES = ("발코니", "실외기실", "테라스")   # 집 안이 아닌 공간
 AXIS_LEN = 300.0      # 이보다 긴 벽 레코드는 제도 축선으로 보고 막힘에서 제외
 WIN_RATIO = 0.30      # 두 번째 방의 겹침이 첫 번째의 이 비율 미만이면 스친 것
 
@@ -386,6 +387,46 @@ def rebuild(g, thin_px=THIN_DOOR_PX):
                     "door_id": None, "door_swing_deg": None, "door_pos": None,
                     "open_from": "geometry", "open_len_px": round(L, 1)}
 
+    # (d) 현관은 문이 없으면 개방이다 — 사용자 규칙(2026-11-13):
+    # "현관복도는 일반적으로 미닫이 또는 인테리어 공사를 안 하면 오픈 공간이다."
+    # 실측: 현관↔복도 맞닿음 102.9px 인데 내벽 4개가 91.5px 를 덮어 11.4px 만
+    # 남아 기준에 못 들었고 현관이 집과 끊겼다. 문이 검출되면 그 문을 쓰고,
+    # 없을 때만 이 규칙이 돈다. 발코니·실외기실은 집 안이 아니므로 제외한다.
+    ents = [rid for rid, r in rooms.items() if r.get("role") == "현관"]
+    for ent in ents:
+        if ent not in polys:
+            continue
+        inside = False
+        for k, e in edges.items():
+            if ent not in k:
+                continue
+            other = [x for x in k if x != ent]
+            orole = (rooms.get(other[0]) if other else {} or {}).get("role")
+            if orole not in OUTDOOR_ROLES:
+                inside = True
+                break
+        if inside:
+            continue
+        best, bl = None, 0.0
+        for rid, q in polys.items():
+            if rid == ent or (rooms.get(rid) or {}).get("role") in OUTDOOR_ROLES:
+                continue
+            if polys[ent].distance(q) > 2.0:
+                continue
+            try:
+                L = polys[ent].exterior.intersection(q.buffer(1.5)).length
+            except Exception:
+                continue
+            if L > bl:
+                best, bl = rid, L
+        if best and bl >= OPEN_MIN:
+            k = frozenset((ent, best))
+            x, y = sorted(k)
+            edges[k] = {"from": x, "to": y, "via": "open", "boundary": "open",
+                        "door_id": None, "door_swing_deg": None, "door_pos": None,
+                        "open_from": "entrance_rule", "open_len_px": round(bl, 1)}
+            rep["entrance_open"] = rep.get("entrance_open", 0) + 1
+
     # 위계 전이 · 현관 거리
     for e in edges.values():
         pa = PRIVACY.get((rooms.get(e["from"]) or {}).get("role"), "other")
@@ -432,6 +473,7 @@ def rebuild(g, thin_px=THIN_DOOR_PX):
         reach[str(e["from"])].add(str(e["to"]))
         reach[str(e["to"])].add(str(e["from"]))
     rep["isolated"] = [rid for rid in rooms if rid not in reach]
+    rep.setdefault("entrance_open", 0)
     rep["unreachable"] = [rid for rid in rooms
                           if rid not in dist and rid not in start]
     rep["edge_after"] = len(out)
@@ -467,6 +509,7 @@ def main():
         for k in ("wall_rooms", "door_pairs", "dropped", "merged", "unresolved", "thin"):
             T[k] += rep[k]
         T["isolated"] += len(rep["isolated"])
+        T["entrance_open"] += rep.get("entrance_open", 0)
         T["unreachable"] += len(rep["unreachable"])
         if rep["isolated"]:
             T["plans_isolated"] += 1
@@ -511,6 +554,7 @@ def main():
           "빈 문 버림 %d · 못 푼 문 %d · 좁은 문 표시 %d"
           % (T["wall_rooms"], T["door_pairs"], T["merged"],
              T["dropped"], T["unresolved"], T["thin"]))
+    print("   현관 개방 규칙 적용 %d건" % T["entrance_open"])
     print("   고립된 방 %d개(도면 %d) · 현관에서 못 닿는 방 %d개(도면 %d)"
           % (T["isolated"], T["plans_isolated"], T["unreachable"], T["plans_unreachable"]))
     print("백업 → " + bk if args.apply else "[드라이런] --apply 로 적용")
