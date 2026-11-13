@@ -36,6 +36,9 @@ PRIVACY = {
     "발코니": "service", "실외기실": "service", "복도": "service", "전실": "service",
     "다목적공간": "service", "계단실": "service", "엘리베이터": "service",
     "알파룸": "private",
+    # 2026-11-13 — topoedit.ROLES 에 추가된 것들. 대피공간은 법정 피난공간이라
+    # 서비스로 둔다(채광·환기 대상이 아니라 피난 대상).
+    "대피공간": "service", "테라스": "service", "세탁실": "service",   # 테라스=발코니 별칭
     "구조물": "structure", "실외": "exterior",
 }
 CONNECTOR_ROLES = ("복도", "전실")
