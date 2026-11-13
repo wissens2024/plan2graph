@@ -96,10 +96,23 @@ def main():
     files = sorted(f for f in os.listdir(args.parsed) if f.endswith(".json"))
     print(f"[1/3] parsed 스캔 {len(files)}건 …", flush=True)
 
+    # 주석이 자기 도면 것이 아닌 평면은 그룹에서 제외한다 — 기하가 남의 것이라
+    # 그대로 묶으면 서로 다른 도면이 한 그룹이 된다(scripts/contamination.py).
+    contaminated = set()
+    _cp = os.path.join(STAGING, "contaminated_plans.json")
+    if os.path.exists(_cp):
+        with open(_cp, encoding="utf-8") as fh:
+            contaminated = set(json.load(fh))
+        print(f"      오염 평면 {len(contaminated)}개 제외(주석-도면 오매칭)", flush=True)
+
     sig_of, tf_of, verts_of, ent_of = {}, {}, {}, {}
     groups = collections.defaultdict(list)
+    n_skip_contam = 0
     for i, f in enumerate(files, 1):
         gid = f[:-5]
+        if gid in contaminated:
+            n_skip_contam += 1
+            continue
         try:
             with open(os.path.join(args.parsed, f), encoding="utf-8") as fh:
                 g = json.load(fh)
@@ -119,7 +132,7 @@ def main():
         if i % 5000 == 0:
             print(f"      {i}/{len(files)}", flush=True)
 
-    print(f"[2/3] 그룹 {len(groups)}개 · 보정본 비교 …", flush=True)
+    print(f"[2/3] 그룹 {len(groups)}개 · 보정본 비교 … (오염 제외 {n_skip_contam}건)", flush=True)
     done = set()
     if os.path.isdir(args.edits):
         done = {f[:-5] for f in os.listdir(args.edits) if f.endswith(".json")}

@@ -78,8 +78,16 @@ def load_pixel_verify(ctx):
         try:
             with open(p, encoding="utf-8") as fh:
                 d = json.load(fh)
-            _PIX = {"bad": set(d.get("bad_members") or []),
-                    "verdict": d.get("verdict") or {}}
+            bad = set(d.get("bad_members") or [])
+            # 크기 신호(주석 선언 크기 ≠ 실제 PNG)도 합친다 — 픽셀 검사는 사본이 없는
+            # 도면을 못 보기 때문이다. 정본 = scripts/contamination.py
+            cp = os.path.join(os.path.dirname(p), "contaminated_plans.json")
+            try:
+                with open(cp, encoding="utf-8") as fh:
+                    bad |= set(json.load(fh))
+            except OSError:
+                pass
+            _PIX = {"bad": bad, "verdict": d.get("verdict") or {}}
             _PIX_MTIME = mt
         except Exception:  # noqa: BLE001
             return {"bad": set(), "verdict": {}}
@@ -456,6 +464,7 @@ main{display:grid;grid-template-columns:270px 1fr;height:calc(100vh - 49px)}
 .card .diff{font-size:11px;margin:4px 0}
 .diff .p{color:var(--ok)} .diff .m{color:var(--bad)}
 svg.thumb{width:100%;height:210px;background:#fff;border-radius:6px;display:block}
+  button.armed{background:#b91c1c!important;color:#fff!important;box-shadow:0 0 0 3px rgba(185,28,28,.35)}
 .tools{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .tools button{font-size:11px;padding:4px 7px}
 .note{color:var(--dim);font-size:12px;margin:8px 0}
@@ -615,19 +624,28 @@ async function openGroup(sig){
     c.querySelector('.pid').onclick=()=>window.open('./?gid='+v.rep,'_blank');
     fetch('api/graph/'+v.rep).then(r=>r.json()).then(r=>{
       if(r.graph)drawThumb(c.querySelector('svg'),r.graph);});
-    c.querySelector('.fill').onclick=()=>run(sig,v.rep,'fill',c);
-    c.querySelector('.unify').onclick=()=>run(sig,v.rep,'unify',c);
+    const bf=c.querySelector('.fill'), bu=c.querySelector('.unify');
+    bf.onclick=()=>arm(bf,'미보정만 채움',()=>run(sig,v.rep,'fill',c));
+    bu.onclick=()=>arm(bu,'다른 보정을 덮어씀(백업 후)',()=>run(sig,v.rep,'unify',c));
   }
   if(g.variants.length>show.length)
     wrap.insertAdjacentHTML('afterend',
       `<p class="note">…외 ${g.variants.length-show.length}개 변종(1건짜리 소수안). 위에서 고르면 전부 통일됩니다.</p>`);
 }
 
+// 확인은 페이지 안에서 한다 — window.confirm 은 CDP로 붙은 외부 도구가 자동 취소해
+// 버려서 "눌러도 아무 일이 없는" 상태가 된다(2026-11-13 실제로 겪음).
+function arm(btn,label,go){
+  if(btn.dataset.armed==='1'){
+    clearTimeout(+btn.dataset.t); btn.dataset.armed='0';
+    btn.textContent=btn.dataset.lbl; btn.classList.remove('armed'); go(); return;}
+  btn.dataset.lbl=btn.textContent; btn.dataset.armed='1';
+  btn.classList.add('armed'); btn.textContent='⚠ '+label+' · 한 번 더';
+  btn.dataset.t=setTimeout(()=>{btn.dataset.armed='0';
+    btn.textContent=btn.dataset.lbl; btn.classList.remove('armed');},6000);
+}
+
 async function run(sig,src,mode,card){
-  const msg=mode==='unify'
-    ?`이 그룹의 모든 사본을 「${src}」 보정으로 통일합니다.\n다른 알바가 한 보정은 덮어씁니다(백업 후).\n진행할까요?`
-    :`아직 보정 안 된 형제 도면에만 「${src}」 보정을 복사합니다.\n기존 보정은 건드리지 않습니다.\n진행할까요?`;
-  if(!confirm(msg))return;
   card.querySelectorAll('button').forEach(b=>b.disabled=true);
   const r=await(await fetch('api/dedup/propagate',{method:'POST',
     headers:{'Content-Type':'application/json'},
