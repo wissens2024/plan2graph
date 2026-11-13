@@ -41,7 +41,9 @@ def coords(g):
 log = json.load(open(os.path.join(ROOT, "data", "propagated_plans.json"), encoding="utf-8"))
 seen, bad, n = {}, 0, 0
 for j in log:
-    seen[j["sig"]] = j
+    # 그룹 간 전파는 전부 sig="cross" 라 sig 만으로 묶으면 서로 덮어쓴다.
+    # (원본, 대상집합) 까지 키에 넣어야 한 장도 안 빠진다.
+    seen[(j["sig"], j["source"], tuple(sorted(j["targets"])))] = j
 print("그룹 %d개 · 전파본 %d장 대조\n" % (len(seen), sum(len(j["targets"]) for j in seen.values())))
 for j in seen.values():
     src = j["source"]

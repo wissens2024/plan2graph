@@ -70,6 +70,9 @@ def main():
     ap.add_argument("targets", nargs="+")
     ap.add_argument("--max-diff", type=int, default=0,
                     help="세대 영역에서 허용하는 '다른 픽셀' 수 (기본 0 = 완전 동일)")
+    ap.add_argument("--identity", action="store_true",
+                    help="픽셀이 완전히 같고 방 중심 중앙값 거리가 작으면 항등 변환으로 통과")
+    ap.add_argument("--identity-med", type=float, default=8.0)
     ap.add_argument("--apply", action="store_true")
     a = ap.parse_args()
 
@@ -101,11 +104,26 @@ def main():
             verdict.append("PNG 없음")
         elif nz > a.max_diff:
             verdict.append("세대 픽셀 %d개 다름" % nz)
-        if not (err <= _ALIGN_TOL):
+        med = float("nan")
+        if a.identity and nz == 0:
+            A = [r["centroid"] for r in (src_p.get("rooms") or {}).values()
+                 if r.get("centroid")]
+            B = [r["centroid"] for r in (tgt_p.get("rooms") or {}).values()
+                 if r.get("centroid")]
+            if A and B:
+                ds = sorted(min(max(abs(x - u), abs(y - v)) for u, v in A) for x, y in B)
+                med = ds[len(ds) // 2]
+        use_identity = (a.identity and nz == 0 and med == med and med <= a.identity_med)
+        if use_identity:
+            t_tgt = t_src                      # 좌표계가 같다 — 항등 변환
+            err = 0.0
+        elif not (err <= _ALIGN_TOL):
             verdict.append("정렬오차 %.2fpx" % err)
-        print("  %-34s 세대 다른 픽셀 %-7s 정렬오차 %-7s %s"
-              % (t, nz, "%.2f" % err if err == err else "nan",
-                 "거부: " + " · ".join(verdict) if verdict else "통과"))
+        print("  %-34s 세대 다른 픽셀 %-7s %s %s"
+              % (t, nz,
+                 ("항등(방중심 중앙 %.1fpx)" % med) if use_identity
+                 else ("정렬오차 %.2f" % err if err == err else "정렬오차 nan"),
+                 "  거부: " + " · ".join(verdict) if verdict else "  통과"))
         if verdict or not a.apply:
             continue
         g = dedup.transform_graph(src_c, t_src, t_tgt, t)
