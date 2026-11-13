@@ -55,7 +55,10 @@ from shapely.ops import unary_union
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EDITS = os.path.join(ROOT, "data", "staging", "corrected", "edits")
 BK = os.path.join(ROOT, "data", "staging", "corrected", "_manual_backup")
-OVR = os.path.join(ROOT, "data", "staging", "corrected", "_link_overrides.json")
+# 사용자 확정값은 git 에 들어가는 자리에 둔다 — data/staging 은 .gitignore 대상이라
+# 거기 두면 사람이 본 사실이 버전관리에서 빠진다.
+OVR = os.path.join(ROOT, "data", "link_overrides.json")
+OVR_OLD = os.path.join(ROOT, "data", "staging", "corrected", "_link_overrides.json")
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
 try:
@@ -209,11 +212,13 @@ def open_runs(polys, walls, scale, open_min):
 
 
 def load_overrides():
-    try:
-        with open(OVR, encoding="utf-8") as fh:
-            return json.load(fh)
-    except Exception:
-        return {}
+    for p in (OVR, OVR_OLD):
+        try:
+            with open(p, encoding="utf-8") as fh:
+                return json.load(fh)
+        except Exception:
+            continue
+    return {}
 
 
 def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):

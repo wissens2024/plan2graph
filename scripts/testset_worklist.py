@@ -28,6 +28,7 @@ import csv
 import hashlib
 import json
 import os
+import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STAGING = os.path.join(ROOT, "data", "staging")
@@ -106,6 +107,31 @@ def main():
             "변종대표": " | ".join(v["members"][0] for v in vs[:6]),
             "차이": " || ".join(roles_diff(vs[0]["roles"], v["roles"]) for v in vs[1:]) if len(vs) > 1 else "",
         })
+    # 검토 상태 — edit_log 에 남은 기록만 본다(추측하지 않는다)
+    prop_groups, human_plans = set(), set()
+    try:
+        sys.path.insert(0, os.path.join(ROOT, "scripts"))
+        from edit_log import read as _read
+        for rec in _read():
+            if rec.get("kind") == "propagate":
+                pid = rec.get("plan_id", "")
+                if pid.startswith("group:"):
+                    prop_groups.add(pid.split(":", 1)[1])
+                else:
+                    prop_groups.add(sig_of.get(pid, ""))
+            elif rec.get("actor") == "user" and rec.get("kind") == "correct":
+                human_plans.add(rec.get("plan_id"))
+    except Exception:  # noqa: BLE001
+        pass
+    for r in rows:
+        st = []
+        if r["group"] in prop_groups:
+            st.append("통일됨")
+        if any(m in human_plans for m in (groups.get(r["group"], {}).get("members") or [])):
+            st.append("사람검토")
+        r["진행"] = "·".join(st)
+        r["id"] = r["group"][:8]
+
     rows.sort(key=lambda r: (r["prio"], -r["test장수"], r["대표도면"]))
 
     with open(args.csv, "w", newline="", encoding="utf-8-sig") as f:
@@ -119,6 +145,8 @@ def main():
     A = L.append
     A("# 평가셋 작업표 — 고유 평면 **%d개**" % len(rows))
     A("")
+    A("")
+    A("> **그룹은 `id`(서명 앞 8자리)로 부른다. 순번은 쓰지 않는다** — 그룹이 빠지면 번호가 어긋난다(2026-11-13 실제로 어긋났다).")
     A("> 생성 = `scripts/testset_worklist.py`(읽기 전용). 근거 = [DATA.md §8.13](DATA.md) ·")
     A("> 범위 = **서명해시 split의 test**(gated %d장 → 고유 %d개)." % (len(test_ids), len(rows)))
     A("> **사본은 같은 평면이다 — 대표 1장만 보정하면 평가 정답지가 선다.**")
@@ -147,20 +175,20 @@ def main():
         A(note)
         A("")
         if p == "P1":
-            A("| # | 사본 | 변종 | 방 수 | 차이 | 열기 |")
-            A("|--:|--:|--:|---|---|---|")
+            A("| id | 진행 | 사본 | 변종 | 방 수 | 차이 | 열기 |")
+            A("|---|---|--:|--:|---|---|---|")
             for i, r in enumerate(sub, 1):
                 # 표 셀 안의 '|'는 마크다운 표를 깬다 — '/'로 바꾼다(CSV는 원본 유지)
                 diff = (r["차이"] or "").replace(" || ", " / ").replace("|", "/")
-                A("| %d | %d | %d | %s | %s | [중복 검수](%s/dedup?group=%s) · [대표 에디터](%s/?gid=%s) |"
-                  % (i, r["사본"], r["변종"], r["방수"], diff[:70] or "—",
+                A("| `%s` | %s | %d | %d | %s | %s | [중복 검수](%s/dedup?group=%s) · [대표 에디터](%s/?gid=%s) |"
+                  % (r["id"], r["진행"] or "—", r["사본"], r["변종"], r["방수"], diff[:70] or "—",
                      base, r["group"], base, r["대표도면"]))
         else:
-            A("| # | 도면 번호(대표) | 사본 | 열기 |")
-            A("|--:|---|--:|---|")
+            A("| id | 진행 | 도면 번호(대표) | 사본 | 열기 |")
+            A("|---|---|---|--:|---|")
             for i, r in enumerate(sub, 1):
-                A("| %d | `%s` | %d | [에디터](%s/?gid=%s)%s |"
-                  % (i, r["대표도면"], r["사본"], base, r["대표도면"],
+                A("| `%s` | %s | `%s` | %d | [에디터](%s/?gid=%s)%s |"
+                  % (r["id"], r["진행"] or "—", r["대표도면"], r["사본"], base, r["대표도면"],
                      "" if r["사본"] < 2 else " · [중복](%s/dedup?group=%s)" % (base, r["group"])))
     A("")
     A("---")
