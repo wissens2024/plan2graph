@@ -769,6 +769,30 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
                 d["position_source"] = "user_override"
                 rep["ovr_door_pos"] = rep.get("ovr_door_pos", 0) + 1
 
+    # (m) 사용자가 짚어준 **창** — 문과 같은 모양으로 받는다.
+    # 맨 뒤에서 돈다: (i) 창 belongs_to 재산출이 이걸 덮으면 안 된다.
+    for ow in (o.get("windows") or []):
+        orooms = [str(x) for x in (ow.get("rooms") or []) if str(x) in rooms_all]
+        if not orooms:
+            continue
+        wins = g.setdefault("windows", [])
+        wid = ow.get("id") or ("wu%d" % (len(wins) + 1))
+        rec = {"id": wid, "belongs_to": int(orooms[0]) if orooms[0].isdigit() else orooms[0],
+               "position": ow.get("pos"), "bbox_px": None,
+               "width_px": None, "width_m": ow.get("width_m"),
+               "width_source": "user_override",
+               "source": "user_override", "position_source": "user_override"}
+        wins[:] = [w for w in wins if w.get("id") != wid]
+        wins.append(rec)
+        g["n_windows"] = len(wins)
+        rep["ovr_win_add"] = rep.get("ovr_win_add", 0) + 1
+        if len(orooms) == 2:
+            k = frozenset(orooms)
+            x, y = sorted(k)
+            edges[k] = {"from": x, "to": y, "via": "window", "boundary": "window",
+                        "door_id": None, "door_swing_deg": None, "door_pos": None,
+                        "window_id": wid, "via_from": "user_override"}
+
     # 위계 전이 · 현관 거리
     for e in edges.values():
         pa = PRIVACY.get((rooms.get(e["from"]) or {}).get("role"), "other")
@@ -825,6 +849,7 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
     rep.setdefault("ovr_door_drop", 0)
     rep.setdefault("ovr_door_add", 0)
     rep.setdefault("ovr_door_pos", 0)
+    rep.setdefault("ovr_win_add", 0)
     rep.setdefault("comp_merge", 0)
     rep.setdefault("win_fixed", 0)
     rep.setdefault("win_orphan", 0)
@@ -918,6 +943,7 @@ def main():
         T["ovr_door_drop"] += rep.get("ovr_door_drop", 0)
         T["ovr_door_add"] += rep.get("ovr_door_add", 0)
         T["ovr_door_pos"] += rep.get("ovr_door_pos", 0)
+        T["ovr_win_add"] = T.get("ovr_win_add", 0) + rep.get("ovr_win_add", 0)
         T["comp_merge"] += rep.get("comp_merge", 0)
         T["win_fixed"] += rep.get("win_fixed", 0)
         T["win_orphan"] += rep.get("win_orphan", 0)
@@ -992,6 +1018,8 @@ def main():
               % (T["ovr_door_drop"], T["ovr_door_add"]))
         if T["ovr_door_pos"]:
             print("   확정 문 위치 %d건" % T["ovr_door_pos"])
+        if T.get("ovr_win_add"):
+            print("   확정 창 %d건" % T["ovr_win_add"])
     print("   역할쌍 규칙으로 종류 교정 %d건 · 금지 쌍의 문 표시 %d건"
           % (T["via_fixed"], T["forbidden_door"]))
     if T["edges"]:
