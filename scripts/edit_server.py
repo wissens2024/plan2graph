@@ -695,6 +695,7 @@ a.dedup:hover{background:#2c3d58}
  .gcon line{pointer-events:none}
  .gcon .door{stroke:#16a34a;stroke-width:3}
  .gcon .open{stroke:#2563eb;stroke-width:2.5;stroke-dasharray:9 7}
+ .gcon circle.rnode{fill:#fff;fill-opacity:.82;stroke:#334155;stroke-width:2}
  .gcon circle.openpt{fill:#2563eb;stroke:#fff;stroke-width:1.4}
  .gcon text.tlab{font-size:11px;font-weight:700;fill:#b45309;stroke-width:3px}
  .gcon .tagln{stroke:#f59e0b;stroke-width:2.2;opacity:.95}
@@ -1090,6 +1091,17 @@ function drawGeomLinks(){
         class:bad?'bad':(kind==='window'?'wout':(kind==='tag'?'tlab':'dlab'))},g);
       t.textContent=label;
     }
+  }
+
+  // ⓪ 방 노드 — 선이 모이는 자리에 **동그라미**를 놓는다. 그래야 그래프로 읽힌다.
+  //    (역할 이름은 에디터가 이미 그리므로 글자는 겹쳐 쓰지 않는다.)
+  const linked=new Set();
+  for(const e of (G.edges||[])){linked.add(String(e.from));linked.add(String(e.to));}
+  for(const d of (G.doors||[]))for(const x of (d.connects||[]))linked.add(String(x));
+  for(const w of (G.windows||[]))linked.add(String(w.belongs_to));
+  for(const rid of linked){
+    const c=ctrOf(rid); if(!c||!R[rid])continue;
+    el('circle',{cx:c[0],cy:c[1],r:15,class:'rnode'},g);
   }
 
   // ① 개방 경계 — 맞닿은 자리에 표시한다(중심끼리 잇지 않는다)
