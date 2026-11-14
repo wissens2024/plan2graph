@@ -1053,17 +1053,31 @@ function drawGeomLinks(){
   let nBad=0,nOut=0,nNoPos=0;
   const TAIL=26;
 
+  // anchor_links.py 가 엣지에 박아 둔 끝점. 벽에 수직이라 선끼리 교차하지 않는다.
+  const ANC={};
+  for(const e of (G.edges||[])){
+    if(!e.draw_anchors)continue;
+    const k=e.via==='door'?('d:'+e.door_id):(e.via==='window'?('w:'+e.window_id):null);
+    if(!k)continue;
+    ANC[k]=Object.assign(ANC[k]||{},e.draw_anchors);
+  }
+  function aimAt(key,rid,fallback){
+    const a=key&&ANC[key]?ANC[key][rid]:null;
+    return (a&&a.length===2)?{x:a[0],y:a[1]}:fallback;
+  }
+
   function ctrP(id){const c=ctrOf(id);return c?{x:c[0],y:c[1]}:null;}
 
   // 개구부 하나: 벽 위 마커 + 방 쪽으로 짧은 꼬리
-  function mark(p,rooms,kind,outside,label,bad,shape){
+  function mark(p,rooms,kind,outside,label,bad,shape,akey){
     const cls=bad?'bad':(kind==='window'?'win':(kind==='tag'?'tagln':'door'));
     const dirs=[];
     for(const rid of rooms){
-      const c=ctrP(rid); if(!c)continue;
+      const c0=ctrP(rid); if(!c0)continue;
+      // 앵커가 있으면 그쪽. 없으면 옛 방식(방 중심)으로 떨어진다.
+      const c=aimAt(akey,rid,c0);
       let dx=c.x-p[0],dy=c.y-p[1];const L=Math.hypot(dx,dy)||1;dx/=L;dy/=L;
       dirs.push([dx,dy]);
-      // 방 중심까지 **전체 선**. 짧은 꼬리는 무엇과 무엇이 이어지는지 안 보였다.
       el('line',{x1:p[0],y1:p[1],x2:c.x,y2:c.y,class:cls},g);
     }
     if(outside||rooms.length===0){
@@ -1102,9 +1116,10 @@ function drawGeomLinks(){
     // 맞닿은 자리 — rebuild_links 가 계산해 넣은 pos 를 쓴다.
     // 없으면 중심의 중간(옛 방식, 방 한가운데 떠 보인다)
     const m=e.pos?[e.pos[0],e.pos[1]]:[(a.x+b.x)/2,(a.y+b.y)/2];
-    for(const c of [a,b]){
-      let dx=c.x-m[0],dy=c.y-m[1];const L=Math.hypot(dx,dy)||1;
-      el('line',{x1:m[0],y1:m[1],x2:c.x,y2:c.y,class:'open'},g);
+    const an=e.draw_anchors||{};
+    for(const [rid,c0] of [[String(e.from),a],[String(e.to),b]]){
+      const q=(an[rid]&&an[rid].length===2)?{x:an[rid][0],y:an[rid][1]}:c0;
+      el('line',{x1:m[0],y1:m[1],x2:q.x,y2:q.y,class:'open'},g);
     }
     el('circle',{cx:m[0],cy:m[1],r:5,class:'openpt'},g);
   }
@@ -1118,7 +1133,8 @@ function drawGeomLinks(){
     const ra=cn[0]?R[cn[0]]:null, rb=cn[1]?R[cn[1]]:null;
     const bad=(ra&&rb&&ra.role===rb.role&&ra.role!=='발코니')||miss.length>0;
     if(bad)nBad++;
-    mark(p,cn,'door',!!d.to_outside,miss.length?('없는 방 '+miss.join(',')):'',bad);
+    mark(p,cn,'door',!!d.to_outside,miss.length?('없는 방 '+miss.join(',')):'',bad,
+         undefined,'d:'+d.id);
   }
 
   // ③ 창
@@ -1135,7 +1151,8 @@ function drawGeomLinks(){
     }
     const bad=!R[bt];
     if(bad)nBad++;
-    mark(p,rooms,'window',rooms.length<2,bad?('없는 방 '+bt):'',bad);
+    mark(p,rooms,'window',rooms.length<2,bad?('없는 방 '+bt):'',bad,
+         undefined,'w:'+w.id);
   }
 
   const tag=document.getElementById('gctog');
