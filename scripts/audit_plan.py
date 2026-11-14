@@ -153,6 +153,24 @@ def main():
             for k in (d.get("connects") or []):
                 if str(k) in deg:
                     deg[str(k)][0] += 1
+    # 창은 **기록**으로 센다 — 바깥으로 난 창은 엣지가 없어 엣지만 세면 안 보인다.
+    wown = {}
+    ghost_w = []
+    for w in (g.get("windows") or []):
+        o = str(w.get("belongs_to"))
+        if o in deg:
+            deg[o][2] += 1
+            wown[str(w.get("id"))] = o
+        else:
+            ghost_w.append((w.get("id"), w.get("belongs_to"), w.get("position")))
+    # 창 엣지는 주인이 아닌 쪽에만 더한다(위에서 엣지로 이미 양쪽에 1씩 넣었으니 되돌린다)
+    for e in (g.get("edges") or []):
+        if e.get("via") != "window":
+            continue
+        o = wown.get(str(e.get("window_id")))
+        for k in (str(e["from"]), str(e["to"])):
+            if k in deg and (o is None or k == o):
+                deg[k][2] -= 1
     print("  %-16s %s" % ("방", "문 / 개방 / 창"))
     for k in sorted(deg, key=int):
         a0, b0, c0 = deg[k]
@@ -161,6 +179,11 @@ def main():
                                           "   <= 고립(아무 연결 없음)" if bad else
                                           ("   <= 창만 있다" if (a0 + b0) == 0 else
                                            ("   <= 문이 없다" if a0 == 0 else ""))))
+    if ghost_w:
+        print()
+        print("  ⚠ 주인 방이 없는 유령 창 %d개 — 방을 지울 때 같이 안 지워진 것이다" % len(ghost_w))
+        for wid, own, pos in ghost_w:
+            print("     %-10s belongs_to=%s %s" % (wid, own, [round(v) for v in (pos or [])]))
     print()
     print("봐야 할 엣지 %d개" % len(need))
 

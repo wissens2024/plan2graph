@@ -823,6 +823,18 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
     if len(new_doors) != n_before:
         rep["orphan_door"] = rep.get("orphan_door", 0) + (n_before - len(new_doors))
 
+    # (n0b) 주인 방이 없는 창도 버린다 — 방을 지우면 그 방 창이 유령으로 남는다.
+    _w0 = g.get("windows") or []
+    _wk = [w for w in _w0 if str(w.get("belongs_to")) in rooms]
+    if len(_wk) != len(_w0):
+        g["windows"] = _wk
+        g["n_windows"] = len(_wk)
+        _gone = {str(w.get("id")) for w in _w0 if w not in _wk}
+        for _k in [k for k, e2 in edges.items()
+                   if e2.get("via") == "window" and str(e2.get("window_id")) in _gone]:
+            del edges[_k]
+        rep["orphan_win"] = rep.get("orphan_win", 0) + (len(_w0) - len(_wk))
+
     # (n) **문·창 중복 정리** — 같은 개구부가 두 번 기록된 것을 문 쪽으로 모은다.
     # 미닫이 유리문은 파서가 창으로도 잡는다(실측: 1.5X2.4 PD · 2.7X2.3 PD).
     _sc = g.get("scale_mm_per_px")
@@ -957,6 +969,7 @@ def rebuild(g, thin_px=THIN_DOOR_PX, ovr=None):
     rep.setdefault("ovr_door_pos", 0)
     rep.setdefault("ovr_win_add", 0)
     rep.setdefault("win_merged", 0)
+    rep.setdefault("orphan_win", 0)
     rep.setdefault("orphan_door", 0)
     rep.setdefault("ext_door_dedup", 0)
     rep.setdefault("win_is_door", 0)
@@ -1055,6 +1068,7 @@ def main():
         T["ovr_door_pos"] += rep.get("ovr_door_pos", 0)
         T["ovr_win_add"] = T.get("ovr_win_add", 0) + rep.get("ovr_win_add", 0)
         T["win_merged"] = T.get("win_merged", 0) + rep.get("win_merged", 0)
+        T["orphan_win"] = T.get("orphan_win", 0) + rep.get("orphan_win", 0)
         T["orphan_door"] = T.get("orphan_door", 0) + rep.get("orphan_door", 0)
         T["ext_door_dedup"] = T.get("ext_door_dedup", 0) + rep.get("ext_door_dedup", 0)
         T["win_is_door"] = T.get("win_is_door", 0) + rep.get("win_is_door", 0)
@@ -1138,6 +1152,8 @@ def main():
           % (T["via_fixed"], T["forbidden_door"]))
     if T.get("orphan_door"):
         print("   방 없는 유령 문 버림 %d개" % T["orphan_door"])
+    if T.get("orphan_win"):
+        print("   주인 방 없는 유령 창 버림 %d개" % T["orphan_win"])
     if T.get("win_merged"):
         print("   겹친 창 합침 %d개" % T["win_merged"])
     if T.get("win_is_door"):
